@@ -2,7 +2,12 @@ import { Client, GatewayIntentBits, Collection, REST, Routes } from 'discord.js'
 import { SlashCommandBuilder } from 'discord.js';
 import { CommandHandler } from './commands';
 import { ChannelHandlers } from './channel-handlers';
+import { HabitFlowManager } from './habit-flow';
+import { ProofProcessor } from './proof-processor';
+import { MessageAnalyzer } from './message-analyzer';
 import { NotionClient } from '../notion/client';
+import { ToolsAssistant } from './tools-assistant';
+import { DailyMessageScheduler } from './daily-message-scheduler';
 
 export class HabitBot {
   private client: Client;
@@ -10,6 +15,11 @@ export class HabitBot {
   private commandHandler: CommandHandler;
   private channelHandlers: ChannelHandlers;
   private notion: NotionClient;
+  private habitFlow: HabitFlowManager;
+  private proofProcessor: ProofProcessor;
+  private messageAnalyzer: MessageAnalyzer;
+  private toolsAssistant: ToolsAssistant;
+  private dailyMessageScheduler: DailyMessageScheduler;
 
   constructor(notion: NotionClient) {
     this.client = new Client({
@@ -24,6 +34,11 @@ export class HabitBot {
     this.notion = notion;
     this.channelHandlers = new ChannelHandlers(this.client, notion);
     this.commandHandler = new CommandHandler(notion, this.channelHandlers);
+    this.habitFlow = new HabitFlowManager(notion);
+    this.proofProcessor = new ProofProcessor(notion);
+    this.messageAnalyzer = new MessageAnalyzer(notion, this.client);
+    this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
+    this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion);
     this.setupCommands();
     this.setupEventHandlers();
   }
@@ -49,10 +64,12 @@ export class HabitBot {
               option.setName('domains')
                 .setDescription('Life domains (comma-separated)')
                 .setRequired(true))
-            .addStringOption(option =>
+            .addIntegerOption(option =>
               option.setName('frequency')
-                .setDescription('How often (e.g., daily, weekly)')
-                .setRequired(true))
+                .setDescription('Days per week (1-7)')
+                .setRequired(true)
+                .setMinValue(1)
+                .setMaxValue(7))
             .addStringOption(option =>
               option.setName('context')
                 .setDescription('When and where')
@@ -128,7 +145,101 @@ export class HabitBot {
         .addStringOption(option =>
           option.setName('text')
             .setDescription('Your learning or insight')
+            .setRequired(true)),
+
+      new SlashCommandBuilder()
+        .setName('hurdles')
+        .setDescription('Document a hurdle or obstacle')
+        .addStringOption(option =>
+          option.setName('name')
+            .setDescription('Short title for the hurdle')
             .setRequired(true))
+        .addStringOption(option =>
+          option.setName('type')
+            .setDescription('Type of hurdle')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Time Management', value: 'Time Management' },
+              { name: 'Motivation', value: 'Motivation' },
+              { name: 'Environment', value: 'Environment' },
+              { name: 'Social', value: 'Social' },
+              { name: 'Health', value: 'Health' },
+              { name: 'Resources', value: 'Resources' },
+              { name: 'Knowledge', value: 'Knowledge' },
+              { name: 'Habit Stacking', value: 'Habit Stacking' },
+              { name: 'Perfectionism', value: 'Perfectionism' },
+              { name: 'Other', value: 'Other' }
+            ))
+        .addStringOption(option =>
+          option.setName('description')
+            .setDescription('Detailed description of the hurdle')
+            .setRequired(true)),
+
+      new SlashCommandBuilder()
+        .setName('keystonehabit')
+        .setDescription('Create a keystone habit - the foundation of your daily routine')
+        .addStringOption(option =>
+          option.setName('name')
+            .setDescription('Name of your keystone habit')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('domains')
+            .setDescription('Life domains this habit affects (comma-separated: health, fitness, work, etc.)')
+            .setRequired(true))
+        .addIntegerOption(option =>
+          option.setName('frequency')
+            .setDescription('How many days per week? (1-7)')
+            .setRequired(true)
+            .setMinValue(1)
+            .setMaxValue(7))
+        .addStringOption(option =>
+          option.setName('context')
+            .setDescription('When and where will you do this habit?')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('difficulty')
+            .setDescription('How challenging is this habit?')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Easy - Takes minimal effort', value: 'easy' },
+              { name: 'Medium - Requires some discipline', value: 'medium' },
+              { name: 'Hard - Needs strong commitment', value: 'hard' }
+            ))
+        .addStringOption(option =>
+          option.setName('smart_goal')
+            .setDescription('Your specific, measurable goal for this habit')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('why')
+            .setDescription('Why is this habit important to you?')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('minimal_dose')
+            .setDescription('What\'s the smallest version you can do on tough days?')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('habit_loop')
+            .setDescription('Describe your habit loop: Cue → Craving → Routine → Reward')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('implementation_intentions')
+            .setDescription('If-then plans for obstacles (e.g., "If I feel tired, then I will do 5 minutes")')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('hurdles')
+            .setDescription('What challenges might you face?')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('reminder_type')
+            .setDescription('How will you remember to do this habit?')
+            .setRequired(true)
+            .addChoices(
+              { name: 'Phone Alarm', value: 'phone_alarm' },
+              { name: 'Calendar Event', value: 'calendar' },
+              { name: 'Habit Stacking', value: 'habit_stacking' },
+              { name: 'Visual Reminder', value: 'visual' },
+              { name: 'Accountability Partner', value: 'accountability' }
+            ))
     ];
 
     this.commands.set('join', { execute: this.commandHandler.handleJoin.bind(this.commandHandler) });
@@ -136,6 +247,8 @@ export class HabitBot {
     this.commands.set('proof', { execute: this.commandHandler.handleProof.bind(this.commandHandler) });
     this.commands.set('summary', { execute: this.commandHandler.handleSummary.bind(this.commandHandler) });
     this.commands.set('learning', { execute: this.commandHandler.handleLearning.bind(this.commandHandler) });
+    this.commands.set('hurdles', { execute: this.commandHandler.handleHurdles.bind(this.commandHandler) });
+    this.commands.set('keystonehabit', { execute: this.commandHandler.handleKeystoneHabit.bind(this.commandHandler) });
 
     return commands;
   }
@@ -146,6 +259,23 @@ export class HabitBot {
       
       // Send startup message to the main channel
       await this.sendStartupMessage();
+      
+      // Start the daily message scheduler for 66-day challenge
+      this.dailyMessageScheduler.startScheduler();
+      console.log('🗓️ Daily message scheduler started - 66-day challenge begins tomorrow!');
+    });
+
+    // Add message listener for accountability group
+    this.client.on('messageCreate', async message => {
+      // Only analyze messages in the accountability group
+      if (message.channelId === process.env.DISCORD_ACCOUNTABILITY_GROUP) {
+        await this.messageAnalyzer.analyzeMessage(message);
+      }
+
+      // Tools channel: respond with toolbox suggestions
+      if (process.env.DISCORD_TOOLS && message.channelId === process.env.DISCORD_TOOLS) {
+        await this.toolsAssistant.handleMessage(message);
+      }
     });
 
     this.client.on('interactionCreate', async interaction => {
@@ -181,6 +311,19 @@ export class HabitBot {
         } else {
           await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
         }
+      }
+    });
+
+    this.client.on('messageCreate', async message => {
+      try {
+        const handled = await this.habitFlow.handleMessage(message);
+        if (handled) {
+          return;
+        }
+
+        await this.proofProcessor.handleAccountabilityMessage(message);
+      } catch (error) {
+        console.error('Error handling keystone habit flow message:', error);
       }
     });
 

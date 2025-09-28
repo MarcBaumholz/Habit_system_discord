@@ -40,6 +40,35 @@ export class ChannelHandlers {
     }
   }
 
+  async postToHurdlesChannel(name: string, description: string, type: string, userName: string) {
+    try {
+      const channel = this.client.channels.cache.get(this.learningsChannelId) as TextChannel;
+      if (!channel) {
+        console.error('Learnings and hurdles channel not found');
+        return;
+      }
+
+      const message = `🚧 **New Hurdle Documented**
+
+**${name}**
+${description}
+
+📊 **Details:**
+• Type: ${type}
+• Date: ${new Date().toLocaleDateString()}
+
+*Documented by ${userName}*
+
+💪 **Community Support Needed!**
+Share strategies to help overcome this hurdle!`;
+
+      await channel.send(message);
+
+    } catch (error) {
+      console.error('Error posting to hurdles channel:', error);
+    }
+  }
+
   async postWeeklyReview(weekNumber: number, groupStats: any) {
     try {
       const channel = this.client.channels.cache.get(this.weeklyReviewsChannelId) as TextChannel;

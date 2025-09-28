@@ -1,5 +1,6 @@
 import { NotionClient } from '../src/notion/client';
 import { CommandHandler } from '../src/bot/commands';
+import { ChannelHandlers } from '../src/bot/channel-handlers';
 
 // Mock Discord.js
 jest.mock('discord.js', () => ({
@@ -14,10 +15,20 @@ jest.mock('../src/notion/client');
 describe('CommandHandler', () => {
   let mockNotion: jest.Mocked<NotionClient>;
   let commandHandler: CommandHandler;
+  let mockChannelHandlers: jest.Mocked<ChannelHandlers>;
 
   beforeEach(() => {
     mockNotion = new NotionClient('', {}) as jest.Mocked<NotionClient>;
-    commandHandler = new CommandHandler(mockNotion);
+    mockChannelHandlers = {
+      postToLearningsChannel: jest.fn(),
+      postWeeklyReview: jest.fn(),
+      postDailyReminder: jest.fn(),
+      postGroupEncouragement: jest.fn(),
+      handleProofReaction: jest.fn(),
+      postDonationPoolUpdate: jest.fn()
+    } as unknown as jest.Mocked<ChannelHandlers>;
+
+    commandHandler = new CommandHandler(mockNotion, mockChannelHandlers);
   });
 
   describe('handleJoin', () => {
@@ -47,10 +58,10 @@ describe('CommandHandler', () => {
         bestTime: '09:00',
         trustCount: 0
       });
-      expect(mockInteraction.reply).toHaveBeenCalledWith({
-        content: 'Welcome to the habit system, testuser! Use `/habit add` to create your first keystone habit.',
-        ephemeral: true
-      });
+      expect(mockInteraction.reply).toHaveBeenCalledWith(expect.objectContaining({
+        content: expect.stringContaining('Welcome to the Habit System'),
+        ephemeral: false
+      }));
     });
 
     it('should handle existing user', async () => {
@@ -74,10 +85,10 @@ describe('CommandHandler', () => {
 
       expect(mockNotion.getUserByDiscordId).toHaveBeenCalledWith('123');
       expect(mockNotion.createUser).not.toHaveBeenCalled();
-      expect(mockInteraction.reply).toHaveBeenCalledWith({
-        content: 'Welcome to the habit system, testuser! Use `/habit add` to create your first keystone habit.',
-        ephemeral: true
-      });
+      expect(mockInteraction.reply).toHaveBeenCalledWith(expect.objectContaining({
+        content: expect.stringContaining('Welcome to the Habit System'),
+        ephemeral: false
+      }));
     });
   });
 });

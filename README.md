@@ -8,6 +8,7 @@ A Discord bot for habit tracking with Notion integration, following the 66-day c
 - **Notion Integration**: Structured data storage for users, habits, proofs, learnings
 - **66-Day Framework**: Weekly summaries, minimal dose support, cheat days
 - **Social Accountability**: Trust system, group reactions, donation pool
+- **Auto Proof Logging**: Messages in the accountability channel are classified via OpenRouter (DeepSeek) and stored as Notion proofs
 
 ## Setup
 
@@ -29,6 +30,9 @@ Required variables:
 - `DISCORD_GUILD_ID`: Your Discord server ID
 - `NOTION_TOKEN`: Your Notion integration token
 - `NOTION_DATABASE_*`: Notion database IDs for each entity
+- `DISCORD_PERSONAL_CHANNEL`: Channel ID that should host the keystone habit flow trigger
+- `DISCORD_ACCOUNTABILITY_GROUP`: Channel where proofs are posted for automatic processing
+- `OPENROUTER_API_KEY`: API key for proof classification via OpenRouter (DeepSeek free model by default)
 
 ### 3. Notion Setup
 Create the following databases in Notion with these properties:
@@ -104,6 +108,7 @@ npm test
 - `/habit add` - Create a new keystone habit
 - `/proof` - Submit daily proof with measurement
 - `/summary` - Get weekly progress summary
+- `KeystoneHabit` (personal channel keyword) - Start the guided keystone habit creation flow
 
 ## Architecture
 

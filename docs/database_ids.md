@@ -20,6 +20,9 @@
 6. **Groups Database**: `278d42a1faf581088b3bfa73450f34b4`
    - URL: https://www.notion.so/marcbaumholz/278d42a1faf581088b3bfa73450f34b4
 
+7. **Hurdles Database**: `278d42a1faf581ef9ec6d14f07c816e2`
+   - URL: https://www.notion.so/marcbaumholz/278d42a1faf581ef9ec6d14f07c816e2
+
 ## Integration Token:
 - **Token**: `[REDACTED - Use .env file]`
 

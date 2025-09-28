@@ -12,7 +12,7 @@ export interface Habit {
   userId: string;
   name: string;
   domains: string[];
-  frequency: string;
+  frequency: number; // Days per week (1-7)
   context: string;
   difficulty: string;
   smartGoal: string;
@@ -42,6 +42,16 @@ export interface Learning {
   habitId: string;
   text: string;
   createdAt: string;
+}
+
+export interface Hurdle {
+  id: string;
+  userId: string;
+  habitId?: string;
+  name: string;
+  hurdleType: 'Time Management' | 'Motivation' | 'Environment' | 'Social' | 'Health' | 'Resources' | 'Knowledge' | 'Habit Stacking' | 'Perfectionism' | 'Other';
+  description: string;
+  date: string;
 }
 
 export interface Week {

@@ -16,8 +16,13 @@ async function main() {
     'NOTION_DATABASE_HABITS',
     'NOTION_DATABASE_PROOFS',
     'NOTION_DATABASE_LEARNINGS',
+    'NOTION_DATABASE_HURDLES',
     'NOTION_DATABASE_WEEKS',
-    'NOTION_DATABASE_GROUPS'
+    'NOTION_DATABASE_GROUPS',
+    'DISCORD_PERSONAL_CHANNEL',
+    'DISCORD_ACCOUNTABILITY_GROUP',
+    'DISCORD_TOOLS',
+    'OPENROUTER_API_KEY'
   ];
 
   for (const envVar of requiredEnvVars) {
@@ -33,6 +38,7 @@ async function main() {
     habits: process.env.NOTION_DATABASE_HABITS!,
     proofs: process.env.NOTION_DATABASE_PROOFS!,
     learnings: process.env.NOTION_DATABASE_LEARNINGS!,
+    hurdles: process.env.NOTION_DATABASE_HURDLES!,
     weeks: process.env.NOTION_DATABASE_WEEKS!,
     groups: process.env.NOTION_DATABASE_GROUPS!
   });
