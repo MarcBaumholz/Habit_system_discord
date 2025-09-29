@@ -23,9 +23,13 @@ export const DEFAULT_TOOLS: HabitTool[] = [
     name: 'Time Boxing',
     summary: 'Block specific time slots to guarantee a start.',
     categories: ['time', 'focus'],
-    keywords: ['time', 'timebox', 'calendar', 'schedule', 'time block', 'time-block'],
-    problemPatterns: ['no time', 'dont have time', 'keep postponing', 'never start', 'busy day', 'not enough time'],
-    whenToUse: ['Your days fill up without progress', 'You need a clear start time'],
+    keywords: ['time', 'timebox', 'calendar', 'schedule', 'time block', 'time-block', 'zeit', 'keine zeit', 'zeitmangel', 'stress', 'hetze', 'eile'],
+    problemPatterns: [
+      'no time', 'dont have time', 'keep postponing', 'never start', 'busy day', 'not enough time',
+      'keine zeit', 'keine zeit haben', 'zu wenig zeit', 'kein zeit', 'zeitmangel', 'stress', 'hetze', 'eile',
+      'no time for', 'too busy', 'overwhelmed', 'never find time', 'time gets away', 'chaotic schedule'
+    ],
+    whenToUse: ['Your days fill up without progress', 'You need a clear start time', 'You feel overwhelmed by tasks'],
     steps: [
       'Pick a realistic slot (e.g., 20–30 min).',
       'Put it on your calendar with a clear title.',
@@ -39,7 +43,7 @@ export const DEFAULT_TOOLS: HabitTool[] = [
     name: 'Deep Work Sprint',
     summary: 'Short, focused sessions with no distractions.',
     categories: ['focus'],
-    keywords: ['deep work', 'focus', 'distraction', 'concentration'],
+    keywords: ['deep work', 'focus', 'distraction', 'concentration', 'fokussieren', 'konzentration', 'ablenkung', 'stören'],
     problemPatterns: ['distracted', 'can’t focus', 'interruptions'],
     whenToUse: ['You need concentration', 'Environment is noisy'],
     steps: [

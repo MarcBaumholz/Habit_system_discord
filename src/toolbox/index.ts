@@ -39,28 +39,104 @@ export class ToolboxEngine {
   private scoreTool(tool: HabitTool, text: string): number {
     let score = 0;
 
-    // Exact keyword hits
+    // Enhanced keyword matching with German support
     for (const kw of tool.keywords) {
       if (text.includes(kw.toLowerCase())) score += 3;
     }
 
-    // Problem patterns (phrases)
+    // Enhanced problem patterns with German translations
     for (const p of tool.problemPatterns) {
       if (text.includes(p.toLowerCase())) score += 5;
     }
 
-    // Category hints
+    // Comprehensive category hints with German and more use cases
     const catHints: Record<string, string[]> = {
-      focus: ['focus', 'distraction', 'deep work', 'concentrat', 'interrupt', 'concentration', 'pomodoro', 'timer'],
-      time: ['time', 'timebox', 'time box', 'time-box', 'timeblock', 'time block', 'calendar', 'schedule', 'busy', 'structure', 'planning'],
-      motivation: ['motivation', 'friction', 'resist', 'temptation', 'easy', 'hard start', 'procrast', 'reward', 'incentive', 'energy', 'identity'],
-      routine: ['routine', 'stack', 'bundle', 'anchor', 'after', 'before', 'remember', 'forget', 'morning', 'evening', 'micro', 'tiny'],
-      environment: ['environment', 'setup', 'prepare', 'space', 'place', 'triggers', 'cues', 'digital', 'minimalism']
+      focus: [
+        'focus', 'distraction', 'deep work', 'concentrat', 'interrupt', 'concentration', 'pomodoro', 'timer',
+        'fokussieren', 'ablenkung', 'konzentration', 'stören', 'unterbrechung', 'fokussiert', 'aufmerksamkeit',
+        'can\'t focus', 'get distracted', 'lose concentration', 'overwhelmed', 'scattered', 'unfocused'
+      ],
+      time: [
+        'time', 'timebox', 'time box', 'time-box', 'timeblock', 'time block', 'calendar', 'schedule', 'busy', 'structure', 'planning',
+        'zeit', 'keine zeit', 'keine zeit haben', 'zeitmangel', 'stress', 'hetze', 'eile', 'termin', 'planung',
+        'no time', 'don\'t have time', 'busy', 'overwhelmed', 'too much', 'never start', 'postpone', 'procrastinate'
+      ],
+      motivation: [
+        'motivation', 'friction', 'resist', 'temptation', 'easy', 'hard start', 'procrast', 'reward', 'incentive', 'energy', 'identity',
+        'motivation', 'antrieb', 'lustlos', 'faul', 'träge', 'energielos', 'unmotiviert', 'belohnung', 'anreiz',
+        'low motivation', 'boring', 'hard to start', 'procrastinate', 'lazy', 'tired', 'unmotivated', 'no energy'
+      ],
+      routine: [
+        'routine', 'stack', 'bundle', 'anchor', 'after', 'before', 'remember', 'forget', 'morning', 'evening', 'micro', 'tiny',
+        'routine', 'gewohnheit', 'vergesen', 'vergessen', 'morgens', 'abends', 'klein', 'winzig', 'automatisch',
+        'forget to do', 'hard to remember', 'no routine', 'inconsistent', 'irregular', 'sporadic', 'unreliable'
+      ],
+      environment: [
+        'environment', 'setup', 'prepare', 'space', 'place', 'triggers', 'cues', 'digital', 'minimalism',
+        'umgebung', 'vorbereitung', 'platz', 'raum', 'trigger', 'hinweis', 'digital', 'minimalismus',
+        'environment not supportive', 'wrong place', 'distractions', 'noise', 'chaos', 'disorganized'
+      ]
     };
+
+    // Enhanced scoring with German language support
     for (const cat of tool.categories) {
       const hints = catHints[cat];
       if (!hints) continue;
-      for (const h of hints) if (text.includes(h)) score += 2;
+      for (const h of hints) {
+        if (text.includes(h)) {
+          score += 2;
+          // Bonus for exact phrase matches
+          if (text.includes(` ${h} `) || text.startsWith(`${h} `) || text.endsWith(` ${h}`)) {
+            score += 1;
+          }
+        }
+      }
+    }
+
+    // Additional scoring for common German phrases
+    const germanPhrases: Record<string, number> = {
+      'keine zeit': 8,
+      'keine zeit haben': 10,
+      'zu wenig zeit': 8,
+      'kein zeit': 6,
+      'zeitmangel': 8,
+      'stress': 4,
+      'hetze': 4,
+      'eile': 4,
+      'fokussieren': 6,
+      'konzentration': 6,
+      'ablenkung': 6,
+      'vergessen': 6,
+      'vergesen': 6,
+      'motivation': 6,
+      'antrieb': 6,
+      'lustlos': 6,
+      'faul': 6,
+      'träge': 6,
+      'energielos': 6,
+      'unmotiviert': 6,
+      'routine': 4,
+      'gewohnheit': 4,
+      'morgens': 4,
+      'abends': 4,
+      'klein': 3,
+      'winzig': 3,
+      'umgebung': 4,
+      'vorbereitung': 4,
+      'platz': 3,
+      'raum': 3
+    };
+
+    for (const [phrase, points] of Object.entries(germanPhrases)) {
+      if (text.includes(phrase)) {
+        score += points;
+      }
+    }
+
+    // Bonus for multiple word matches (compound problems)
+    const wordCount = text.split(/\s+/).length;
+    if (wordCount > 3) {
+      score += Math.min(wordCount - 3, 3); // Bonus up to 3 points for longer descriptions
     }
 
     return score;

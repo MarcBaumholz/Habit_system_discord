@@ -1,6 +1,6 @@
 import { Client, Message, TextChannel } from 'discord.js';
 import { ToolboxEngine, formatToolboxReply } from '../toolbox';
-import { DEFAULT_TOOLS } from '../toolbox/tools';
+import { DEFAULT_TOOLS } from '../toolbox/tools-enhanced';
 import { NotionClient } from '../notion/client';
 import { User } from '../types';
 
