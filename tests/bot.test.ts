@@ -28,13 +28,22 @@ describe('CommandHandler', () => {
       postDonationPoolUpdate: jest.fn()
     } as unknown as jest.Mocked<ChannelHandlers>;
 
-    commandHandler = new CommandHandler(mockNotion, mockChannelHandlers);
+    const mockPersonalChannelManager = {
+      createPersonalChannel: jest.fn(),
+      getPersonalChannel: jest.fn(),
+      sendPersonalMessage: jest.fn(),
+      sendWelcomeMessage: jest.fn(),
+      client: {} as any,
+      notion: mockNotion
+    } as any;
+    commandHandler = new CommandHandler(mockNotion, mockChannelHandlers, mockPersonalChannelManager);
   });
 
   describe('handleJoin', () => {
     it('should create new user if not exists', async () => {
       const mockInteraction = {
         user: { id: '123', username: 'testuser' },
+        guild: { id: 'guild-123' },
         reply: jest.fn()
       };
 
@@ -45,8 +54,12 @@ describe('CommandHandler', () => {
         name: 'testuser',
         timezone: 'Europe/Berlin',
         bestTime: '09:00',
-        trustCount: 0
+        trustCount: 0,
+        personalChannelId: 'channel-123'
       });
+
+      // Mock the personal channel manager
+      mockPersonalChannelManager.createPersonalChannel.mockResolvedValue('channel-123');
 
       await commandHandler.handleJoin(mockInteraction as any);
 
@@ -56,7 +69,8 @@ describe('CommandHandler', () => {
         name: 'testuser',
         timezone: 'Europe/Berlin',
         bestTime: '09:00',
-        trustCount: 0
+        trustCount: 0,
+        personalChannelId: 'channel-123'
       });
       expect(mockInteraction.reply).toHaveBeenCalledWith(expect.objectContaining({
         content: expect.stringContaining('Welcome to the Habit System'),
@@ -67,6 +81,7 @@ describe('CommandHandler', () => {
     it('should handle existing user', async () => {
       const mockInteraction = {
         user: { id: '123', username: 'testuser' },
+        guild: { id: 'guild-123' },
         reply: jest.fn()
       };
 
@@ -76,7 +91,8 @@ describe('CommandHandler', () => {
         name: 'testuser',
         timezone: 'Europe/Berlin',
         bestTime: '09:00',
-        trustCount: 5
+        trustCount: 5,
+        personalChannelId: 'existing-channel-123'
       };
 
       mockNotion.getUserByDiscordId.mockResolvedValue(existingUser);

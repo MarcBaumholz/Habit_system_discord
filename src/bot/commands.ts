@@ -1,15 +1,18 @@
 import { SlashCommandBuilder, CommandInteraction, AttachmentBuilder, ChatInputCommandInteraction } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { ChannelHandlers } from './channel-handlers';
+import { PersonalChannelManager } from './personal-channel-manager';
 import { User, Habit, Proof } from '../types';
 
 export class CommandHandler {
   private notion: NotionClient;
   private channelHandlers: ChannelHandlers;
+  private personalChannelManager: PersonalChannelManager;
 
-  constructor(notion: NotionClient, channelHandlers: ChannelHandlers) {
+  constructor(notion: NotionClient, channelHandlers: ChannelHandlers, personalChannelManager: PersonalChannelManager) {
     this.notion = notion;
     this.channelHandlers = channelHandlers;
+    this.personalChannelManager = personalChannelManager;
   }
 
   async handleJoin(interaction: CommandInteraction) {
@@ -20,35 +23,106 @@ export class CommandHandler {
       
       // Check if user already exists
       let user = await this.notion.getUserByDiscordId(discordId);
+      let isNewUser = false;
+      let channelCreated = false;
       
       if (!user) {
         console.log('👤 Creating new user in Notion');
-        // Create new user
+        isNewUser = true;
+        
+        // Create personal channel first
+        const guild = interaction.guild;
+        if (!guild) {
+          await interaction.reply({
+            content: '❌ This command can only be used in a server.',
+            ephemeral: true
+          });
+          return;
+        }
+
+        const personalChannelId = await this.personalChannelManager.createPersonalChannel(
+          discordId,
+          interaction.user.username,
+          guild
+        );
+
+        if (!personalChannelId) {
+          await interaction.reply({
+            content: '❌ Failed to create your personal channel. Please try again.',
+            ephemeral: true
+          });
+          return;
+        }
+
+        // Create new user with personal channel ID
         user = await this.notion.createUser({
           discordId,
           name: interaction.user.username,
           timezone: 'Europe/Berlin', // Default, can be updated later
           bestTime: '09:00', // Default
-          trustCount: 0
+          trustCount: 0,
+          personalChannelId
         });
         console.log('✅ User created successfully:', user.id);
+        channelCreated = true;
       } else {
         console.log('✅ User already exists:', user.name);
+        
+        // Check if user has a personal channel, if not create one
+        if (!user.personalChannelId) {
+          console.log('🏠 User exists but no personal channel found, creating one...');
+          
+          const guild = interaction.guild;
+          if (!guild) {
+            await interaction.reply({
+              content: '❌ This command can only be used in a server.',
+              ephemeral: true
+            });
+            return;
+          }
+
+          const personalChannelId = await this.personalChannelManager.createPersonalChannel(
+            discordId,
+            interaction.user.username,
+            guild
+          );
+
+          if (personalChannelId) {
+            // Update user with personal channel ID
+            await this.notion.updateUser(user.id, { personalChannelId });
+            console.log('✅ Personal channel created for existing user:', personalChannelId);
+            channelCreated = true;
+          }
+        } else {
+          console.log('✅ User already has personal channel:', user.personalChannelId);
+        }
       }
 
+      // Create appropriate welcome message
+      let welcomeMessage = `🎉 **Welcome to the Habit System, ${user.name}!**\n\n`;
+      
+      if (isNewUser) {
+        welcomeMessage += `✅ You're now registered in the system!\n📝 Your profile has been created in Notion\n`;
+      } else {
+        welcomeMessage += `✅ You're already registered in the system!\n📝 Your profile is ready in Notion\n`;
+      }
+      
+      if (channelCreated) {
+        welcomeMessage += `🏠 Your personal channel has been created: \`personal-${user.name.toLowerCase()}\`\n`;
+      } else if (user.personalChannelId) {
+        welcomeMessage += `🏠 Your personal channel is ready: \`personal-${user.name.toLowerCase()}\`\n`;
+      }
+      
+      welcomeMessage += `\n🚀 **Next Steps:**\n` +
+        `• Use \`/habit add\` to create your first keystone habit\n` +
+        `• Use \`/proof\` to submit daily evidence\n` +
+        `• Use \`/summary\` to track your progress\n` +
+        `• Use \`/learning\` to share insights with the community\n` +
+        `• Check your personal channel for private habit management!\n\n` +
+        `💪 **Ready for your 66-day habit challenge!**`;
+
       await interaction.reply({
-        content: `🎉 **Welcome to the Habit System, ${user.name}!**
-
-✅ You're now registered in the system!
-📝 Your profile has been created in Notion
-
-🚀 **Next Steps:**
-• Use \`/habit add\` to create your first keystone habit
-• Use \`/proof\` to submit daily evidence
-• Use \`/summary\` to track your progress
-• Use \`/learning\` to share insights with the community
-
-💪 **Ready for your 66-day habit challenge!**`,
+        content: welcomeMessage,
         ephemeral: false
       });
     } catch (error) {

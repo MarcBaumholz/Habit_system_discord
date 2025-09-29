@@ -19,17 +19,24 @@ export class NotionClient {
   }
 
   async createUser(user: Omit<User, 'id'>): Promise<User> {
+    const properties: any = {
+      // Use the user's name as the title (Discord ID field) so it displays in relations
+      'Discord ID ': { title: [{ text: { content: user.name } }] },
+      // Store the actual Discord ID in the Name field for lookup purposes
+      'Name': { rich_text: [{ text: { content: user.discordId } }] },
+      'Timezone': { rich_text: [{ text: { content: user.timezone } }] },
+      'Best Time': { rich_text: [{ text: { content: user.bestTime } }] },
+      'Trust Count': { number: user.trustCount }
+    };
+
+    // Add personal channel ID if provided
+    if (user.personalChannelId) {
+      properties['Personal Channel ID'] = { rich_text: [{ text: { content: user.personalChannelId } }] };
+    }
+
     const response = await this.client.pages.create({
       parent: { database_id: this.databases.users },
-      properties: {
-        // Use the user's name as the title (Discord ID field) so it displays in relations
-        'Discord ID ': { title: [{ text: { content: user.name } }] },
-        // Store the actual Discord ID in the Name field for lookup purposes
-        'Name': { rich_text: [{ text: { content: user.discordId } }] },
-        'Timezone': { rich_text: [{ text: { content: user.timezone } }] },
-        'Best Time': { rich_text: [{ text: { content: user.bestTime } }] },
-        'Trust Count': { number: user.trustCount }
-      }
+      properties
     });
 
     return {
@@ -297,8 +304,57 @@ export class NotionClient {
       name: page.properties['Discord ID '].title[0].text.content,
       timezone: page.properties['Timezone'].rich_text[0].text.content,
       bestTime: page.properties['Best Time'].rich_text[0].text.content,
-      trustCount: page.properties['Trust Count'].number
+      trustCount: page.properties['Trust Count'].number,
+      personalChannelId: page.properties['Personal Channel ID']?.rich_text?.[0]?.text?.content
     };
+  }
+
+  async updateUser(userId: string, updates: Partial<User>): Promise<User> {
+    try {
+      console.log('🔍 Updating user in Notion:', userId, updates);
+      
+      const properties: any = {};
+      
+      if (updates.personalChannelId !== undefined) {
+        properties['Personal Channel ID'] = { rich_text: [{ text: { content: updates.personalChannelId } }] };
+      }
+      
+      if (updates.name !== undefined) {
+        properties['Discord ID '] = { title: [{ text: { content: updates.name } }] };
+      }
+      
+      if (updates.timezone !== undefined) {
+        properties['Timezone'] = { rich_text: [{ text: { content: updates.timezone } }] };
+      }
+      
+      if (updates.bestTime !== undefined) {
+        properties['Best Time'] = { rich_text: [{ text: { content: updates.bestTime } }] };
+      }
+      
+      if (updates.trustCount !== undefined) {
+        properties['Trust Count'] = { number: updates.trustCount };
+      }
+
+      const response = await this.client.pages.update({
+        page_id: userId,
+        properties
+      });
+
+      console.log('✅ User updated successfully in Notion');
+      return {
+        id: response.id,
+        discordId: updates.discordId || '',
+        name: updates.name || '',
+        timezone: updates.timezone || '',
+        bestTime: updates.bestTime || '',
+        trustCount: updates.trustCount || 0,
+        personalChannelId: updates.personalChannelId
+      };
+    } catch (error) {
+      console.error('❌ Error updating user in Notion:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to update user: ${message}`);
+    }
   }
 
   async getProofsByUserId(userId: string, startDate?: string, endDate?: string): Promise<Proof[]> {

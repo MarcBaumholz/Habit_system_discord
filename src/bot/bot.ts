@@ -8,6 +8,7 @@ import { MessageAnalyzer } from './message-analyzer';
 import { NotionClient } from '../notion/client';
 import { ToolsAssistant } from './tools-assistant';
 import { DailyMessageScheduler } from './daily-message-scheduler';
+import { PersonalChannelManager } from './personal-channel-manager';
 
 export class HabitBot {
   private client: Client;
@@ -20,6 +21,7 @@ export class HabitBot {
   private messageAnalyzer: MessageAnalyzer;
   private toolsAssistant: ToolsAssistant;
   private dailyMessageScheduler: DailyMessageScheduler;
+  private personalChannelManager: PersonalChannelManager;
 
   constructor(notion: NotionClient) {
     this.client = new Client({
@@ -33,7 +35,8 @@ export class HabitBot {
     this.commands = new Collection();
     this.notion = notion;
     this.channelHandlers = new ChannelHandlers(this.client, notion);
-    this.commandHandler = new CommandHandler(notion, this.channelHandlers);
+    this.personalChannelManager = new PersonalChannelManager(this.client, notion);
+    this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager);
     this.habitFlow = new HabitFlowManager(notion);
     this.proofProcessor = new ProofProcessor(notion);
     this.messageAnalyzer = new MessageAnalyzer(notion, this.client);

@@ -30,7 +30,15 @@ describe('CommandHandler (extended)', () => {
       postToHurdlesChannel: jest.fn()
     } as unknown as jest.Mocked<ChannelHandlers>;
 
-    handler = new CommandHandler(mockNotion, mockChannelHandlers);
+    const mockPersonalChannelManager = {
+      createPersonalChannel: jest.fn(),
+      getPersonalChannel: jest.fn(),
+      sendPersonalMessage: jest.fn(),
+      sendWelcomeMessage: jest.fn(),
+      client: {} as any,
+      notion: mockNotion
+    } as any;
+    handler = new CommandHandler(mockNotion, mockChannelHandlers, mockPersonalChannelManager);
   });
 
   describe('handleHabitAdd', () => {

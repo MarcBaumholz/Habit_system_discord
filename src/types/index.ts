@@ -5,6 +5,7 @@ export interface User {
   timezone: string;
   bestTime: string;
   trustCount: number;
+  personalChannelId?: string;
 }
 
 export interface Habit {
