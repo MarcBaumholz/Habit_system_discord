@@ -1,0 +1,113 @@
+# Discord Habit System - Requirements
+# Node.js Discord Bot with Notion Integration
+
+# Core Dependencies
+discord.js@14.14.1
+@notionhq/client@2.2.15
+dotenv@16.3.1
+node-cron@3.0.3
+axios@1.6.2
+
+# Development Dependencies
+typescript@5.3.3
+@types/node@20.10.5
+jest@29.7.0
+@types/jest@29.5.8
+ts-jest@29.1.1
+
+# Environment Variables Required
+# DISCORD_BOT_TOKEN=your_discord_bot_token
+# DISCORD_CLIENT_ID=your_discord_application_id
+# DISCORD_GUILD_ID=your_discord_server_id
+# NOTION_TOKEN=your_notion_integration_token
+# NOTION_DATABASE_USERS=your_users_database_id
+# NOTION_DATABASE_HABITS=your_habits_database_id
+# NOTION_DATABASE_PROOFS=your_proofs_database_id
+# NOTION_DATABASE_LEARNINGS=your_learnings_database_id
+# NOTION_DATABASE_HURDLES=your_hurdles_database_id
+# NOTION_DATABASE_WEEKS=your_weeks_database_id
+# NOTION_DATABASE_GROUPS=your_groups_database_id
+# DISCORD_PERSONAL_CHANNEL=your_personal_channel_id
+# DISCORD_ACCOUNTABILITY_GROUP=your_accountability_channel_id
+# DISCORD_TOOLS=your_tools_channel_id
+# DISCORD_INFO_CHANNEL=your_info_channel_id
+# PERPLEXITY_API_KEY=your_perplexity_api_key
+
+# System Requirements
+# Node.js >= 18.0.0
+# npm >= 9.0.0
+# Discord Server with Bot Permissions
+# Notion Workspace with Integration Access
+# Perplexity API Account
+
+# Bot Permissions Required
+# - Send Messages
+# - Use Slash Commands
+# - Manage Channels
+# - Read Message History
+# - Add Reactions
+# - Embed Links
+# - Attach Files
+
+# Notion Database Properties Required
+# Users Database:
+# - Discord ID (Title)
+# - Name (Rich Text)
+# - Timezone (Rich Text)
+# - Best Time (Rich Text)
+# - Trust Count (Number)
+# - Personal Channel ID (Rich Text)
+
+# Habits Database:
+# - Name (Title)
+# - User (Relation to Users)
+# - Domains (Multi-select)
+# - Frequency (Number)
+# - Context (Rich Text)
+# - Difficulty (Rich Text)
+# - SMART Goal (Rich Text)
+# - Why (Rich Text)
+# - Minimal Dose (Rich Text)
+# - Habit Loop (Rich Text)
+# - Implementation Intentions (Rich Text)
+# - Hurdles (Rich Text)
+# - Reminder Type (Rich Text)
+
+# Proofs Database:
+# - Title (Title)
+# - User (Relation to Users)
+# - Habit (Relation to Habits)
+# - Date (Date)
+# - Unit (Rich Text)
+# - Note (Rich Text)
+# - Proof (Files & media)
+# - Is Minimal Dose (Checkbox)
+# - Is Cheat Day (Checkbox)
+
+# Learnings Database:
+# - Discord ID (Title)
+# - User (Relation to Users)
+# - Habit (Relation to Habits)
+# - Text (Rich Text)
+# - Created At (Date)
+
+# Hurdles Database:
+# - Name (Title)
+# - User (Relation to Users)
+# - Habit (Relation to Habits)
+# - Hurdle Type (Select)
+# - Description (Rich Text)
+# - Date (Date)
+
+# Weeks Database:
+# - Discord ID (Title)
+# - User (Relation to Users)
+# - Week Num (Number)
+# - Start Date (Date)
+# - Summary (Rich Text)
+# - Score (Number)
+
+# Groups Database:
+# - Name (Title)
+# - Channel ID (Rich Text)
+# - Donation Pool (Number)
