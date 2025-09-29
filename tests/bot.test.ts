@@ -16,6 +16,7 @@ describe('CommandHandler', () => {
   let mockNotion: jest.Mocked<NotionClient>;
   let commandHandler: CommandHandler;
   let mockChannelHandlers: jest.Mocked<ChannelHandlers>;
+  let mockPersonalChannelManager: any;
 
   beforeEach(() => {
     mockNotion = new NotionClient('', {}) as jest.Mocked<NotionClient>;
@@ -25,10 +26,11 @@ describe('CommandHandler', () => {
       postDailyReminder: jest.fn(),
       postGroupEncouragement: jest.fn(),
       handleProofReaction: jest.fn(),
-      postDonationPoolUpdate: jest.fn()
+      postDonationPoolUpdate: jest.fn(),
+      postInfoLog: jest.fn()
     } as unknown as jest.Mocked<ChannelHandlers>;
 
-    const mockPersonalChannelManager = {
+    mockPersonalChannelManager = {
       createPersonalChannel: jest.fn(),
       getPersonalChannel: jest.fn(),
       sendPersonalMessage: jest.fn(),

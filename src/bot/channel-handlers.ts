@@ -6,12 +6,14 @@ export class ChannelHandlers {
   private notion: NotionClient;
   private learningsChannelId: string;
   private weeklyReviewsChannelId: string;
+  private infoChannelId: string;
 
   constructor(client: Client, notion: NotionClient) {
     this.client = client;
     this.notion = notion;
     this.learningsChannelId = process.env.DISCORD_LEARNINGS_CHANNEL || '';
     this.weeklyReviewsChannelId = process.env.DISCORD_WEEKLY_REVIEWS_CHANNEL || '';
+    this.infoChannelId = process.env.DISCORD_INFO_CHANNEL || '';
   }
 
   async postToLearningsChannel(content: string, userId: string) {
@@ -174,6 +176,25 @@ ${groupStats.topPerformers || 'Keep up the great work everyone!'}
 
     } catch (error) {
       console.error('Error posting donation pool update:', error);
+    }
+  }
+
+  async postInfoLog(message: string) {
+    try {
+      const channel = this.client.channels.cache.get(this.infoChannelId) as TextChannel;
+      if (!channel) {
+        console.error('Info channel not found');
+        return;
+      }
+
+      await channel.send({
+        content: message
+      });
+
+      console.log('✅ Info log posted successfully');
+
+    } catch (error) {
+      console.error('Error posting info log:', error);
     }
   }
 }

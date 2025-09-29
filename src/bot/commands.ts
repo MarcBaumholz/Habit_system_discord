@@ -65,6 +65,15 @@ export class CommandHandler {
         });
         console.log('✅ User created successfully:', user.id);
         channelCreated = true;
+
+        // Send info log message to main channel
+        await this.channelHandlers.postInfoLog(
+          `🎉 **New User Joined!**\n` +
+          `👤 **User:** ${user.name}\n` +
+          `🏠 **Personal Channel:** \`personal-${user.name.toLowerCase()}\`\n` +
+          `📝 **Profile:** Created in Notion\n` +
+          `🚀 **Status:** Ready for 66-day challenge!`
+        );
       } else {
         console.log('✅ User already exists:', user.name);
         
@@ -92,6 +101,15 @@ export class CommandHandler {
             await this.notion.updateUser(user.id, { personalChannelId });
             console.log('✅ Personal channel created for existing user:', personalChannelId);
             channelCreated = true;
+
+            // Send info log message to main channel
+            await this.channelHandlers.postInfoLog(
+              `🏠 **Personal Channel Created!**\n` +
+              `👤 **User:** ${user.name}\n` +
+              `🏠 **Personal Channel:** \`personal-${user.name.toLowerCase()}\`\n` +
+              `📝 **Profile:** Updated in Notion\n` +
+              `🚀 **Status:** Ready for private habit management!`
+            );
           }
         } else {
           console.log('✅ User already has personal channel:', user.personalChannelId);
