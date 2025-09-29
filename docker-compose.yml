@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  discord-habit-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: discord-habit-system
+    restart: unless-stopped
+    
+    # Environment variables
+    env_file:
+      - .env
+    
+    # Volume mounts for persistence
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    
+    # Network configuration
+    networks:
+      - discord-habit-network
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "console.log('Health check passed')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  discord-habit-network:
+    driver: bridge
+
+volumes:
+  logs:
+    driver: local
+  data:
+    driver: local
