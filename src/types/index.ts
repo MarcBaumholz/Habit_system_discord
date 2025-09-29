@@ -39,7 +39,8 @@ export interface Proof {
 export interface Learning {
   id: string;
   userId: string;
-  habitId: string;
+  habitId?: string;
+  discordId?: string;
   text: string;
   createdAt: string;
 }
@@ -57,6 +58,7 @@ export interface Hurdle {
 export interface Week {
   id: string;
   userId: string;
+  discordId?: string;
   weekNum: number;
   startDate: string;
   summary?: string;

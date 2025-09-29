@@ -3,14 +3,18 @@ import { NotionClient } from '../src/notion/client';
 import { Habit } from '../src/types';
 import { Message } from 'discord.js';
 
+// Mock axios
+jest.mock('axios');
+const mockedAxios = jest.mocked(require('axios'));
+
 describe('ProofProcessor', () => {
   const originalAccountabilityId = process.env.DISCORD_ACCOUNTABILITY_GROUP;
-  const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+  const originalPerplexityKey = process.env.PERPLEXITY_API_KEY;
   const originalFetch = global.fetch;
 
   beforeEach(() => {
     process.env.DISCORD_ACCOUNTABILITY_GROUP = 'accountability-channel';
-    process.env.OPENROUTER_API_KEY = 'test-key';
+    process.env.PERPLEXITY_API_KEY = 'test-key';
   });
 
   afterEach(() => {
@@ -25,7 +29,7 @@ describe('ProofProcessor', () => {
 
   afterAll(() => {
     process.env.DISCORD_ACCOUNTABILITY_GROUP = originalAccountabilityId;
-    process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+    process.env.PERPLEXITY_API_KEY = originalPerplexityKey;
     if (originalFetch) {
       global.fetch = originalFetch;
     } else {
@@ -94,9 +98,9 @@ describe('ProofProcessor', () => {
     const processor = new ProofProcessor(notionMock);
     const message = buildMessage();
 
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    // Mock axios for Perplexity API
+    mockedAxios.post.mockResolvedValue({
+      data: {
         choices: [
           {
             message: {
@@ -110,22 +114,25 @@ describe('ProofProcessor', () => {
             }
           }
         ]
-      })
-    }) as any;
+      }
+    });
 
     await processor.handleAccountabilityMessage(message);
 
     expect(notionMock.getUserByDiscordId).toHaveBeenCalledWith('discord-user-1');
     expect(notionMock.getHabitsByUserId).toHaveBeenCalledWith('notion-user-1');
-    expect(notionMock.createProof).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'notion-user-1',
-      habitId: 'habit-1',
-      unit: '30 min',
-      note: 'Morning meditation session',
-      attachmentUrl: 'https://example.com/proof.jpg',
-      isMinimalDose: false,
-      isCheatDay: false
-    }));
+        expect(notionMock.createProof).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: 'notion-user-1',
+            habitId: 'habit-1',
+            unit: '30 min',
+            note: 'Morning meditation session',
+            attachmentUrl: undefined, // We now pass this separately
+            isMinimalDose: false,
+            isCheatDay: false
+          }),
+          'https://example.com/proof.jpg' // Attachment URL as second parameter
+        );
     expect(message.react).toHaveBeenCalledWith('✅');
     expect(message.reply).not.toHaveBeenCalled();
   });
@@ -135,9 +142,9 @@ describe('ProofProcessor', () => {
     const processor = new ProofProcessor(notionMock);
     const message = buildMessage();
 
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    // Mock axios for Perplexity API
+    mockedAxios.post.mockResolvedValue({
+      data: {
         choices: [
           {
             message: {
@@ -151,8 +158,8 @@ describe('ProofProcessor', () => {
             }
           }
         ]
-      })
-    }) as any;
+      }
+    });
 
     await processor.handleAccountabilityMessage(message);
 

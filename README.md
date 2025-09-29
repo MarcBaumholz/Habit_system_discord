@@ -32,7 +32,7 @@ Required variables:
 - `NOTION_DATABASE_*`: Notion database IDs for each entity
 - `DISCORD_PERSONAL_CHANNEL`: Channel ID that should host the keystone habit flow trigger
 - `DISCORD_ACCOUNTABILITY_GROUP`: Channel where proofs are posted for automatic processing
-- `OPENROUTER_API_KEY`: API key for proof classification via OpenRouter (DeepSeek free model by default)
+- `PERPLEXITY_API_KEY`: API key for proof classification via Perplexity (Sonar model)
 
 ### 3. Notion Setup
 Create the following databases in Notion with these properties:

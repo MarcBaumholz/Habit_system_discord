@@ -22,7 +22,7 @@ async function main() {
     'DISCORD_PERSONAL_CHANNEL',
     'DISCORD_ACCOUNTABILITY_GROUP',
     'DISCORD_TOOLS',
-    'OPENROUTER_API_KEY'
+    'PERPLEXITY_API_KEY'
   ];
 
   for (const envVar of requiredEnvVars) {

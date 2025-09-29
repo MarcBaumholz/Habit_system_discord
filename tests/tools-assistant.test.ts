@@ -189,6 +189,7 @@ describe('ToolsAssistant', () => {
       expect(mockNotion.createLearning).toHaveBeenCalledWith({
         userId: 'user-123',
         habitId: 'user-123',
+        discordId: '123',
         text: expect.stringContaining('Tool suggestion:'),
         createdAt: expect.any(String)
       });

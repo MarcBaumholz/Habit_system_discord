@@ -163,7 +163,7 @@ export class CommandHandler {
       };
 
       console.log('📝 Creating proof with data:', proofData);
-      const proof = await this.notion.createProof(proofData);
+      const proof = await this.notion.createProof(proofData, proofData.attachmentUrl);
       console.log('✅ Proof created successfully:', proof.id);
 
       const emoji = isMinimalDose ? '⭐' : isCheatDay ? '🎯' : '✅';
@@ -289,6 +289,7 @@ Use \`/proof\` daily to maintain your momentum!`,
       const learning = await this.notion.createLearning({
         userId: user.id,
         habitId: user.id, // Using user ID as placeholder for now
+        discordId: interaction.user.id,
         text: learningText,
         createdAt: new Date().toISOString()
       });

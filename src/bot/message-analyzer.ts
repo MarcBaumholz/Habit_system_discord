@@ -216,16 +216,17 @@ export class MessageAnalyzer {
 
   private async createProofFromMessage(message: Message, user: User, analysis: any) {
     try {
+      const attachmentUrl = message.attachments.size > 0 ? message.attachments.first()?.url : undefined;
       const proof = await this.notion.createProof({
         userId: user.id,
         habitId: analysis.habitId,
         date: new Date().toISOString().split('T')[0],
         unit: analysis.unit || '1 session',
         note: analysis.note || message.content,
-        attachmentUrl: message.attachments.size > 0 ? message.attachments.first()?.url : undefined,
+        attachmentUrl: undefined, // We'll pass this separately
         isMinimalDose: analysis.isMinimalDose || false,
         isCheatDay: analysis.isCheatDay || false
-      });
+      }, attachmentUrl);
 
       console.log('✅ Proof created from message:', proof.id);
 

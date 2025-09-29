@@ -48,6 +48,7 @@ export class ToolsAssistant {
             await this.notion.createLearning({
               userId: user.id,
               habitId: user.id, // generic catch-all when not tied to a specific habit
+              discordId: message.author.id,
               text: learningText,
               createdAt
             });

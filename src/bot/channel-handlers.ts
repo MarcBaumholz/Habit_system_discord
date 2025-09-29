@@ -31,6 +31,7 @@ export class ChannelHandlers {
       await this.notion.createLearning({
         userId,
         habitId: 'general', // For now, we'll use a general habit ID
+        discordId: userId,
         text: content,
         createdAt: new Date().toISOString()
       });

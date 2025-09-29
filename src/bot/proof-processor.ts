@@ -1,6 +1,7 @@
 import { Message } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { Habit } from '../types';
+import axios from 'axios';
 
 interface ProofClassification {
   habitName: string;
@@ -13,16 +14,14 @@ interface ProofClassification {
 export class ProofProcessor {
   private notion: NotionClient;
   private accountabilityChannelId: string | undefined;
-  private openRouterApiKey: string | undefined;
-  private model: string;
+  private perplexityApiKey: string | undefined;
   private warnedMissingConfig = false;
   private inFlightMessages: Set<string> = new Set();
 
   constructor(notion: NotionClient) {
     this.notion = notion;
     this.accountabilityChannelId = process.env.DISCORD_ACCOUNTABILITY_GROUP;
-    this.openRouterApiKey = process.env.OPENROUTER_API_KEY;
-    this.model = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-chat-v3.1:free';
+    this.perplexityApiKey = process.env.PERPLEXITY_API_KEY;
   }
 
   async handleAccountabilityMessage(message: Message) {
@@ -34,8 +33,8 @@ export class ProofProcessor {
       return;
     }
 
-    if (!this.openRouterApiKey) {
-      this.warnMissingConfig('OPENROUTER_API_KEY');
+    if (!this.perplexityApiKey) {
+      this.warnMissingConfig('PERPLEXITY_API_KEY');
       return;
     }
 
@@ -100,10 +99,10 @@ export class ProofProcessor {
       date: new Date(message.createdAt).toISOString().split('T')[0],
       unit,
       note,
-      attachmentUrl,
+      attachmentUrl: undefined, // We'll pass this separately
       isMinimalDose: classification.isMinimalDose,
       isCheatDay: classification.isCheatDay
-    });
+    }, attachmentUrl);
 
     await message.react('✅');
   }
@@ -134,50 +133,57 @@ export class ProofProcessor {
 
     const prompt = `Du bist ein Assistent, der Gewohnheits-Proofs klassifiziert.\n\nVerfügbare Habits:\n${habitDescriptions}\n\nDiscord Nachricht:\n${messageContent || '(leer)'}\n\nAnhänge:\n${attachmentDescriptions}\n\nAnalysiere sorgfältig und gib eine JSON-Antwort mit folgendem Format zurück:\n{\n  "habitName": string // exakter Name aus der Liste oder "unknown"\n  "unit": string // z.B. "30 min", "5 km" oder "1x"\n  "note": string // kurze Zusammenfassung in max. 140 Zeichen\n  "isMinimalDose": boolean\n  "isCheatDay": boolean\n}\n\nNutze "unknown", wenn keine Habit passt. Verwende nur gültiges JSON ohne Zusatztext.`;
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.openRouterApiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://habit-system.local',
-        'X-Title': 'Discord Habit System'
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          { role: 'system', content: 'Du antwortest ausschließlich mit validem JSON.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0
-      })
-    });
-
-    if (!response.ok) {
-      console.error('OpenRouter API error:', await response.text());
-      return null;
-    }
-
-    const data = await response.json();
-    const rawContent = data?.choices?.[0]?.message?.content;
-    if (!rawContent || typeof rawContent !== 'string') {
+    if (!this.perplexityApiKey) {
+      console.error('Perplexity API key not configured');
       return null;
     }
 
     try {
-      const parsed = JSON.parse(rawContent) as ProofClassification;
-      if (!parsed || typeof parsed !== 'object') {
+      const response = await axios.post('https://api.perplexity.ai/chat/completions', {
+        model: 'sonar',
+        messages: [
+          { role: 'system', content: 'Du antwortest ausschließlich mit validem JSON.' },
+          { role: 'user', content: prompt }
+        ]
+      }, {
+        headers: {
+          'Authorization': `Bearer ${this.perplexityApiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const rawContent = response.data.choices[0].message.content;
+      if (!rawContent || typeof rawContent !== 'string') {
         return null;
       }
 
-      return {
-        habitName: parsed.habitName,
-        unit: parsed.unit,
-        note: parsed.note,
-        isMinimalDose: Boolean(parsed.isMinimalDose),
-        isCheatDay: Boolean(parsed.isCheatDay)
-      };
+      // Clean the response - remove markdown code blocks if present
+      let cleanContent = rawContent.trim();
+      if (cleanContent.startsWith('```json')) {
+        cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (cleanContent.startsWith('```')) {
+        cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+
+      try {
+        const parsed = JSON.parse(cleanContent) as ProofClassification;
+        if (!parsed || typeof parsed !== 'object') {
+          return null;
+        }
+
+        return {
+          habitName: parsed.habitName,
+          unit: parsed.unit,
+          note: parsed.note,
+          isMinimalDose: Boolean(parsed.isMinimalDose),
+          isCheatDay: Boolean(parsed.isCheatDay)
+        };
+      } catch (error) {
+        console.error('Failed to parse Perplexity response:', error, rawContent);
+        return null;
+      }
     } catch (error) {
-      console.error('Failed to parse OpenRouter response:', error, rawContent);
+      console.error('Perplexity API error:', error);
       return null;
     }
   }

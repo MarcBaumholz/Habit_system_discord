@@ -22,8 +22,10 @@ export class NotionClient {
     const response = await this.client.pages.create({
       parent: { database_id: this.databases.users },
       properties: {
-        'Discord ID ': { title: [{ text: { content: user.discordId } }] },
-        'Name': { rich_text: [{ text: { content: user.name } }] },
+        // Use the user's name as the title (Discord ID field) so it displays in relations
+        'Discord ID ': { title: [{ text: { content: user.name } }] },
+        // Store the actual Discord ID in the Name field for lookup purposes
+        'Name': { rich_text: [{ text: { content: user.discordId } }] },
         'Timezone': { rich_text: [{ text: { content: user.timezone } }] },
         'Best Time': { rich_text: [{ text: { content: user.bestTime } }] },
         'Trust Count': { number: user.trustCount }
@@ -98,22 +100,39 @@ export class NotionClient {
     });
   }
 
-  async createProof(proof: Omit<Proof, 'id'>): Promise<Proof> {
+  async createProof(proof: Omit<Proof, 'id'>, attachmentUrl?: string): Promise<Proof> {
     try {
       console.log('🔍 Creating proof in Notion with data:', proof);
       
+      // Build the properties object
+      const properties: any = {
+        'Title': { title: [{ text: { content: `Proof - ${proof.date}` } }] },
+        'User': { relation: [{ id: proof.userId }] },
+        'Habit': { relation: [{ id: proof.habitId }] },
+        'Date': { date: { start: proof.date } },
+        'Unit': { rich_text: [{ text: { content: proof.unit } }] },
+        'Note': { rich_text: proof.note ? [{ text: { content: proof.note } }] : [] },
+        'Is Minimal Dose ': { checkbox: proof.isMinimalDose },
+        'Is Cheat Day': { checkbox: proof.isCheatDay }
+      };
+
+      // Add file attachment if provided
+      if (attachmentUrl) {
+        properties['Proof'] = {
+          files: [
+            {
+              name: 'Proof Attachment',
+              external: {
+                url: attachmentUrl
+              }
+            }
+          ]
+        };
+      }
+      
       const response = await this.client.pages.create({
         parent: { database_id: this.databases.proofs },
-        properties: {
-          'User': { relation: [{ id: proof.userId }] },
-          'Habit': { relation: [{ id: proof.habitId }] },
-          'Date': { date: { start: proof.date } },
-          'Unit': { rich_text: [{ text: { content: proof.unit } }] },
-          'Note': { rich_text: proof.note ? [{ text: { content: proof.note } }] : [] },
-          'Attachment URL': { url: proof.attachmentUrl || null },
-          'Is Minimal Dose ': { checkbox: proof.isMinimalDose },
-          'Is Cheat Day': { checkbox: proof.isCheatDay }
-        }
+        properties
       });
 
       console.log('✅ Proof created successfully in Notion:', response.id);
@@ -132,14 +151,25 @@ export class NotionClient {
     try {
       console.log('🔍 Creating learning in Notion with data:', learning);
       
+      const properties: any = {
+        'User': { relation: [{ id: learning.userId }] },
+        'Text': { rich_text: [{ text: { content: learning.text } }] },
+        'Created At': { date: { start: learning.createdAt } }
+      };
+
+      // Add Discord ID field (it's the title property in this database)
+      if (learning.discordId) {
+        properties['Discord ID '] = { title: [{ text: { content: learning.discordId } }] };
+      }
+
+      // Add Habit relation if habitId is provided
+      if (learning.habitId) {
+        properties['Habit'] = { relation: [{ id: learning.habitId }] };
+      }
+      
       const response = await this.client.pages.create({
         parent: { database_id: this.databases.learnings },
-        properties: {
-          'User': { relation: [{ id: learning.userId }] },
-          'Habit': { relation: [{ id: learning.habitId }] },
-          'Text': { rich_text: [{ text: { content: learning.text } }] },
-          'Created At': { date: { start: learning.createdAt } }
-        }
+        properties
       });
 
       console.log('✅ Learning created successfully in Notion:', response.id);
@@ -188,12 +218,73 @@ export class NotionClient {
     }
   }
 
+  async createWeek(week: Omit<Week, 'id'>): Promise<Week> {
+    try {
+      console.log('🔍 Creating week in Notion with data:', week);
+      
+      const properties: any = {
+        'User': { relation: [{ id: week.userId }] },
+        'Week Num': { number: week.weekNum },
+        'Start Date': { date: { start: week.startDate } },
+        'Summary': { rich_text: week.summary ? [{ text: { content: week.summary } }] : [] },
+        'Score': { number: week.score || 0 }
+      };
+
+      // Add Discord ID field (it's the title property in this database)
+      if (week.discordId) {
+        properties['Discord ID '] = { title: [{ text: { content: week.discordId } }] };
+      }
+
+      const response = await this.client.pages.create({
+        parent: { database_id: this.databases.weeks },
+        properties
+      });
+
+      console.log('✅ Week created successfully in Notion:', response.id);
+      return {
+        id: response.id,
+        ...week
+      };
+    } catch (error) {
+      console.error('❌ Error creating week in Notion:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to create week: ${message}`);
+    }
+  }
+
+  async createGroup(group: Omit<Group, 'id'>): Promise<Group> {
+    try {
+      console.log('🔍 Creating group in Notion with data:', group);
+      
+      const properties: any = {
+        'Name': { title: [{ text: { content: group.name } }] },
+        'Channel ID': { rich_text: [{ text: { content: group.channelId } }] },
+        'Donation Pool': { number: group.donationPool || 0 }
+      };
+
+      const response = await this.client.pages.create({
+        parent: { database_id: this.databases.groups },
+        properties
+      });
+
+      console.log('✅ Group created successfully in Notion:', response.id);
+      return {
+        id: response.id,
+        ...group
+      };
+    } catch (error) {
+      console.error('❌ Error creating group in Notion:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to create group: ${message}`);
+    }
+  }
+
   async getUserByDiscordId(discordId: string): Promise<User | null> {
     const response = await this.client.databases.query({
       database_id: this.databases.users,
       filter: {
-        property: 'Discord ID ',
-        title: { equals: discordId }
+        property: 'Name',
+        rich_text: { equals: discordId }
       }
     });
 
@@ -202,8 +293,8 @@ export class NotionClient {
     const page = response.results[0] as any;
     return {
       id: page.id,
-      discordId: page.properties['Discord ID '].title[0].text.content,
-      name: page.properties['Name'].rich_text[0].text.content,
+      discordId: page.properties['Name'].rich_text[0].text.content,
+      name: page.properties['Discord ID '].title[0].text.content,
       timezone: page.properties['Timezone'].rich_text[0].text.content,
       bestTime: page.properties['Best Time'].rich_text[0].text.content,
       trustCount: page.properties['Trust Count'].number
