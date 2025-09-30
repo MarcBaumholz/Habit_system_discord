@@ -37,10 +37,10 @@ describe('DailyMessageScheduler', () => {
     expect(msg).toContain('Day 1/66');
   });
 
-  it('sends a daily message to the accountability channel only at 7 AM', async () => {
-    // Mock Date.prototype.getHours to return 7 (7 AM)
+  it('sends a daily message to the accountability channel only at 6 AM', async () => {
+    // Mock Date.prototype.getHours to return 6 (6 AM)
     const originalGetHours = Date.prototype.getHours;
-    Date.prototype.getHours = jest.fn(() => 7);
+    Date.prototype.getHours = jest.fn(() => 6);
 
     await scheduler.sendDailyMessage();
     expect(accountabilityChannel.send).toHaveBeenCalled();
@@ -49,8 +49,8 @@ describe('DailyMessageScheduler', () => {
     Date.prototype.getHours = originalGetHours;
   });
 
-  it('does not send daily message outside of 7 AM', async () => {
-    // Mock Date.prototype.getHours to return 10 (10 AM, not 7 AM)
+  it('does not send daily message outside of 6 AM', async () => {
+    // Mock Date.prototype.getHours to return 10 (10 AM, not 6 AM)
     const originalGetHours = Date.prototype.getHours;
     Date.prototype.getHours = jest.fn(() => 10);
 

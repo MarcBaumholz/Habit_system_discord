@@ -301,7 +301,7 @@ export class HabitBot {
       
       // Start the daily message scheduler for 66-day challenge
       this.dailyMessageScheduler.startScheduler();
-      console.log('🗓️ Daily message scheduler started - 66-day challenge begins tomorrow!');
+      console.log('🗓️ Daily message scheduler started - 66-day challenge begins tomorrow at 6 AM!');
     });
 
     // Unified message listener for all message processing

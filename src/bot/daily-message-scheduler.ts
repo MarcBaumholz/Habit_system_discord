@@ -204,12 +204,12 @@ export class DailyMessageScheduler {
       const now = new Date();
       const currentHour = now.getHours();
       
-      // Only send if it's actually 7 AM (or close to it)
-      if (currentHour === 7) {
+      // Only send if it's actually 6 AM (or close to it)
+      if (currentHour === 6) {
         await channel.send(message);
         console.log(`✅ Daily message sent for day ${currentDay}/66`);
       } else {
-        console.log(`⏰ Daily message scheduled for day ${currentDay}/66 (will send at 7 AM)`);
+        console.log(`⏰ Daily message scheduled for day ${currentDay}/66 (will send at 6 AM)`);
       }
 
       await this.logger.success(
@@ -241,15 +241,15 @@ export class DailyMessageScheduler {
    * Start the daily message scheduler (runs at 7 AM every day)
    */
   startScheduler(): void {
-    // Schedule for 7 AM every day (0 7 * * *)
-    const task = cron.schedule('0 7 * * *', async () => {
+    // Schedule for 6 AM every day (0 6 * * *)
+    const task = cron.schedule('0 6 * * *', async () => {
       console.log('🕰️ Sending daily motivational message...');
       await this.logger.info(
         'SCHEDULER',
         'Scheduled Task Triggered',
         'Daily motivational message task triggered by cron',
         {
-          cronExpression: '0 7 * * *',
+          cronExpression: '0 6 * * *',
           timezone: process.env.TIMEZONE || 'Europe/Berlin'
         }
       );
@@ -259,14 +259,14 @@ export class DailyMessageScheduler {
       timezone: process.env.TIMEZONE || 'Europe/Berlin'
     });
 
-    console.log('📅 Daily message scheduler started (7 AM daily)');
+    console.log('📅 Daily message scheduler started (6 AM daily)');
     
     this.logger.success(
       'SCHEDULER',
       'Scheduler Started',
       'Daily message scheduler started successfully',
       {
-        cronExpression: '0 7 * * *',
+        cronExpression: '0 6 * * *',
         timezone: process.env.TIMEZONE || 'Europe/Berlin',
         accountabilityChannelId: this.accountabilityChannelId
       }
