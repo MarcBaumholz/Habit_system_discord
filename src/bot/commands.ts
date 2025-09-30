@@ -389,8 +389,48 @@ ${isMinimalDose ? '⭐ Every bit counts - minimal dose accepted!' : isCheatDay ?
 Use \`/proof\` daily to maintain your momentum!`,
         ephemeral: false
       });
+
+      // Log successful summary command
+      await this.logger.success(
+        'COMMAND',
+        'Summary Command Completed',
+        `User ${interaction.user.username} retrieved weekly summary`,
+        {
+          userId: user.id,
+          week: week || 'current',
+          weekProofs: summary.weekProofs,
+          weekDays: summary.weekDays,
+          completionRate: summary.completionRate,
+          currentStreak: summary.currentStreak,
+          totalHabits: summary.totalHabits
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
     } catch (error) {
       console.error('Error getting summary:', error);
+      
+      // Log the error with detailed information
+      await this.logger.error(
+        'COMMAND',
+        'Summary Command Failed',
+        `Failed to get summary for user ${interaction.user.username}`,
+        {
+          error: error.message,
+          stack: error.stack,
+          userId: interaction.user.id,
+          week: interaction.options.getInteger('week')
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
+      
       await interaction.reply({
         content: 'Sorry, there was an error getting your summary. Please try again.',
         ephemeral: true

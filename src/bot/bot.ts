@@ -287,18 +287,17 @@ export class HabitBot {
       // Log bot startup
       await this.logger.success(
         'SYSTEM',
-        'Bot Started',
+        'Server Restart',
         `Discord Habit System bot is now online and ready`,
         {
           botTag: this.client.user?.tag,
           guilds: this.client.guilds.cache.size,
           channels: this.client.channels.cache.size,
-          users: this.client.users.cache.size
+          users: this.client.users.cache.size,
+          restartTime: new Date().toISOString(),
+          version: '1.0.0'
         }
       );
-      
-      // Send startup message to the main channel
-      await this.sendStartupMessage();
       
       // Start the daily message scheduler for 66-day challenge
       this.dailyMessageScheduler.startScheduler();
@@ -704,41 +703,4 @@ export class HabitBot {
     await this.channelHandlers.postDonationPoolUpdate(missedDays, totalPool);
   }
 
-  private async sendStartupMessage() {
-    try {
-      const channel = this.client.channels.cache.get(process.env.DISCORD_ACCOUNTABILITY_GROUP || '') as any;
-      if (!channel) {
-        console.log('Main channel not found, skipping startup message');
-        return;
-      }
-
-      const startupMessage = `🤖 **Discord Habit System is Online!**
-
-🎯 **Available Commands:**
-• \`/join\` - Register in the habit tracking system
-• \`/habit add\` - Create your keystone habits
-• \`/proof\` - Submit daily proof with measurement
-• \`/summary\` - Get your weekly progress summary
-• \`/learning\` - Share insights with the community
-
-📋 **Channel Guide:**
-• **#learnings-feed** - Share insights and learnings
-• **#weekly-reviews** - Weekly progress and group summaries
-• **#accountability-group-1** - Social accountability and group support
-
-🚀 **Get Started:**
-1. Use \`/join\` to register in the system
-2. Use \`/habit add\` to create your first keystone habit
-3. Use \`/proof\` daily to track your progress
-4. Share learnings with \`/learning\` to help the community
-
-💪 **Ready for your 66-day habit challenge!**`;
-
-      await channel.send(startupMessage);
-      console.log('Startup message sent to main channel');
-      
-    } catch (error) {
-      console.error('Error sending startup message:', error);
-    }
-  }
 }

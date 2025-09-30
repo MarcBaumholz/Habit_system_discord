@@ -262,9 +262,6 @@ export class DailyMessageScheduler {
         accountabilityChannelId: this.accountabilityChannelId
       }
     );
-    
-    // Also send a test message immediately for testing
-    this.sendDailyMessage();
   }
 
   /**
