@@ -376,9 +376,40 @@ Use \`/proof\` daily to maintain your momentum!`,
     try {
       console.log('🔍 Starting learning submission for user:', interaction.user.id);
       
+      await this.logger.info(
+        'COMMAND',
+        'Learning Command Started',
+        `User ${interaction.user.username} submitted a learning`,
+        {
+          userId: interaction.user.id,
+          username: interaction.user.username,
+          learningLength: learningText.length,
+          guildId: interaction.guild?.id
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
+      
       const user = await this.notion.getUserByDiscordId(interaction.user.id);
       if (!user) {
         console.log('❌ User not found, redirecting to join');
+        await this.logger.warning(
+          'COMMAND',
+          'Learning Command - User Not Found',
+          `User ${interaction.user.username} tried to submit learning but not registered`,
+          {
+            userId: interaction.user.id,
+            username: interaction.user.username
+          },
+          {
+            channelId: interaction.channelId,
+            userId: interaction.user.id,
+            guildId: interaction.guild?.id
+          }
+        );
         await interaction.reply({
           content: 'Please use `/join` first to register in the system.',
           ephemeral: true
@@ -403,6 +434,23 @@ Use \`/proof\` daily to maintain your momentum!`,
       console.log('📢 Posting to learnings channel...');
       await this.channelHandlers.postToLearningsChannel(learningText, interaction.user.id);
       console.log('✅ Posted to Discord channel');
+
+      await this.logger.success(
+        'COMMAND',
+        'Learning Command Completed',
+        `User ${interaction.user.username} successfully shared learning`,
+        {
+          learningId: learning.id,
+          userId: user.id,
+          learningLength: learningText.length,
+          postedToChannel: true
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
 
       await interaction.reply({
         content: `💡 **Learning Shared with Community!**

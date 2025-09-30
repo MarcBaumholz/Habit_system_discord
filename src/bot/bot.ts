@@ -259,6 +259,27 @@ export class HabitBot {
     return commands;
   }
 
+  private async safeReply(interaction: any, content: any, ephemeral = false) {
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({ content, ephemeral });
+      } else {
+        await interaction.reply({ content, ephemeral });
+      }
+    } catch (error) {
+      console.error('Failed to reply to interaction:', error);
+      // Try to send a message to the channel instead
+      try {
+        const channel = interaction.channel;
+        if (channel) {
+          await channel.send(`⚠️ ${interaction.user}, there was an issue with your command: ${typeof content === 'string' ? content : JSON.stringify(content)}`);
+        }
+      } catch (fallbackError) {
+        console.error('Failed to send fallback message:', fallbackError);
+      }
+    }
+  }
+
   private setupEventHandlers() {
     this.client.once('ready', async () => {
       console.log(`Bot is ready! Logged in as ${this.client.user?.tag}`);

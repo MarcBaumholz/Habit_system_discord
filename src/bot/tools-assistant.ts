@@ -37,6 +37,8 @@ export class ToolsAssistant {
       if (!channel) return;
       await channel.send(reply);
 
+      console.log(`🤖 Tool suggestion sent to ${message.author.username}: ${matches[0]?.tool?.name || 'No matches'}`);
+
       // Auto-log top suggestion as a learning (if Notion is available and user is registered)
       if (this.notion && matches.length > 0) {
         try {
@@ -52,6 +54,7 @@ export class ToolsAssistant {
               text: learningText,
               createdAt
             });
+            console.log(`📚 Auto-logged tool suggestion for user ${user.name}: ${top.name}`);
           }
         } catch (err) {
           console.error('Failed to auto-log toolbox learning:', err);
