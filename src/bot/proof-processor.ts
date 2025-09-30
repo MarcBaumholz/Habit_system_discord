@@ -93,7 +93,7 @@ export class ProofProcessor {
     const unit = classification.unit?.trim() || '1x';
     const note = classification.note?.trim() || message.content.trim();
 
-    await this.notion.createProof({
+    const proof = await this.notion.createProof({
       userId: user.id,
       habitId: habit.id,
       date: new Date(message.createdAt).toISOString().split('T')[0],
@@ -103,6 +103,8 @@ export class ProofProcessor {
       isMinimalDose: classification.isMinimalDose,
       isCheatDay: classification.isCheatDay
     }, attachmentUrl);
+
+    console.log(`✅ Proof created via ProofProcessor: ${proof.id} for user ${user.name}`);
 
     await message.react('✅');
   }

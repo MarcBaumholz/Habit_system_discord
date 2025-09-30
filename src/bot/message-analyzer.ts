@@ -325,6 +325,27 @@ export class MessageAnalyzer {
   private async createProofFromMessage(message: Message, user: User, analysis: any) {
     try {
       const attachmentUrl = message.attachments.size > 0 ? message.attachments.first()?.url : undefined;
+      
+      // Log proof creation start
+      await this.logger.info(
+        'MESSAGE_ANALYSIS',
+        'Creating Proof from Message',
+        `Creating proof for user ${user.name} from message`,
+        {
+          userId: user.id,
+          habitId: analysis.habitId,
+          unit: analysis.unit,
+          isMinimalDose: analysis.isMinimalDose,
+          isCheatDay: analysis.isCheatDay,
+          messageLength: message.content.length
+        },
+        {
+          channelId: message.channelId,
+          userId: message.author.id,
+          guildId: message.guild?.id
+        }
+      );
+
       const proof = await this.notion.createProof({
         userId: user.id,
         habitId: analysis.habitId,
@@ -338,11 +359,30 @@ export class MessageAnalyzer {
 
       console.log('✅ Proof created from message:', proof.id);
 
+      // Log successful proof creation
+      await this.logger.success(
+        'MESSAGE_ANALYSIS',
+        'Proof Created Successfully',
+        `Proof created for user ${user.name} from message`,
+        {
+          proofId: proof.id,
+          userId: user.id,
+          habitId: analysis.habitId,
+          unit: analysis.unit,
+          savedToNotion: true
+        },
+        {
+          channelId: message.channelId,
+          userId: message.author.id,
+          guildId: message.guild?.id
+        }
+      );
+
       // React to the message with appropriate emoji
       const emoji = analysis.isMinimalDose ? '⭐' : analysis.isCheatDay ? '🎯' : '✅';
       await message.react(emoji);
 
-      // Get weekly frequency count
+      // Get weekly frequency count AFTER proof creation
       const frequencyCount = await this.notion.getWeeklyFrequencyCount(user.id, analysis.habitId);
       console.log(`📊 Weekly frequency: ${frequencyCount.current}/${frequencyCount.target}`);
 
@@ -354,6 +394,21 @@ export class MessageAnalyzer {
 
     } catch (error) {
       console.error('❌ Error creating proof from message:', error);
+      await this.logger.error(
+        'MESSAGE_ANALYSIS',
+        'Proof Creation Failed',
+        `Failed to create proof for user ${user.name}`,
+        {
+          error: error.message,
+          userId: user.id,
+          habitId: analysis.habitId
+        },
+        {
+          channelId: message.channelId,
+          userId: message.author.id,
+          guildId: message.guild?.id
+        }
+      );
     }
   }
 }

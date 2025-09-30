@@ -219,7 +219,9 @@ We\'ll walk through a few questions together to set up your habit with intention
 
     try {
       const habitPayload = this.buildHabitPayload(state);
-      await this.notion.createHabit(habitPayload);
+      const habit = await this.notion.createHabit(habitPayload);
+
+      console.log('✅ Keystone habit created via flow:', habit.id);
 
       await channel.send('🎉 Thanks for integrating your keystone habit! It\'s now saved and ready to track. Use `/proof` when you take action.');
     } catch (error) {

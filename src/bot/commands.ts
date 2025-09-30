@@ -85,6 +85,24 @@ export class CommandHandler {
         console.log('✅ User created successfully:', user.id);
         channelCreated = true;
 
+        // Log successful user creation
+        await this.logger.success(
+          'COMMAND',
+          'New User Joined',
+          `New user ${interaction.user.username} joined the system`,
+          {
+            userId: user.id,
+            discordId: user.discordId,
+            personalChannelId: personalChannelId,
+            savedToNotion: true
+          },
+          {
+            channelId: interaction.channelId,
+            userId: interaction.user.id,
+            guildId: interaction.guild?.id
+          }
+        );
+
         // Send info log message to main channel (only for new users)
         await this.channelHandlers.postInfoLog(
           `🎉 **New User Joined!**\n` +
@@ -269,6 +287,26 @@ export class CommandHandler {
       console.log('📝 Creating proof with data:', proofData);
       const proof = await this.notion.createProof(proofData, proofData.attachmentUrl);
       console.log('✅ Proof created successfully:', proof.id);
+
+      // Log successful proof creation
+      await this.logger.success(
+        'COMMAND',
+        'Proof Command Completed',
+        `User ${interaction.user.username} submitted proof via command`,
+        {
+          proofId: proof.id,
+          userId: user.id,
+          unit: unit,
+          isMinimalDose: isMinimalDose,
+          isCheatDay: isCheatDay,
+          savedToNotion: true
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
 
       const emoji = isMinimalDose ? '⭐' : isCheatDay ? '🎯' : '✅';
       const typeText = isMinimalDose ? 'Minimal Dose' : isCheatDay ? 'Cheat Day' : 'Full Proof';
@@ -586,6 +624,26 @@ Use \`/join\` to register in the habit tracking system before creating habits.`,
       });
 
       console.log('✅ Keystone habit created successfully:', habit.id);
+
+      // Log successful keystone habit creation
+      await this.logger.success(
+        'COMMAND',
+        'Keystone Habit Created',
+        `User ${interaction.user.username} created keystone habit`,
+        {
+          habitId: habit.id,
+          userId: user.id,
+          habitName: name,
+          frequency: frequency,
+          difficulty: difficulty,
+          savedToNotion: true
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
 
       // Create a beautiful response
       await interaction.reply({
