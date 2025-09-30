@@ -1,6 +1,7 @@
 import { PersonalAssistant } from '../src/bot/personal-assistant';
 import { NotionClient } from '../src/notion/client';
 import { DiscordLogger } from '../src/bot/discord-logger';
+import { PerplexityClient } from '../src/ai/perplexity-client';
 
 // Mock Discord.js
 jest.mock('discord.js', () => ({
@@ -12,11 +13,15 @@ jest.mock('discord.js', () => ({
 // Mock Notion client
 jest.mock('../src/notion/client');
 
+// Mock Perplexity client
+jest.mock('../src/ai/perplexity-client');
+
 describe('PersonalAssistant', () => {
   let mockClient: any;
   let mockNotion: jest.Mocked<NotionClient>;
   let mockLogger: any;
   let assistant: PersonalAssistant;
+  const originalEnv = process.env.PERPLEXITY_API_KEY;
 
   beforeEach(() => {
     mockClient = {
@@ -38,6 +43,10 @@ describe('PersonalAssistant', () => {
     };
 
     assistant = new PersonalAssistant(mockClient, mockNotion, mockLogger);
+  });
+
+  afterAll(() => {
+    process.env.PERPLEXITY_API_KEY = originalEnv;
   });
 
   describe('handlePersonalChannelMessage', () => {
@@ -209,6 +218,148 @@ describe('PersonalAssistant', () => {
       await assistant.sendPersonalRecommendation('user123', 'nonexistent', 'Test recommendation');
 
       expect(mockLogger.info).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('AI-powered responses', () => {
+    beforeEach(() => {
+      process.env.PERPLEXITY_API_KEY = 'test-api-key';
+      mockNotion.getUserByDiscordId.mockResolvedValue({
+        id: 'user123',
+        discordId: 'discord123',
+        name: 'testuser',
+        timezone: 'UTC',
+        bestTime: '09:00',
+        trustCount: 0
+      });
+      mockNotion.getHabitsByUserId.mockResolvedValue([]);
+      mockNotion.getProofsByUserId.mockResolvedValue([]);
+      mockNotion.getLearningsByUserId.mockResolvedValue([]);
+      mockNotion.getHurdlesByUserId.mockResolvedValue([]);
+      mockNotion.getUserSummary.mockResolvedValue({
+        totalProofs: 10,
+        minimalDoses: 2,
+        cheatDays: 1,
+        completionRate: 80,
+        currentStreak: 5,
+        bestStreak: 10,
+        totalHabits: 2,
+        weekProofs: 5,
+        weekDays: 7
+      });
+    });
+
+    it('should use AI for complex queries when API key is available', async () => {
+      const mockChannel = {
+        send: jest.fn().mockResolvedValue(undefined),
+        sendTyping: jest.fn().mockResolvedValue(undefined),
+        name: 'personal-testuser'
+      };
+
+      const mockMessage = {
+        author: { bot: false, username: 'testuser', id: 'discord123' },
+        channel: mockChannel,
+        channelId: 'test-channel',
+        guild: { id: 'test-guild' },
+        content: 'How can I improve my meditation habit consistency?'
+      } as any;
+
+      // Mock PerplexityClient
+      const mockPerplexityClient = {
+        generateContextualResponse: jest.fn().mockResolvedValue('Based on your data, I recommend...')
+      };
+      
+      (PerplexityClient as any).isAvailable = jest.fn().mockReturnValue(true);
+      (PerplexityClient as any).mockImplementation(() => mockPerplexityClient);
+
+      const result = await assistant.handlePersonalChannelMessage(mockMessage);
+
+      expect(result).toBe(true);
+      expect(mockChannel.sendTyping).toHaveBeenCalled();
+      expect(mockChannel.send).toHaveBeenCalledWith(expect.stringContaining('🤖 **AI Assistant:**'));
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'AI_ASSISTANT',
+        'AI Query Processed',
+        expect.stringContaining('testuser'),
+        expect.objectContaining({
+          query: 'How can I improve my meditation habit consistency?',
+          responseLength: expect.any(Number),
+          hasContext: false
+        }),
+        expect.any(Object)
+      );
+    });
+
+    it('should fallback to rule-based responses when AI is not available', async () => {
+      delete process.env.PERPLEXITY_API_KEY;
+      
+      const mockChannel = {
+        send: jest.fn().mockResolvedValue(undefined),
+        name: 'personal-testuser'
+      };
+
+      const mockMessage = {
+        author: { bot: false, username: 'testuser' },
+        channel: mockChannel,
+        channelId: 'test-channel',
+        guild: { id: 'test-guild' },
+        content: 'hello there'
+      } as any;
+
+      const result = await assistant.handlePersonalChannelMessage(mockMessage);
+
+      expect(result).toBe(true);
+      expect(mockChannel.send).toHaveBeenCalled();
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'PERSONAL_ASSISTANT',
+        'Greeting Response',
+        expect.stringContaining('testuser'),
+        expect.objectContaining({
+          responseType: 'greeting'
+        }),
+        expect.any(Object)
+      );
+    });
+
+    it('should handle AI errors gracefully', async () => {
+      process.env.PERPLEXITY_API_KEY = 'test-api-key';
+      
+      const mockChannel = {
+        send: jest.fn().mockResolvedValue(undefined),
+        sendTyping: jest.fn().mockResolvedValue(undefined),
+        name: 'personal-testuser'
+      };
+
+      const mockMessage = {
+        author: { bot: false, username: 'testuser', id: 'discord123' },
+        channel: mockChannel,
+        channelId: 'test-channel',
+        guild: { id: 'test-guild' },
+        content: 'How can I improve my habits?'
+      } as any;
+
+      // Mock PerplexityClient to throw error
+      const mockPerplexityClient = {
+        generateContextualResponse: jest.fn().mockRejectedValue(new Error('API Error'))
+      };
+      
+      (PerplexityClient as any).isAvailable = jest.fn().mockReturnValue(true);
+      (PerplexityClient as any).mockImplementation(() => mockPerplexityClient);
+
+      const result = await assistant.handlePersonalChannelMessage(mockMessage);
+
+      expect(result).toBe(true);
+      expect(mockChannel.send).toHaveBeenCalledWith('❌ Entschuldigung, ich hatte ein Problem beim Verarbeiten deiner Anfrage. Bitte versuche es erneut.');
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'AI_ASSISTANT',
+        'AI Query Error',
+        expect.stringContaining('testuser'),
+        expect.objectContaining({
+          error: 'API Error',
+          query: 'How can I improve my habits?'
+        }),
+        expect.any(Object)
+      );
     });
   });
 });

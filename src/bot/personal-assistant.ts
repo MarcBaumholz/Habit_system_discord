@@ -1,16 +1,27 @@
 import { Client, Message, TextChannel } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { DiscordLogger } from './discord-logger';
+import { PerplexityClient } from '../ai/perplexity-client';
 
 export class PersonalAssistant {
   private client: Client;
   private notion: NotionClient;
   private logger: DiscordLogger;
+  private aiClient: PerplexityClient | null;
 
   constructor(client: Client, notion: NotionClient, logger: DiscordLogger) {
     this.client = client;
     this.notion = notion;
     this.logger = logger;
+    
+    // Initialize AI client if API key is available
+    if (PerplexityClient.isAvailable()) {
+      this.aiClient = new PerplexityClient(process.env.PERPLEXITY_API_KEY!);
+      console.log('🤖 AI-powered Personal Assistant enabled');
+    } else {
+      this.aiClient = null;
+      console.log('⚠️ PERPLEXITY_API_KEY not found - AI features disabled');
+    }
   }
 
   async handlePersonalChannelMessage(message: Message): Promise<boolean> {
@@ -27,7 +38,15 @@ export class PersonalAssistant {
 
     const content = message.content.toLowerCase().trim();
 
-    // Handle different types of personal interactions
+    // Try AI-powered response first if available
+    if (this.aiClient && this.shouldUseAI(content)) {
+      const aiHandled = await this.handleAIQuery(message);
+      if (aiHandled) {
+        return true;
+      }
+    }
+
+    // Fallback to rule-based responses
     if (this.isGreeting(content)) {
       await this.handleGreeting(message);
       return true;
@@ -74,6 +93,182 @@ export class PersonalAssistant {
   private isProgressUpdate(content: string): boolean {
     const progressWords = ['fortschritt', 'progress', 'schwierig', 'difficult', 'einfach', 'easy', 'geschafft', 'done', 'erfolg', 'success'];
     return progressWords.some(word => content.includes(word));
+  }
+
+  private shouldUseAI(content: string): boolean {
+    // Use AI for complex questions, data analysis, or specific habit-related queries
+    const aiTriggers = [
+      'how', 'what', 'why', 'when', 'where', 'wie', 'was', 'warum', 'wann', 'wo',
+      'analysis', 'analyze', 'analyze', 'statistics', 'stats', 'data', 'trend',
+      'recommend', 'suggest', 'advice', 'help', 'tip', 'empfehlung', 'rat',
+      'improve', 'better', 'optimize', 'optimize', 'verbessern', 'optimieren',
+      'pattern', 'habit', 'routine', 'consistency', 'consist', 'gewohnheit'
+    ];
+    
+    return aiTriggers.some(trigger => content.includes(trigger)) && content.length > 10;
+  }
+
+  private async handleAIQuery(message: Message): Promise<boolean> {
+    if (!this.aiClient) return false;
+
+    try {
+      const channel = message.channel as TextChannel;
+      
+      // Show typing indicator
+      await channel.sendTyping();
+
+      // Get user data for context
+      const user = await this.notion.getUserByDiscordId(message.author.id);
+      if (!user) {
+        await channel.send('❌ Ich kann deine Daten nicht finden. Bitte verwende zuerst `/join` um dich zu registrieren.');
+        return true;
+      }
+
+      // Gather user context data
+      const userContext = await this.gatherUserContext(user.id);
+
+      // Generate AI response
+      const aiResponse = await this.aiClient.generateContextualResponse(
+        message.content,
+        userContext
+      );
+
+      // Send response
+      await channel.send(`🤖 **AI Assistant:**\n\n${aiResponse}`);
+
+      // Log the AI interaction
+      await this.logger.info(
+        'AI_ASSISTANT',
+        'AI Query Processed',
+        `AI processed query from ${message.author.username}`,
+        {
+          query: message.content,
+          responseLength: aiResponse.length,
+          hasContext: userContext.habits.length > 0
+        },
+        {
+          channelId: message.channelId,
+          userId: message.author.id,
+          guildId: message.guild?.id
+        }
+      );
+
+      return true;
+
+    } catch (error) {
+      console.error('Error in AI query handling:', error);
+      
+      const channel = message.channel as TextChannel;
+      await channel.send('❌ Entschuldigung, ich hatte ein Problem beim Verarbeiten deiner Anfrage. Bitte versuche es erneut.');
+
+      await this.logger.error(
+        'AI_ASSISTANT',
+        'AI Query Error',
+        `Error processing AI query from ${message.author.username}`,
+        {
+          error: (error as Error).message,
+          query: message.content
+        },
+        {
+          channelId: message.channelId,
+          userId: message.author.id,
+          guildId: message.guild?.id
+        }
+      );
+
+      return true; // Still handled, even with error
+    }
+  }
+
+  private async gatherUserContext(userId: string): Promise<{
+    habits: any[];
+    recentProofs: any[];
+    learnings: any[];
+    hurdles: any[];
+    summary: any;
+  }> {
+    try {
+      // Get user's habits
+      const habits = await this.notion.getHabitsByUserId(userId);
+
+      // Get recent proofs (last 7 days)
+      const recentProofs = await this.getRecentProofs(userId, 7);
+
+      // Get recent learnings (last 10)
+      const learnings = await this.getRecentLearnings(userId, 10);
+
+      // Get recent hurdles (last 5)
+      const hurdles = await this.getRecentHurdles(userId, 5);
+
+      // Get user summary
+      const summary = await this.notion.getUserSummary(userId);
+
+      return {
+        habits: habits || [],
+        recentProofs: recentProofs || [],
+        learnings: learnings || [],
+        hurdles: hurdles || [],
+        summary: summary || null
+      };
+
+    } catch (error) {
+      console.error('Error gathering user context:', error);
+      return {
+        habits: [],
+        recentProofs: [],
+        learnings: [],
+        hurdles: [],
+        summary: null
+      };
+    }
+  }
+
+  private async getRecentProofs(userId: string, days: number): Promise<any[]> {
+    try {
+      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      
+      const proofs = await this.notion.getProofsByUserId(userId, startDate, endDate);
+      
+      // Enrich proofs with habit names
+      const enrichedProofs = await Promise.all(
+        proofs.map(async (proof) => {
+          try {
+            const habits = await this.notion.getHabitsByUserId(userId);
+            const habit = habits.find(h => h.id === proof.habitId);
+            return {
+              ...proof,
+              habitName: habit?.name || 'Unknown Habit'
+            };
+          } catch (error) {
+            return { ...proof, habitName: 'Unknown Habit' };
+          }
+        })
+      );
+      
+      return enrichedProofs;
+    } catch (error) {
+      console.error('Error getting recent proofs:', error);
+      return [];
+    }
+  }
+
+  private async getRecentLearnings(userId: string, limit: number): Promise<any[]> {
+    try {
+      return await this.notion.getLearningsByUserId(userId, limit);
+    } catch (error) {
+      console.error('Error getting recent learnings:', error);
+      return [];
+    }
+  }
+
+  private async getRecentHurdles(userId: string, limit: number): Promise<any[]> {
+    try {
+      return await this.notion.getHurdlesByUserId(userId, limit);
+    } catch (error) {
+      console.error('Error getting recent hurdles:', error);
+      return [];
+    }
   }
 
   private async handleGreeting(message: Message): Promise<void> {

@@ -386,7 +386,13 @@ export class NotionClient {
 
       const response = await this.client.databases.query({
         database_id: this.databases.proofs,
-        filter
+        filter,
+        sorts: [
+          {
+            property: 'Date',
+            direction: 'descending'
+          }
+        ]
       });
 
       return response.results.map((page: any) => {
@@ -405,6 +411,79 @@ export class NotionClient {
       });
     } catch (error) {
       console.error('Error fetching proofs by user ID:', error);
+      return [];
+    }
+  }
+
+  async getLearningsByUserId(userId: string, limit: number = 10): Promise<Learning[]> {
+    try {
+      const response = await this.client.databases.query({
+        database_id: this.databases.learnings,
+        filter: {
+          property: 'User',
+          relation: {
+            contains: userId
+          }
+        },
+        sorts: [
+          {
+            property: 'Created At',
+            direction: 'descending'
+          }
+        ],
+        page_size: limit
+      });
+
+      return response.results.map((page: any) => {
+        const properties = page.properties;
+        return {
+          id: page.id,
+          userId: properties['User']?.relation?.[0]?.id || userId,
+          habitId: properties['Habit']?.relation?.[0]?.id || '',
+          discordId: properties['Discord ID']?.rich_text?.[0]?.text?.content || '',
+          text: properties['Text']?.rich_text?.[0]?.text?.content || '',
+          createdAt: properties['Created At']?.created_time || new Date().toISOString()
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching learnings by user ID:', error);
+      return [];
+    }
+  }
+
+  async getHurdlesByUserId(userId: string, limit: number = 5): Promise<Hurdle[]> {
+    try {
+      const response = await this.client.databases.query({
+        database_id: this.databases.hurdles,
+        filter: {
+          property: 'User',
+          relation: {
+            contains: userId
+          }
+        },
+        sorts: [
+          {
+            property: 'Created At',
+            direction: 'descending'
+          }
+        ],
+        page_size: limit
+      });
+
+      return response.results.map((page: any) => {
+        const properties = page.properties;
+        return {
+          id: page.id,
+          userId: properties['User']?.relation?.[0]?.id || userId,
+          habitId: properties['Habit']?.relation?.[0]?.id || '',
+          name: properties['Name']?.title?.[0]?.text?.content || 'Hurdle',
+          hurdleType: properties['Hurdle Type']?.select?.name || 'Other',
+          description: properties['Description']?.rich_text?.[0]?.text?.content || '',
+          date: properties['Date']?.date?.start || new Date().toISOString().split('T')[0]
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching hurdles by user ID:', error);
       return [];
     }
   }
