@@ -29,14 +29,15 @@ export class PerplexityClient {
   async generateResponse(
     prompt: string,
     context?: string,
-    model: string = 'llama-3.1-sonar-small-128k'
+    model: string = 'sonar'
   ): Promise<string> {
-    // List of models to try in order
+    // List of models to try in order (cheapest first)
     const modelsToTry = [
-      'llama-3.1-sonar-small-128k',
-      'llama-3.1-sonar-large-128k',
-      'llama-3.1-sonar-huge-128k',
-      'llama-3.1-sonar-small-128k-online'
+      'sonar',                    // Cheapest option
+      'sonar-medium',             // Medium option
+      'sonar-medium-online',      // Online version
+      'sonar-pro',                // Pro version if needed
+      'sonar-pro-online'          // Pro online version
     ];
 
     let lastError: Error | null = null;
