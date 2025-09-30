@@ -1,17 +1,20 @@
 import { Client, TextChannel } from 'discord.js';
 import { NotionClient } from '../notion/client';
+import { DiscordLogger } from './discord-logger';
 import * as cron from 'node-cron';
 
 export class DailyMessageScheduler {
   private client: Client;
   private notion: NotionClient;
+  private logger: DiscordLogger;
   private accountabilityChannelId: string;
   private startDate: Date;
   private motivationalQuotes: string[];
 
-  constructor(client: Client, notion: NotionClient) {
+  constructor(client: Client, notion: NotionClient, logger: DiscordLogger) {
     this.client = client;
     this.notion = notion;
+    this.logger = logger;
     this.accountabilityChannelId = process.env.DISCORD_ACCOUNTABILITY_GROUP || '';
     
     // Set start date to tomorrow (so it starts counting from day 1)
@@ -181,6 +184,15 @@ export class DailyMessageScheduler {
     try {
       const channel = this.client.channels.cache.get(this.accountabilityChannelId) as TextChannel;
       if (!channel) {
+        await this.logger.error(
+          'SCHEDULER',
+          'Daily Message Failed',
+          'Accountability channel not found',
+          {
+            channelId: this.accountabilityChannelId,
+            availableChannels: this.client.channels.cache.size
+          }
+        );
         console.error('Accountability channel not found');
         return;
       }
@@ -191,7 +203,27 @@ export class DailyMessageScheduler {
       await channel.send(message);
       console.log(`✅ Daily message sent for day ${currentDay}/66`);
 
+      await this.logger.success(
+        'SCHEDULER',
+        'Daily Message Sent',
+        `Daily motivational message sent for day ${currentDay}/66`,
+        {
+          day: currentDay,
+          totalDays: 66,
+          channelId: this.accountabilityChannelId,
+          messageLength: message.length
+        }
+      );
+
     } catch (error) {
+      await this.logger.logError(
+        error as Error,
+        'Daily Message Sending',
+        {
+          channelId: this.accountabilityChannelId,
+          currentDay: this.getCurrentDay()
+        }
+      );
       console.error('Error sending daily message:', error);
     }
   }
@@ -203,6 +235,15 @@ export class DailyMessageScheduler {
     // Schedule for 7 AM every day (0 7 * * *)
     const task = cron.schedule('0 7 * * *', async () => {
       console.log('🕰️ Sending daily motivational message...');
+      await this.logger.info(
+        'SCHEDULER',
+        'Scheduled Task Triggered',
+        'Daily motivational message task triggered by cron',
+        {
+          cronExpression: '0 7 * * *',
+          timezone: process.env.TIMEZONE || 'Europe/Berlin'
+        }
+      );
       await this.sendDailyMessage();
     }, {
       scheduled: true,
@@ -210,6 +251,17 @@ export class DailyMessageScheduler {
     });
 
     console.log('📅 Daily message scheduler started (7 AM daily)');
+    
+    this.logger.success(
+      'SCHEDULER',
+      'Scheduler Started',
+      'Daily message scheduler started successfully',
+      {
+        cronExpression: '0 7 * * *',
+        timezone: process.env.TIMEZONE || 'Europe/Berlin',
+        accountabilityChannelId: this.accountabilityChannelId
+      }
+    );
     
     // Also send a test message immediately for testing
     this.sendDailyMessage();

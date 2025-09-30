@@ -2,17 +2,20 @@ import { SlashCommandBuilder, CommandInteraction, AttachmentBuilder, ChatInputCo
 import { NotionClient } from '../notion/client';
 import { ChannelHandlers } from './channel-handlers';
 import { PersonalChannelManager } from './personal-channel-manager';
+import { DiscordLogger } from './discord-logger';
 import { User, Habit, Proof } from '../types';
 
 export class CommandHandler {
   private notion: NotionClient;
   private channelHandlers: ChannelHandlers;
   private personalChannelManager: PersonalChannelManager;
+  private logger: DiscordLogger;
 
-  constructor(notion: NotionClient, channelHandlers: ChannelHandlers, personalChannelManager: PersonalChannelManager) {
+  constructor(notion: NotionClient, channelHandlers: ChannelHandlers, personalChannelManager: PersonalChannelManager, logger: DiscordLogger) {
     this.notion = notion;
     this.channelHandlers = channelHandlers;
     this.personalChannelManager = personalChannelManager;
+    this.logger = logger;
   }
 
   async handleJoin(interaction: CommandInteraction) {
@@ -20,6 +23,22 @@ export class CommandHandler {
     
     try {
       console.log('🔍 Starting join process for user:', discordId);
+      
+      await this.logger.info(
+        'COMMAND',
+        'Join Command Started',
+        `User ${interaction.user.username} initiated join process`,
+        {
+          discordId: discordId,
+          username: interaction.user.username,
+          guildId: interaction.guild?.id
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
       
       // Check if user already exists
       let user = await this.notion.getUserByDiscordId(discordId);

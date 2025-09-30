@@ -12,14 +12,13 @@ services:
     env_file:
       - .env
     
-    # Volume mounts for persistence
+    # Volume for logs (optional)
     volumes:
       - ./logs:/app/logs
-      - ./data:/app/data
     
     # Network configuration
     networks:
-      - discord-habit-network
+      - discord-bot-network
     
     # Resource limits
     deploy:
@@ -47,11 +46,5 @@ services:
         max-file: "3"
 
 networks:
-  discord-habit-network:
+  discord-bot-network:
     driver: bridge
-
-volumes:
-  logs:
-    driver: local
-  data:
-    driver: local

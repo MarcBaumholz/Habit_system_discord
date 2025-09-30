@@ -1,19 +1,38 @@
 import { Message, Client } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { User, Habit } from '../types';
+import { DiscordLogger } from './discord-logger';
 
 export class MessageAnalyzer {
   private notion: NotionClient;
   private client: Client;
+  private logger: DiscordLogger;
 
-  constructor(notion: NotionClient, client: Client) {
+  constructor(notion: NotionClient, client: Client, logger: DiscordLogger) {
     this.notion = notion;
     this.client = client;
+    this.logger = logger;
   }
 
   async analyzeMessage(message: Message) {
     try {
       console.log('🔍 Analyzing message from user:', message.author.username);
+      
+      await this.logger.info(
+        'MESSAGE_ANALYSIS',
+        'Message Analysis Started',
+        `Starting analysis of message from ${message.author.username}`,
+        {
+          messageLength: message.content.length,
+          hasAttachments: message.attachments.size > 0,
+          channelId: message.channelId
+        },
+        {
+          channelId: message.channelId,
+          userId: message.author.id,
+          guildId: message.guild?.id
+        }
+      );
       
       // Skip bot messages
       if (message.author.bot) return;
@@ -21,6 +40,20 @@ export class MessageAnalyzer {
       // Get user from Notion
       const user = await this.notion.getUserByDiscordId(message.author.id);
       if (!user) {
+        await this.logger.warning(
+          'MESSAGE_ANALYSIS',
+          'User Not Found',
+          `User ${message.author.username} not found in Notion system`,
+          {
+            discordId: message.author.id,
+            username: message.author.username
+          },
+          {
+            channelId: message.channelId,
+            userId: message.author.id,
+            guildId: message.guild?.id
+          }
+        );
         console.log('❌ User not found in system:', message.author.username);
         return;
       }
@@ -30,6 +63,20 @@ export class MessageAnalyzer {
       // Get user's habits
       const habits = await this.notion.getHabitsByUserId(user.id);
       if (habits.length === 0) {
+        await this.logger.warning(
+          'MESSAGE_ANALYSIS',
+          'No Habits Found',
+          `User ${user.name} has no habits configured`,
+          {
+            userId: user.id,
+            userName: user.name
+          },
+          {
+            channelId: message.channelId,
+            userId: message.author.id,
+            guildId: message.guild?.id
+          }
+        );
         console.log('❌ No habits found for user:', user.name);
         return;
       }
@@ -37,18 +84,79 @@ export class MessageAnalyzer {
       console.log('📊 Found', habits.length, 'habits for user');
       console.log('🎯 User habits:', habits.map(h => `${h.name} (${h.smartGoal})`));
 
+      await this.logger.debug(
+        'MESSAGE_ANALYSIS',
+        'User Habits Loaded',
+        `Found ${habits.length} habits for user ${user.name}`,
+        {
+          habits: habits.map(h => ({ id: h.id, name: h.name, smartGoal: h.smartGoal }))
+        },
+        {
+          channelId: message.channelId,
+          userId: message.author.id,
+          guildId: message.guild?.id
+        }
+      );
+
       // Analyze the message content with habit matching
       const analysis = await this.analyzeContentWithHabitMatching(message.content, habits);
       
       if (analysis.isProof) {
         console.log('✅ Message identified as proof');
         console.log('🎯 Matched habit:', analysis.matchedHabit?.name || 'Unknown');
+        
+        await this.logger.success(
+          'MESSAGE_ANALYSIS',
+          'Proof Detected',
+          `Message identified as proof for habit: ${analysis.matchedHabit?.name || 'Unknown'}`,
+          {
+            matchedHabit: analysis.matchedHabit?.name,
+            unit: analysis.unit,
+            isMinimalDose: analysis.isMinimalDose,
+            isCheatDay: analysis.isCheatDay
+          },
+          {
+            channelId: message.channelId,
+            userId: message.author.id,
+            guildId: message.guild?.id
+          }
+        );
+        
         await this.createProofFromMessage(message, user, analysis);
       } else {
         console.log('ℹ️ Message not identified as proof');
+        
+        await this.logger.info(
+          'MESSAGE_ANALYSIS',
+          'No Proof Detected',
+          `Message from ${message.author.username} not identified as proof`,
+          {
+            contentLength: message.content.length,
+            hasAttachments: message.attachments.size > 0
+          },
+          {
+            channelId: message.channelId,
+            userId: message.author.id,
+            guildId: message.guild?.id
+          }
+        );
       }
 
     } catch (error) {
+      await this.logger.logError(
+        error as Error,
+        'Message Analysis',
+        {
+          userId: message.author.id,
+          channelId: message.channelId,
+          contentLength: message.content.length
+        },
+        {
+          channelId: message.channelId,
+          userId: message.author.id,
+          guildId: message.guild?.id
+        }
+      );
       console.error('❌ Error analyzing message:', error);
     }
   }

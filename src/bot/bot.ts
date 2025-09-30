@@ -9,6 +9,7 @@ import { NotionClient } from '../notion/client';
 import { ToolsAssistant } from './tools-assistant';
 import { DailyMessageScheduler } from './daily-message-scheduler';
 import { PersonalChannelManager } from './personal-channel-manager';
+import { DiscordLogger } from './discord-logger';
 
 export class HabitBot {
   private client: Client;
@@ -22,6 +23,7 @@ export class HabitBot {
   private toolsAssistant: ToolsAssistant;
   private dailyMessageScheduler: DailyMessageScheduler;
   private personalChannelManager: PersonalChannelManager;
+  private logger: DiscordLogger;
 
   constructor(notion: NotionClient) {
     this.client = new Client({
@@ -34,14 +36,15 @@ export class HabitBot {
 
     this.commands = new Collection();
     this.notion = notion;
+    this.logger = new DiscordLogger(this.client);
     this.channelHandlers = new ChannelHandlers(this.client, notion);
     this.personalChannelManager = new PersonalChannelManager(this.client, notion);
-    this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager);
+    this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager, this.logger);
     this.habitFlow = new HabitFlowManager(notion);
     this.proofProcessor = new ProofProcessor(notion);
-    this.messageAnalyzer = new MessageAnalyzer(notion, this.client);
+    this.messageAnalyzer = new MessageAnalyzer(notion, this.client, this.logger);
     this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
-    this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion);
+    this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion, this.logger);
     this.setupCommands();
     this.setupEventHandlers();
   }
@@ -260,6 +263,19 @@ export class HabitBot {
     this.client.once('ready', async () => {
       console.log(`Bot is ready! Logged in as ${this.client.user?.tag}`);
       
+      // Log bot startup
+      await this.logger.success(
+        'SYSTEM',
+        'Bot Started',
+        `Discord Habit System bot is now online and ready`,
+        {
+          botTag: this.client.user?.tag,
+          guilds: this.client.guilds.cache.size,
+          channels: this.client.channels.cache.size,
+          users: this.client.users.cache.size
+        }
+      );
+      
       // Send startup message to the main channel
       await this.sendStartupMessage();
       
@@ -270,62 +286,204 @@ export class HabitBot {
 
     // Add message listener for accountability group
     this.client.on('messageCreate', async message => {
-      // Only analyze messages in the accountability group
-      if (message.channelId === process.env.DISCORD_ACCOUNTABILITY_GROUP) {
-        await this.messageAnalyzer.analyzeMessage(message);
-      }
+      // Skip bot messages
+      if (message.author.bot) return;
 
-      // Tools channel: respond with toolbox suggestions
-      if (process.env.DISCORD_TOOLS && message.channelId === process.env.DISCORD_TOOLS) {
-        await this.toolsAssistant.handleMessage(message);
+      // Log all message creation
+      await this.logger.logMessageCreate(message);
+
+      try {
+        // Only analyze messages in the accountability group
+        if (message.channelId === process.env.DISCORD_ACCOUNTABILITY_GROUP) {
+          await this.logger.info(
+            'MESSAGE_ANALYSIS',
+            'Analyzing Accountability Message',
+            `Analyzing message from ${message.author.username} for proof detection`,
+            {
+              contentLength: message.content.length,
+              hasAttachments: message.attachments.size > 0
+            },
+            {
+              channelId: message.channelId,
+              userId: message.author.id,
+              guildId: message.guild?.id
+            }
+          );
+          await this.messageAnalyzer.analyzeMessage(message);
+        }
+
+        // Tools channel: respond with toolbox suggestions
+        if (process.env.DISCORD_TOOLS && message.channelId === process.env.DISCORD_TOOLS) {
+          await this.logger.info(
+            'TOOLS_ASSISTANT',
+            'Tools Channel Message',
+            `Processing tools request from ${message.author.username}`,
+            {
+              contentLength: message.content.length,
+              isToolsChannel: true
+            },
+            {
+              channelId: message.channelId,
+              userId: message.author.id,
+              guildId: message.guild?.id
+            }
+          );
+          await this.toolsAssistant.handleMessage(message);
+        }
+      } catch (error) {
+        await this.logger.logError(
+          error as Error,
+          'Message Processing',
+          {
+            channelId: message.channelId,
+            userId: message.author.id,
+            content: message.content.substring(0, 200)
+          },
+          {
+            channelId: message.channelId,
+            userId: message.author.id,
+            guildId: message.guild?.id
+          }
+        );
       }
     });
 
     this.client.on('interactionCreate', async interaction => {
       if (!interaction.isChatInputCommand()) return;
 
-      // Handle subcommands
-      if (interaction.commandName === 'habit' && interaction.options.getSubcommand() === 'add') {
+      // Log all command interactions
+      await this.logger.logCommandInteraction(interaction);
+
+      try {
+        // Handle subcommands
+        if (interaction.commandName === 'habit' && interaction.options.getSubcommand() === 'add') {
+          try {
+            await this.commandHandler.handleHabitAdd(interaction);
+          } catch (error) {
+            await this.logger.logError(
+              error as Error,
+              'Habit Add Command',
+              {
+                commandName: 'habit add',
+                userId: interaction.user.id,
+                guildId: interaction.guild?.id
+              },
+              {
+                channelId: interaction.channelId,
+                userId: interaction.user.id,
+                guildId: interaction.guild?.id
+              }
+            );
+            console.error('Error executing habit add command:', error);
+            if (interaction.replied || interaction.deferred) {
+              await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
+            } else {
+              await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+            }
+          }
+          return;
+        }
+
+        const command = this.commands.get(interaction.commandName);
+        if (!command) {
+          await this.logger.warning(
+            'COMMAND',
+            'Unknown Command',
+            `User ${interaction.user.username} tried to execute unknown command: ${interaction.commandName}`,
+            {
+              commandName: interaction.commandName,
+              availableCommands: Array.from(this.commands.keys())
+            },
+            {
+              channelId: interaction.channelId,
+              userId: interaction.user.id,
+              guildId: interaction.guild?.id
+            }
+          );
+          console.error(`No command matching ${interaction.commandName} was found.`);
+          return;
+        }
+
         try {
-          await this.commandHandler.handleHabitAdd(interaction);
+          await command.execute(interaction);
         } catch (error) {
-          console.error('Error executing habit add command:', error);
+          await this.logger.logError(
+            error as Error,
+            'Command Execution',
+            {
+              commandName: interaction.commandName,
+              userId: interaction.user.id,
+              guildId: interaction.guild?.id
+            },
+            {
+              channelId: interaction.channelId,
+              userId: interaction.user.id,
+              guildId: interaction.guild?.id
+            }
+          );
+          console.error('Error executing command:', error);
           if (interaction.replied || interaction.deferred) {
             await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
           } else {
             await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
           }
         }
-        return;
-      }
-
-      const command = this.commands.get(interaction.commandName);
-      if (!command) {
-        console.error(`No command matching ${interaction.commandName} was found.`);
-        return;
-      }
-
-      try {
-        await command.execute(interaction);
       } catch (error) {
-        console.error('Error executing command:', error);
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
-        } else {
-          await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
-        }
+        await this.logger.logError(
+          error as Error,
+          'Interaction Processing',
+          {
+            interactionType: 'chatInputCommand',
+            commandName: interaction.commandName
+          },
+          {
+            channelId: interaction.channelId,
+            userId: interaction.user.id,
+            guildId: interaction.guild?.id
+          }
+        );
       }
     });
 
     this.client.on('messageCreate', async message => {
+      // Skip bot messages
+      if (message.author.bot) return;
+
       try {
         const handled = await this.habitFlow.handleMessage(message);
         if (handled) {
+          await this.logger.info(
+            'HABIT_FLOW',
+            'Habit Flow Handled',
+            `Habit flow processed message from ${message.author.username}`,
+            {
+              flowType: 'keystone_habit',
+              channelId: message.channelId
+            },
+            {
+              channelId: message.channelId,
+              userId: message.author.id,
+              guildId: message.guild?.id
+            }
+          );
           return;
         }
 
         await this.proofProcessor.handleAccountabilityMessage(message);
       } catch (error) {
+        await this.logger.logError(
+          error as Error,
+          'Keystone Habit Flow Message',
+          {
+            messageContent: message.content.substring(0, 200),
+            channelId: message.channelId
+          },
+          {
+            channelId: message.channelId,
+            userId: message.author.id,
+            guildId: message.guild?.id
+          }
+        );
         console.error('Error handling keystone habit flow message:', error);
       }
     });
@@ -336,15 +494,136 @@ export class HabitBot {
         try {
           await reaction.fetch();
         } catch (error) {
+          await this.logger.logError(
+            error as Error,
+            'Reaction Fetch',
+            {
+              reactionEmoji: reaction.emoji.toString(),
+              messageId: reaction.message.id
+            },
+            {
+              channelId: reaction.message.channelId,
+              userId: user.id,
+              guildId: reaction.message.guild?.id
+            }
+          );
           console.error('Something went wrong when fetching the reaction:', error);
           return;
         }
       }
 
+      // Log all reactions (only if not partial and user is not partial)
+      if (!reaction.partial && !user.partial) {
+        await this.logger.logReactionAdd(reaction, user);
+      }
+
       // Handle proof reactions
       if (reaction.emoji.name === '👍' || reaction.emoji.name === '🎉') {
-        await this.channelHandlers.handleProofReaction(reaction.message, reaction);
+        try {
+          await this.channelHandlers.handleProofReaction(reaction.message, reaction);
+          await this.logger.success(
+            'PROOF_REACTION',
+            'Proof Reaction Handled',
+            `Proof reaction ${reaction.emoji.name} processed successfully`,
+            {
+              emoji: reaction.emoji.toString(),
+              messageId: reaction.message.id,
+              isProofReaction: true
+            },
+            {
+              channelId: reaction.message.channelId,
+              userId: user.id,
+              guildId: reaction.message.guild?.id
+            }
+          );
+        } catch (error) {
+          await this.logger.logError(
+            error as Error,
+            'Proof Reaction Handling',
+            {
+              emoji: reaction.emoji.toString(),
+              messageId: reaction.message.id
+            },
+            {
+              channelId: reaction.message.channelId,
+              userId: user.id,
+              guildId: reaction.message.guild?.id
+            }
+          );
+        }
       }
+    });
+
+    // Additional Discord events for comprehensive monitoring
+    this.client.on('guildCreate', async guild => {
+      await this.logger.success(
+        'GUILD',
+        'Bot Added to Guild',
+        `Bot was added to guild: ${guild.name}`,
+        {
+          guildId: guild.id,
+          memberCount: guild.memberCount,
+          channelCount: guild.channels.cache.size,
+          ownerId: guild.ownerId
+        }
+      );
+    });
+
+    this.client.on('guildDelete', async guild => {
+      await this.logger.warning(
+        'GUILD',
+        'Bot Removed from Guild',
+        `Bot was removed from guild: ${guild.name}`,
+        {
+          guildId: guild.id,
+          memberCount: guild.memberCount,
+          wasAvailable: guild.available
+        }
+      );
+    });
+
+    this.client.on('channelCreate', async channel => {
+      if (channel.isTextBased()) {
+        await this.logger.logChannelCreate(channel as any);
+      }
+    });
+
+    this.client.on('channelDelete', async channel => {
+      if (channel.isTextBased()) {
+        await this.logger.logChannelDelete(channel as any);
+      }
+    });
+
+    this.client.on('guildMemberAdd', async member => {
+      await this.logger.logUserJoin(member.user);
+    });
+
+    this.client.on('guildMemberRemove', async member => {
+      await this.logger.logUserLeave(member.user);
+    });
+
+    // Error handling
+    this.client.on('error', async error => {
+      await this.logger.error(
+        'DISCORD_CLIENT',
+        'Discord Client Error',
+        `Discord client encountered an error: ${error.message}`,
+        {
+          error: error.message,
+          stack: error.stack
+        }
+      );
+    });
+
+    this.client.on('warn', async info => {
+      await this.logger.warning(
+        'DISCORD_CLIENT',
+        'Discord Client Warning',
+        `Discord client warning: ${info}`,
+        {
+          warning: info
+        }
+      );
     });
   }
 
@@ -354,6 +633,17 @@ export class HabitBot {
 
     try {
       console.log('Started refreshing application (/) commands.');
+      
+      await this.logger.info(
+        'COMMANDS',
+        'Command Registration Started',
+        'Starting to register slash commands with Discord',
+        {
+          commandCount: commands.length,
+          guildId: guildId,
+          clientId: clientId
+        }
+      );
 
       await rest.put(
         Routes.applicationGuildCommands(clientId, guildId),
@@ -361,7 +651,27 @@ export class HabitBot {
       );
 
       console.log('Successfully reloaded application (/) commands.');
+      
+      await this.logger.success(
+        'COMMANDS',
+        'Command Registration Successful',
+        'Successfully registered all slash commands with Discord',
+        {
+          commandCount: commands.length,
+          registeredCommands: commands.map(cmd => cmd.name),
+          guildId: guildId
+        }
+      );
     } catch (error) {
+      await this.logger.logError(
+        error as Error,
+        'Command Registration',
+        {
+          commandCount: commands.length,
+          guildId: guildId,
+          clientId: clientId
+        }
+      );
       console.error('Error registering commands:', error);
     }
   }
