@@ -9,11 +9,20 @@ describe('MessageAnalyzer', () => {
   let notion: jest.Mocked<NotionClient>;
   let client: jest.Mocked<Client>;
   let analyzer: MessageAnalyzer;
+  let mockLogger: any;
 
   beforeEach(() => {
     notion = new NotionClient('', {}) as any;
     client = { } as any;
-    analyzer = new MessageAnalyzer(notion, client);
+    mockLogger = {
+      info: jest.fn().mockResolvedValue(undefined),
+      success: jest.fn().mockResolvedValue(undefined),
+      error: jest.fn().mockResolvedValue(undefined),
+      warning: jest.fn().mockResolvedValue(undefined),
+      logError: jest.fn().mockResolvedValue(undefined),
+      debug: jest.fn().mockResolvedValue(undefined)
+    };
+    analyzer = new MessageAnalyzer(notion, client, mockLogger);
   });
 
   const buildMessage = (content: string): Message => ({

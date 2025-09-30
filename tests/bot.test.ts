@@ -17,6 +17,7 @@ describe('CommandHandler', () => {
   let commandHandler: CommandHandler;
   let mockChannelHandlers: jest.Mocked<ChannelHandlers>;
   let mockPersonalChannelManager: any;
+  let mockLogger: any;
 
   beforeEach(() => {
     mockNotion = new NotionClient('', {}) as jest.Mocked<NotionClient>;
@@ -38,7 +39,14 @@ describe('CommandHandler', () => {
       client: {} as any,
       notion: mockNotion
     } as any;
-    commandHandler = new CommandHandler(mockNotion, mockChannelHandlers, mockPersonalChannelManager);
+    mockLogger = {
+      info: jest.fn().mockResolvedValue(undefined),
+      success: jest.fn().mockResolvedValue(undefined),
+      error: jest.fn().mockResolvedValue(undefined),
+      warning: jest.fn().mockResolvedValue(undefined),
+      logError: jest.fn().mockResolvedValue(undefined)
+    };
+    commandHandler = new CommandHandler(mockNotion, mockChannelHandlers, mockPersonalChannelManager, mockLogger);
   });
 
   describe('handleJoin', () => {

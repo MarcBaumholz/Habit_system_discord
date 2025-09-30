@@ -89,7 +89,7 @@ describe('ProofProcessor', () => {
           reminderType: 'Calendar'
         } as Habit
       ]),
-      createProof: jest.fn().mockResolvedValue(undefined)
+      createProof: jest.fn().mockResolvedValue({ id: 'proof-123' })
     } as unknown as jest.Mocked<NotionClient>;
   };
 
