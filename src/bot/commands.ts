@@ -85,7 +85,7 @@ export class CommandHandler {
         console.log('✅ User created successfully:', user.id);
         channelCreated = true;
 
-        // Send info log message to main channel
+        // Send info log message to main channel (only for new users)
         await this.channelHandlers.postInfoLog(
           `🎉 **New User Joined!**\n` +
           `👤 **User:** ${user.name}\n` +
@@ -121,14 +121,7 @@ export class CommandHandler {
             console.log('✅ Personal channel created for existing user:', personalChannelId);
             channelCreated = true;
 
-            // Send info log message to main channel
-            await this.channelHandlers.postInfoLog(
-              `🏠 **Personal Channel Created!**\n` +
-              `👤 **User:** ${user.name}\n` +
-              `🏠 **Personal Channel:** \`personal-${user.name.toLowerCase()}\`\n` +
-              `📝 **Profile:** Updated in Notion\n` +
-              `🚀 **Status:** Ready for private habit management!`
-            );
+            // Note: No info log message for existing users to avoid spam
           }
         } else {
           console.log('✅ User already has personal channel:', user.personalChannelId);

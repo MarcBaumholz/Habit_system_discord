@@ -17,6 +17,13 @@ export class PersonalChannelManager {
       // Create channel name (Discord has a 100 character limit for channel names)
       const channelName = `personal-${username.toLowerCase().replace(/[^a-z0-9-]/g, '')}`.substring(0, 100);
       
+      // Check if channel already exists
+      const existingChannel = guild.channels.cache.find(ch => ch.name === channelName);
+      if (existingChannel) {
+        console.log(`⚠️ Channel ${channelName} already exists: ${existingChannel.id}`);
+        return existingChannel.id;
+      }
+      
       // Create the private channel
       const channel = await guild.channels.create({
         name: channelName,

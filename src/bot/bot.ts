@@ -284,7 +284,7 @@ export class HabitBot {
       console.log('🗓️ Daily message scheduler started - 66-day challenge begins tomorrow!');
     });
 
-    // Add message listener for accountability group
+    // Unified message listener for all message processing
     this.client.on('messageCreate', async message => {
       // Skip bot messages
       if (message.author.bot) return;
@@ -293,15 +293,16 @@ export class HabitBot {
       await this.logger.logMessageCreate(message);
 
       try {
-        // Only analyze messages in the accountability group
-        if (message.channelId === process.env.DISCORD_ACCOUNTABILITY_GROUP) {
+        // First, try habit flow processing (for personal channels)
+        const habitFlowHandled = await this.habitFlow.handleMessage(message);
+        if (habitFlowHandled) {
           await this.logger.info(
-            'MESSAGE_ANALYSIS',
-            'Analyzing Accountability Message',
-            `Analyzing message from ${message.author.username} for proof detection`,
+            'HABIT_FLOW',
+            'Habit Flow Handled',
+            `Habit flow processed message from ${message.author.username}`,
             {
-              contentLength: message.content.length,
-              hasAttachments: message.attachments.size > 0
+              flowType: 'keystone_habit',
+              channelId: message.channelId
             },
             {
               channelId: message.channelId,
@@ -309,7 +310,7 @@ export class HabitBot {
               guildId: message.guild?.id
             }
           );
-          await this.messageAnalyzer.analyzeMessage(message);
+          return; // Exit early if habit flow handled the message
         }
 
         // Tools channel: respond with toolbox suggestions
@@ -329,7 +330,32 @@ export class HabitBot {
             }
           );
           await this.toolsAssistant.handleMessage(message);
+          return; // Exit early if tools assistant handled the message
         }
+
+        // Only analyze messages in the accountability group
+        if (message.channelId === process.env.DISCORD_ACCOUNTABILITY_GROUP) {
+          await this.logger.info(
+            'MESSAGE_ANALYSIS',
+            'Analyzing Accountability Message',
+            `Analyzing message from ${message.author.username} for proof detection`,
+            {
+              contentLength: message.content.length,
+              hasAttachments: message.attachments.size > 0
+            },
+            {
+              channelId: message.channelId,
+              userId: message.author.id,
+              guildId: message.guild?.id
+            }
+          );
+          await this.messageAnalyzer.analyzeMessage(message);
+          return; // Exit early if message analyzer handled the message
+        }
+
+        // Fallback: try proof processor for accountability messages
+        await this.proofProcessor.handleAccountabilityMessage(message);
+
       } catch (error) {
         await this.logger.logError(
           error as Error,
@@ -445,48 +471,6 @@ export class HabitBot {
       }
     });
 
-    this.client.on('messageCreate', async message => {
-      // Skip bot messages
-      if (message.author.bot) return;
-
-      try {
-        const handled = await this.habitFlow.handleMessage(message);
-        if (handled) {
-          await this.logger.info(
-            'HABIT_FLOW',
-            'Habit Flow Handled',
-            `Habit flow processed message from ${message.author.username}`,
-            {
-              flowType: 'keystone_habit',
-              channelId: message.channelId
-            },
-            {
-              channelId: message.channelId,
-              userId: message.author.id,
-              guildId: message.guild?.id
-            }
-          );
-          return;
-        }
-
-        await this.proofProcessor.handleAccountabilityMessage(message);
-      } catch (error) {
-        await this.logger.logError(
-          error as Error,
-          'Keystone Habit Flow Message',
-          {
-            messageContent: message.content.substring(0, 200),
-            channelId: message.channelId
-          },
-          {
-            channelId: message.channelId,
-            userId: message.author.id,
-            guildId: message.guild?.id
-          }
-        );
-        console.error('Error handling keystone habit flow message:', error);
-      }
-    });
 
     // Handle reactions to proofs
     this.client.on('messageReactionAdd', async (reaction, user) => {
