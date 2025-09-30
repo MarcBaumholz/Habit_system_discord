@@ -284,6 +284,9 @@ export class HabitBot {
     this.client.once('ready', async () => {
       console.log(`Bot is ready! Logged in as ${this.client.user?.tag}`);
       
+      // Wait a moment for Discord client to be fully ready
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
       // Log bot startup
       await this.logger.success(
         'SYSTEM',
@@ -302,6 +305,20 @@ export class HabitBot {
       // Start the daily message scheduler for 66-day challenge
       this.dailyMessageScheduler.startScheduler();
       console.log('🗓️ Daily message scheduler started - 66-day challenge begins tomorrow at 6 AM!');
+      
+      // Log scheduler start after a brief delay
+      setTimeout(async () => {
+        await this.logger.success(
+          'SCHEDULER',
+          'Scheduler Started',
+          'Daily message scheduler started successfully',
+          {
+            cronExpression: '0 6 * * *',
+            timezone: process.env.TIMEZONE || 'Europe/Berlin',
+            accountabilityChannelId: process.env.DISCORD_ACCOUNTABILITY_GROUP
+          }
+        );
+      }, 3000);
     });
 
     // Unified message listener for all message processing
