@@ -419,8 +419,8 @@ Use \`/proof\` daily to maintain your momentum!`,
         'Summary Command Failed',
         `Failed to get summary for user ${interaction.user.username}`,
         {
-          error: error.message,
-          stack: error.stack,
+          error: (error as Error).message,
+          stack: (error as Error).stack,
           userId: interaction.user.id,
           week: interaction.options.getInteger('week')
         },

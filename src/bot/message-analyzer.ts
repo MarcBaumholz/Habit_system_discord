@@ -399,7 +399,7 @@ export class MessageAnalyzer {
         'Proof Creation Failed',
         `Failed to create proof for user ${user.name}`,
         {
-          error: error.message,
+          error: (error as Error).message,
           userId: user.id,
           habitId: analysis.habitId
         },

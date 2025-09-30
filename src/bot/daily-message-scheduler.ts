@@ -200,8 +200,17 @@ export class DailyMessageScheduler {
       const currentDay = this.getCurrentDay();
       const message = this.generateDailyMessage(currentDay);
 
-      await channel.send(message);
-      console.log(`✅ Daily message sent for day ${currentDay}/66`);
+      // Only send message if it's actually time for daily message (not on startup)
+      const now = new Date();
+      const currentHour = now.getHours();
+      
+      // Only send if it's actually 7 AM (or close to it)
+      if (currentHour === 7) {
+        await channel.send(message);
+        console.log(`✅ Daily message sent for day ${currentDay}/66`);
+      } else {
+        console.log(`⏰ Daily message scheduled for day ${currentDay}/66 (will send at 7 AM)`);
+      }
 
       await this.logger.success(
         'SCHEDULER',
