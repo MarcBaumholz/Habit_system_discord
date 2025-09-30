@@ -4,20 +4,11 @@ import { Habit } from '../src/types';
 import { Message } from 'discord.js';
 
 describe('HabitFlowManager', () => {
-  const originalPersonalChannel = process.env.DISCORD_PERSONAL_CHANNEL;
-
-  beforeAll(() => {
-    process.env.DISCORD_PERSONAL_CHANNEL = 'personal-channel';
-  });
-
-  afterAll(() => {
-    process.env.DISCORD_PERSONAL_CHANNEL = originalPersonalChannel;
-  });
-
   const buildMessage = (content: string, channelSend: jest.Mock): Message => {
     const channel = {
       isTextBased: () => true,
-      send: channelSend
+      send: channelSend,
+      name: 'personal-testuser' // Personal channel name
     };
 
     return {

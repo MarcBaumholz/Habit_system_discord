@@ -10,6 +10,7 @@ import { ToolsAssistant } from './tools-assistant';
 import { DailyMessageScheduler } from './daily-message-scheduler';
 import { PersonalChannelManager } from './personal-channel-manager';
 import { DiscordLogger } from './discord-logger';
+import { PersonalAssistant } from './personal-assistant';
 
 export class HabitBot {
   private client: Client;
@@ -23,6 +24,7 @@ export class HabitBot {
   private toolsAssistant: ToolsAssistant;
   private dailyMessageScheduler: DailyMessageScheduler;
   private personalChannelManager: PersonalChannelManager;
+  private personalAssistant: PersonalAssistant;
   private logger: DiscordLogger;
 
   constructor(notion: NotionClient) {
@@ -45,6 +47,7 @@ export class HabitBot {
     this.messageAnalyzer = new MessageAnalyzer(notion, this.client, this.logger);
     this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
     this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion, this.logger);
+    this.personalAssistant = new PersonalAssistant(this.client, this.notion, this.logger);
     this.setupCommands();
     this.setupEventHandlers();
   }
@@ -348,6 +351,12 @@ export class HabitBot {
             }
           );
           return; // Exit early if habit flow handled the message
+        }
+
+        // Try personal assistant processing (for personal channels)
+        const personalAssistantHandled = await this.personalAssistant.handlePersonalChannelMessage(message);
+        if (personalAssistantHandled) {
+          return; // Exit early if personal assistant handled the message
         }
 
         // Tools channel: respond with toolbox suggestions

@@ -23,8 +23,6 @@ type SendableChannel = TextBasedChannel & { send: TextChannel['send'] };
 export class HabitFlowManager {
   private notion: NotionClient;
   private activeFlows: Map<string, HabitFlowState> = new Map();
-  private personalChannelId: string | undefined;
-  private hasWarnedMissingChannelId = false;
 
   private static QUESTIONS: HabitQuestion[] = [
     {
@@ -90,19 +88,16 @@ export class HabitFlowManager {
 
   constructor(notion: NotionClient) {
     this.notion = notion;
-    this.personalChannelId = process.env.DISCORD_PERSONAL_CHANNEL;
   }
 
   async handleMessage(message: Message): Promise<boolean> {
-    if (!this.ensureChannelConfigured()) {
-      return false;
-    }
-
     if (message.author.bot) {
       return false;
     }
 
-    if (message.channelId !== this.personalChannelId) {
+    // Check if this is a personal channel (starts with "personal-")
+    const channel = message.channel;
+    if (!channel || !('name' in channel) || !channel.name || !channel.name.startsWith('personal-')) {
       return false;
     }
 
@@ -287,16 +282,5 @@ We\'ll walk through a few questions together to set up your habit with intention
     }
   }
 
-  private ensureChannelConfigured(): boolean {
-    if (this.personalChannelId) {
-      return true;
-    }
-
-    if (!this.hasWarnedMissingChannelId) {
-      console.warn('DISCORD_PERSONAL_CHANNEL is not set. Keystone habit flow is disabled.');
-      this.hasWarnedMissingChannelId = true;
-    }
-
-    return false;
-  }
+  // Removed ensureChannelConfigured - now works dynamically with all personal channels
 }
