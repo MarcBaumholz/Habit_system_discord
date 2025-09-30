@@ -135,7 +135,10 @@ describe('CommandHandler (extended)', () => {
         isChatInputCommand: () => true,
         user: { id: 'u1', username: 'marc' },
         options: { getInteger: jest.fn().mockReturnValue(null) },
-        reply: jest.fn()
+        reply: jest.fn(),
+        deferReply: jest.fn().mockResolvedValue(undefined),
+        editReply: jest.fn().mockResolvedValue(undefined),
+        deferred: false
       };
 
       const user: User = { id: 'n1', discordId: 'u1', name: 'marc', timezone: 'EU', bestTime: '09:00', trustCount: 0 };
@@ -154,14 +157,22 @@ describe('CommandHandler (extended)', () => {
 
       await handler.handleSummary(mockInteraction);
 
-      expect(mockInteraction.reply).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining('Your Weekly Summary'), ephemeral: false }));
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining('Your Weekly Summary') }));
     });
 
     it('asks user to join if not registered', async () => {
-      const mockInteraction: any = { isChatInputCommand: () => true, user: { id: 'u1' }, options: { getInteger: jest.fn().mockReturnValue(null) }, reply: jest.fn() };
+      const mockInteraction: any = { 
+        isChatInputCommand: () => true, 
+        user: { id: 'u1' }, 
+        options: { getInteger: jest.fn().mockReturnValue(null) }, 
+        reply: jest.fn(),
+        deferReply: jest.fn().mockResolvedValue(undefined),
+        editReply: jest.fn().mockResolvedValue(undefined),
+        deferred: false
+      };
       mockNotion.getUserByDiscordId.mockResolvedValue(null);
       await handler.handleSummary(mockInteraction);
-      expect(mockInteraction.reply).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining('/join'), ephemeral: true }));
+      expect(mockInteraction.editReply).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining('/join') }));
     });
   });
 

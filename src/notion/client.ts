@@ -20,10 +20,10 @@ export class NotionClient {
 
   async createUser(user: Omit<User, 'id'>): Promise<User> {
     const properties: any = {
-      // Use the user's name as the title (Discord ID field) so it displays in relations
-      'Discord ID ': { title: [{ text: { content: user.name } }] },
-      // Store the actual Discord ID in the Name field for lookup purposes
-      'Name': { rich_text: [{ text: { content: user.discordId } }] },
+      // Use the user's name as the title (Name field) so it displays in relations
+      'Name': { title: [{ text: { content: user.name } }] },
+      // Store the actual Discord ID in the Discord ID field for lookup purposes
+      'Discord ID ': { rich_text: [{ text: { content: user.discordId } }] },
       'Timezone': { rich_text: [{ text: { content: user.timezone } }] },
       'Best Time': { rich_text: [{ text: { content: user.bestTime } }] },
       'Trust Count': { number: user.trustCount }
@@ -290,7 +290,7 @@ export class NotionClient {
     const response = await this.client.databases.query({
       database_id: this.databases.users,
       filter: {
-        property: 'Name',
+        property: 'Discord ID ',
         rich_text: { equals: discordId }
       }
     });
@@ -300,8 +300,8 @@ export class NotionClient {
     const page = response.results[0] as any;
     return {
       id: page.id,
-      discordId: page.properties['Name'].rich_text[0].text.content,
-      name: page.properties['Discord ID '].title[0].text.content,
+      discordId: page.properties['Discord ID '].rich_text[0].text.content,
+      name: page.properties['Name'].title[0].text.content,
       timezone: page.properties['Timezone'].rich_text[0].text.content,
       bestTime: page.properties['Best Time'].rich_text[0].text.content,
       trustCount: page.properties['Trust Count'].number,

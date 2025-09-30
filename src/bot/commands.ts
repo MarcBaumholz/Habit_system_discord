@@ -348,11 +348,13 @@ ${isMinimalDose ? '⭐ Every bit counts - minimal dose accepted!' : isCheatDay ?
     try {
       console.log('📊 Getting summary for user:', interaction.user.username);
       
+      // Defer the reply to prevent timeout
+      await interaction.deferReply({ ephemeral: false });
+      
       const user = await this.notion.getUserByDiscordId(interaction.user.id);
       if (!user) {
-        await interaction.reply({
-          content: 'Please use `/join` first to register in the system.',
-          ephemeral: true
+        await interaction.editReply({
+          content: 'Please use `/join` first to register in the system.'
         });
         return;
       }
@@ -371,7 +373,7 @@ ${isMinimalDose ? '⭐ Every bit counts - minimal dose accepted!' : isCheatDay ?
       // Format the summary message
       const weekLabel = week ? `Week ${week}` : 'This Week';
       
-      await interaction.reply({
+      await interaction.editReply({
         content: `📊 **Your Weekly Summary - ${weekLabel}**
 
 🎯 **This Week's Progress:**
@@ -386,8 +388,7 @@ ${isMinimalDose ? '⭐ Every bit counts - minimal dose accepted!' : isCheatDay ?
 • Total habits tracked: ${summary.totalHabits}
 
 🌟 **Keep up the great work!**
-Use \`/proof\` daily to maintain your momentum!`,
-        ephemeral: false
+Use \`/proof\` daily to maintain your momentum!`
       });
 
       // Log successful summary command
@@ -431,10 +432,16 @@ Use \`/proof\` daily to maintain your momentum!`,
         }
       );
       
-      await interaction.reply({
-        content: 'Sorry, there was an error getting your summary. Please try again.',
-        ephemeral: true
-      });
+        if (interaction.deferred) {
+          await interaction.editReply({
+            content: 'Sorry, there was an error getting your summary. Please try again.'
+          });
+        } else {
+          await interaction.reply({
+            content: 'Sorry, there was an error getting your summary. Please try again.',
+            ephemeral: true
+          });
+        }
     }
   }
 
