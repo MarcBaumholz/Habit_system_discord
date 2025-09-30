@@ -54,7 +54,10 @@ describe('CommandHandler', () => {
       const mockInteraction = {
         user: { id: '123', username: 'testuser' },
         guild: { id: 'guild-123' },
-        reply: jest.fn()
+        reply: jest.fn(),
+        deferReply: jest.fn().mockResolvedValue(undefined),
+        editReply: jest.fn().mockResolvedValue(undefined),
+        deferred: false
       };
 
       mockNotion.getUserByDiscordId.mockResolvedValue(null);
@@ -92,7 +95,10 @@ describe('CommandHandler', () => {
       const mockInteraction = {
         user: { id: '123', username: 'testuser' },
         guild: { id: 'guild-123' },
-        reply: jest.fn()
+        reply: jest.fn(),
+        deferReply: jest.fn().mockResolvedValue(undefined),
+        editReply: jest.fn().mockResolvedValue(undefined),
+        deferred: false
       };
 
       const existingUser = {

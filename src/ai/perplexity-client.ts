@@ -29,72 +29,91 @@ export class PerplexityClient {
   async generateResponse(
     prompt: string,
     context?: string,
-    model: string = 'llama-3.1-sonar-small-128k-online'
+    model: string = 'llama-3.1-sonar-small-128k'
   ): Promise<string> {
-    try {
-      const fullPrompt = context 
-        ? `${context}\n\nUser Question: ${prompt}`
-        : prompt;
+    // List of models to try in order
+    const modelsToTry = [
+      'llama-3.1-sonar-small-128k',
+      'llama-3.1-sonar-large-128k',
+      'llama-3.1-sonar-huge-128k',
+      'llama-3.1-sonar-small-128k-online'
+    ];
 
-      console.log('🤖 Calling Perplexity API with model:', model);
-      console.log('📝 Prompt length:', fullPrompt.length);
+    let lastError: Error | null = null;
 
-      const requestBody = {
-        model: model,
-        messages: [
-          {
-            role: 'system',
-            content: `You are a helpful AI assistant for a habit tracking system. You have access to the user's personal data including their habits, progress, and goals. Provide helpful, encouraging, and actionable advice based on their data. Be concise but informative.`
+    for (const currentModel of modelsToTry) {
+      try {
+        const fullPrompt = context 
+          ? `${context}\n\nUser Question: ${prompt}`
+          : prompt;
+
+        console.log('🤖 Calling Perplexity API with model:', currentModel);
+        console.log('📝 Prompt length:', fullPrompt.length);
+
+        const requestBody = {
+          model: currentModel,
+          messages: [
+            {
+              role: 'system',
+              content: `You are a helpful AI assistant for a habit tracking system. You have access to the user's personal data including their habits, progress, and goals. Provide helpful, encouraging, and actionable advice based on their data. Be concise but informative.`
+            },
+            {
+              role: 'user',
+              content: fullPrompt
+            }
+          ],
+          max_tokens: 500,
+          temperature: 0.7,
+          top_p: 0.9
+        };
+
+        console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
+
+        const response = await fetch(this.baseUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
           },
-          {
-            role: 'user',
-            content: fullPrompt
+          body: JSON.stringify(requestBody)
+        });
+
+        console.log('📥 Response status:', response.status, response.statusText);
+
+        if (!response.ok) {
+          let errorText = '';
+          try {
+            errorText = await response.text();
+          } catch (e) {
+            errorText = 'Could not read error response';
           }
-        ],
-        max_tokens: 500,
-        temperature: 0.7,
-        top_p: 0.9
-      };
-
-      console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
-
-      const response = await fetch(this.baseUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      console.log('📥 Response status:', response.status, response.statusText);
-
-      if (!response.ok) {
-        let errorText = '';
-        try {
-          errorText = await response.text();
-        } catch (e) {
-          errorText = 'Could not read error response';
+          console.error(`❌ Model ${currentModel} failed:`, errorText);
+          lastError = new Error(`Perplexity API error: ${response.status} ${response.statusText} - ${errorText}`);
+          continue; // Try next model
         }
-        console.error('❌ Perplexity API error response:', errorText);
-        throw new Error(`Perplexity API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
 
-      const data: PerplexityResponse = await response.json();
-      console.log('📥 Response data:', JSON.stringify(data, null, 2));
-      
-      if (data.choices && data.choices.length > 0) {
-        const content = data.choices[0].message.content;
-        console.log('✅ AI Response:', content);
-        return content;
-      } else {
-        throw new Error('No response from Perplexity API');
-      }
+        const data: PerplexityResponse = await response.json();
+        console.log('📥 Response data:', JSON.stringify(data, null, 2));
+        
+        if (data.choices && data.choices.length > 0) {
+          const content = data.choices[0].message.content;
+          console.log(`✅ AI Response with model ${currentModel}:`, content);
+          return content;
+        } else {
+          lastError = new Error('No response from Perplexity API');
+          continue; // Try next model
+        }
 
-    } catch (error) {
-      console.error('Error calling Perplexity API:', error);
-      throw error;
+      } catch (error) {
+        console.error(`❌ Error with model ${currentModel}:`, error);
+        lastError = error as Error;
+        continue; // Try next model
+      }
     }
+
+    // If we get here, all models failed
+    console.error('❌ All Perplexity models failed');
+    throw lastError || new Error('All Perplexity models failed');
   }
 
   async generateContextualResponse(

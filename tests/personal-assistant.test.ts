@@ -270,7 +270,7 @@ describe('PersonalAssistant', () => {
       };
       
       (PerplexityClient as any).isAvailable = jest.fn().mockReturnValue(true);
-      (PerplexityClient as any).mockImplementation(() => mockPerplexityClient);
+      jest.mocked(PerplexityClient).mockImplementation(() => mockPerplexityClient as any);
 
       const result = await assistant.handlePersonalChannelMessage(mockMessage);
 
@@ -344,7 +344,7 @@ describe('PersonalAssistant', () => {
       };
       
       (PerplexityClient as any).isAvailable = jest.fn().mockReturnValue(true);
-      (PerplexityClient as any).mockImplementation(() => mockPerplexityClient);
+      jest.mocked(PerplexityClient).mockImplementation(() => mockPerplexityClient as any);
 
       const result = await assistant.handlePersonalChannelMessage(mockMessage);
 
