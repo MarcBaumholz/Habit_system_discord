@@ -188,22 +188,58 @@ export class PersonalAssistant {
     summary: any;
   }> {
     try {
+      console.log('🔍 Gathering user context for userId:', userId);
+      
       // Get user's habits
+      console.log('📊 Getting habits...');
       const habits = await this.notion.getHabitsByUserId(userId);
+      console.log('✅ Habits retrieved:', habits.length);
 
-      // Get recent proofs (last 7 days)
-      const recentProofs = await this.getRecentProofs(userId, 7);
+      // Get recent proofs (last 7 days) - with error handling
+      console.log('📊 Getting recent proofs...');
+      let recentProofs: any[] = [];
+      try {
+        recentProofs = await this.getRecentProofs(userId, 7);
+        console.log('✅ Recent proofs retrieved:', recentProofs.length);
+      } catch (error) {
+        console.error('⚠️ Error getting recent proofs:', error);
+        recentProofs = [];
+      }
 
       // Get recent learnings (last 10)
-      const learnings = await this.getRecentLearnings(userId, 10);
+      console.log('📊 Getting recent learnings...');
+      let learnings: any[] = [];
+      try {
+        learnings = await this.getRecentLearnings(userId, 10);
+        console.log('✅ Recent learnings retrieved:', learnings.length);
+      } catch (error) {
+        console.error('⚠️ Error getting recent learnings:', error);
+        learnings = [];
+      }
 
       // Get recent hurdles (last 5)
-      const hurdles = await this.getRecentHurdles(userId, 5);
+      console.log('📊 Getting recent hurdles...');
+      let hurdles: any[] = [];
+      try {
+        hurdles = await this.getRecentHurdles(userId, 5);
+        console.log('✅ Recent hurdles retrieved:', hurdles.length);
+      } catch (error) {
+        console.error('⚠️ Error getting recent hurdles:', error);
+        hurdles = [];
+      }
 
       // Get user summary
-      const summary = await this.notion.getUserSummary(userId);
+      console.log('📊 Getting user summary...');
+      let summary: any = null;
+      try {
+        summary = await this.notion.getUserSummary(userId);
+        console.log('✅ User summary retrieved:', summary);
+      } catch (error) {
+        console.error('⚠️ Error getting user summary:', error);
+        summary = null;
+      }
 
-      return {
+      const context = {
         habits: habits || [],
         recentProofs: recentProofs || [],
         learnings: learnings || [],
@@ -211,8 +247,18 @@ export class PersonalAssistant {
         summary: summary || null
       };
 
+      console.log('📋 Final context:', {
+        habitsCount: context.habits.length,
+        proofsCount: context.recentProofs.length,
+        learningsCount: context.learnings.length,
+        hurdlesCount: context.hurdles.length,
+        hasSummary: !!context.summary
+      });
+
+      return context;
+
     } catch (error) {
-      console.error('Error gathering user context:', error);
+      console.error('❌ Error gathering user context:', error);
       return {
         habits: [],
         recentProofs: [],

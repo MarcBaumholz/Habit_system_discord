@@ -36,38 +36,57 @@ export class PerplexityClient {
         ? `${context}\n\nUser Question: ${prompt}`
         : prompt;
 
+      console.log('🤖 Calling Perplexity API with model:', model);
+      console.log('📝 Prompt length:', fullPrompt.length);
+
+      const requestBody = {
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a helpful AI assistant for a habit tracking system. You have access to the user's personal data including their habits, progress, and goals. Provide helpful, encouraging, and actionable advice based on their data. Be concise but informative.`
+          },
+          {
+            role: 'user',
+            content: fullPrompt
+          }
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+        top_p: 0.9
+      };
+
+      console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
+
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: model,
-          messages: [
-            {
-              role: 'system',
-              content: `You are a helpful AI assistant for a habit tracking system. You have access to the user's personal data including their habits, progress, and goals. Provide helpful, encouraging, and actionable advice based on their data. Be concise but informative.`
-            },
-            {
-              role: 'user',
-              content: fullPrompt
-            }
-          ],
-          max_tokens: 500,
-          temperature: 0.7,
-          top_p: 0.9
-        })
+        body: JSON.stringify(requestBody)
       });
 
+      console.log('📥 Response status:', response.status, response.statusText);
+
       if (!response.ok) {
-        throw new Error(`Perplexity API error: ${response.status} ${response.statusText}`);
+        let errorText = '';
+        try {
+          errorText = await response.text();
+        } catch (e) {
+          errorText = 'Could not read error response';
+        }
+        console.error('❌ Perplexity API error response:', errorText);
+        throw new Error(`Perplexity API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const data: PerplexityResponse = await response.json();
+      console.log('📥 Response data:', JSON.stringify(data, null, 2));
       
       if (data.choices && data.choices.length > 0) {
-        return data.choices[0].message.content;
+        const content = data.choices[0].message.content;
+        console.log('✅ AI Response:', content);
+        return content;
       } else {
         throw new Error('No response from Perplexity API');
       }

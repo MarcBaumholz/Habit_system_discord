@@ -372,13 +372,13 @@ export class NotionClient {
           {
             property: 'Date',
             date: {
-              greater_than_or_equal_to: startDate
+              on_or_after: startDate
             }
           },
           {
             property: 'Date',
             date: {
-              less_than_or_equal_to: endDate
+              on_or_before: endDate
             }
           }
         ];
