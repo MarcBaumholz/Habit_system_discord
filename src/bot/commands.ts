@@ -22,6 +22,9 @@ export class CommandHandler {
     const discordId = interaction.user.id;
     
     try {
+      // Defer the reply to prevent timeout
+      await interaction.deferReply({ ephemeral: false });
+      
       console.log('🔍 Starting join process for user:', discordId);
       
       await this.logger.info(
@@ -169,16 +172,21 @@ export class CommandHandler {
         `• Check your personal channel for private habit management!\n\n` +
         `💪 **Ready for your 66-day habit challenge!**`;
 
-      await interaction.reply({
-        content: welcomeMessage,
-        ephemeral: false
+      await interaction.editReply({
+        content: welcomeMessage
       });
     } catch (error) {
       console.error('Error in join command:', error);
-      await interaction.reply({
-        content: 'Sorry, there was an error joining the system. Please try again.',
-        ephemeral: true
-      });
+      if (interaction.deferred) {
+        await interaction.editReply({
+          content: 'Sorry, there was an error joining the system. Please try again.'
+        });
+      } else {
+        await interaction.reply({
+          content: 'Sorry, there was an error joining the system. Please try again.',
+          ephemeral: true
+        });
+      }
     }
   }
 
