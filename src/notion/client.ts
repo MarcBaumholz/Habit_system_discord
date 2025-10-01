@@ -287,26 +287,50 @@ export class NotionClient {
   }
 
   async getUserByDiscordId(discordId: string): Promise<User | null> {
-    const response = await this.client.databases.query({
-      database_id: this.databases.users,
-      filter: {
-        property: 'Discord ID ',
-        title: { equals: discordId }
+    try {
+      console.log('🔍 Looking up user by Discord ID:', discordId);
+      
+      const response = await this.client.databases.query({
+        database_id: this.databases.users,
+        filter: {
+          property: 'Discord ID ',
+          title: { equals: discordId }
+        }
+      });
+
+      console.log('📊 Database query response:', {
+        resultsCount: response.results.length,
+        hasResults: response.results.length > 0
+      });
+
+      if (response.results.length === 0) {
+        console.log('❌ No user found with Discord ID:', discordId);
+        return null;
       }
-    });
 
-    if (response.results.length === 0) return null;
+      const page = response.results[0] as any;
+      const user = {
+        id: page.id,
+        discordId: page.properties['Discord ID '].title[0].text.content,
+        name: page.properties['Name'].rich_text[0].text.content,
+        timezone: page.properties['Timezone'].rich_text[0].text.content,
+        bestTime: page.properties['Best Time'].rich_text[0].text.content,
+        trustCount: page.properties['Trust Count'].number,
+        personalChannelId: page.properties['Personal Channel ID']?.rich_text?.[0]?.text?.content
+      };
 
-    const page = response.results[0] as any;
-    return {
-      id: page.id,
-      discordId: page.properties['Discord ID '].title[0].text.content,
-      name: page.properties['Name'].rich_text[0].text.content,
-      timezone: page.properties['Timezone'].rich_text[0].text.content,
-      bestTime: page.properties['Best Time'].rich_text[0].text.content,
-      trustCount: page.properties['Trust Count'].number,
-      personalChannelId: page.properties['Personal Channel ID']?.rich_text?.[0]?.text?.content
-    };
+      console.log('✅ User found:', {
+        id: user.id,
+        name: user.name,
+        discordId: user.discordId,
+        hasPersonalChannel: !!user.personalChannelId
+      });
+
+      return user;
+    } catch (error) {
+      console.error('❌ Error fetching user by Discord ID:', discordId, error);
+      return null;
+    }
   }
 
   async updateUser(userId: string, updates: Partial<User>): Promise<User> {
