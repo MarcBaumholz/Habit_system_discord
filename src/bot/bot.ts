@@ -321,6 +321,12 @@ export class HabitBot {
             accountabilityChannelId: process.env.DISCORD_ACCOUNTABILITY_GROUP
           }
         );
+        
+        // Test daily message sending after 5 seconds (for testing)
+        setTimeout(async () => {
+          console.log('🧪 Testing daily message sending...');
+          await this.dailyMessageScheduler.testSendDailyMessage();
+        }, 5000);
       }, 3000);
     });
 

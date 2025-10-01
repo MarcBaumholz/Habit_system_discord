@@ -208,21 +208,38 @@ export class DailyMessageScheduler {
       if (currentHour === 6) {
         await channel.send(message);
         console.log(`✅ Daily message sent for day ${currentDay}/66`);
+        
+        // Only log success if message was actually sent
+        await this.logger.success(
+          'SCHEDULER',
+          'Daily Message Sent',
+          `Daily motivational message sent for day ${currentDay}/66`,
+          {
+            day: currentDay,
+            totalDays: 66,
+            channelId: this.accountabilityChannelId,
+            messageLength: message.length,
+            sentAt: now.toISOString()
+          }
+        );
       } else {
         console.log(`⏰ Daily message scheduled for day ${currentDay}/66 (will send at 6 AM)`);
+        
+        // Log scheduling info instead of success
+        await this.logger.info(
+          'SCHEDULER',
+          'Daily Message Scheduled',
+          `Daily motivational message scheduled for day ${currentDay}/66 (will send at 6 AM)`,
+          {
+            day: currentDay,
+            totalDays: 66,
+            channelId: this.accountabilityChannelId,
+            messageLength: message.length,
+            currentHour: currentHour,
+            scheduledFor: '06:00'
+          }
+        );
       }
-
-      await this.logger.success(
-        'SCHEDULER',
-        'Daily Message Sent',
-        `Daily motivational message sent for day ${currentDay}/66`,
-        {
-          day: currentDay,
-          totalDays: 66,
-          channelId: this.accountabilityChannelId,
-          messageLength: message.length
-        }
-      );
 
     } catch (error) {
       await this.logger.logError(
@@ -238,7 +255,52 @@ export class DailyMessageScheduler {
   }
 
   /**
-   * Start the daily message scheduler (runs at 7 AM every day)
+   * Test function to send daily message manually (for testing purposes)
+   */
+  async testSendDailyMessage(): Promise<void> {
+    try {
+      console.log('🧪 Testing daily message sending...');
+      
+      const channel = this.client.channels.cache.get(this.accountabilityChannelId) as TextChannel;
+      if (!channel) {
+        console.error('❌ Test failed: Accountability channel not found');
+        return;
+      }
+
+      const currentDay = this.getCurrentDay();
+      const message = this.generateDailyMessage(currentDay);
+      
+      await channel.send(`🧪 **TEST MESSAGE** - ${message}`);
+      console.log(`✅ Test message sent for day ${currentDay}/66`);
+      
+      await this.logger.success(
+        'SCHEDULER',
+        'Test Message Sent',
+        `Test daily motivational message sent for day ${currentDay}/66`,
+        {
+          day: currentDay,
+          totalDays: 66,
+          channelId: this.accountabilityChannelId,
+          messageLength: message.length,
+          testMode: true
+        }
+      );
+      
+    } catch (error) {
+      console.error('❌ Test failed:', error);
+      await this.logger.logError(
+        error as Error,
+        'Test Daily Message Sending',
+        {
+          channelId: this.accountabilityChannelId,
+          currentDay: this.getCurrentDay()
+        }
+      );
+    }
+  }
+
+  /**
+   * Start the daily message scheduler (runs at 6 AM every day)
    */
   startScheduler(): void {
     // Schedule for 6 AM every day (0 6 * * *)
