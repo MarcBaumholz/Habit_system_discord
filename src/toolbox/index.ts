@@ -39,14 +39,40 @@ export class ToolboxEngine {
   private scoreTool(tool: HabitTool, text: string): number {
     let score = 0;
 
-    // Enhanced keyword matching with German support
+    // Enhanced keyword matching with German support and exact matches
     for (const kw of tool.keywords) {
-      if (text.includes(kw.toLowerCase())) score += 3;
+      const keyword = kw.toLowerCase();
+      if (text.includes(keyword)) {
+        score += 3;
+        // Bonus for exact word matches
+        if (text.includes(` ${keyword} `) || text.startsWith(`${keyword} `) || text.endsWith(` ${keyword}`)) {
+          score += 2;
+        }
+        // Bonus for phrase matches
+        if (text.includes(keyword + 's') || text.includes(keyword + 'ing') || text.includes(keyword + 'ed')) {
+          score += 1;
+        }
+      }
     }
 
-    // Enhanced problem patterns with German translations
+    // Enhanced problem patterns with German translations and fuzzy matching
     for (const p of tool.problemPatterns) {
-      if (text.includes(p.toLowerCase())) score += 5;
+      const pattern = p.toLowerCase();
+      if (text.includes(pattern)) {
+        score += 5;
+        // Bonus for exact phrase matches
+        if (text === pattern || text.includes(` ${pattern} `)) {
+          score += 3;
+        }
+      }
+      // Fuzzy matching for similar phrases
+      const words = pattern.split(' ');
+      if (words.length > 1) {
+        const matchedWords = words.filter(word => text.includes(word));
+        if (matchedWords.length >= words.length * 0.7) {
+          score += 2;
+        }
+      }
     }
 
     // Comprehensive category hints with German and more use cases
@@ -67,9 +93,9 @@ export class ToolboxEngine {
         'low motivation', 'boring', 'hard to start', 'procrastinate', 'lazy', 'tired', 'unmotivated', 'no energy'
       ],
       routine: [
-        'routine', 'stack', 'bundle', 'anchor', 'after', 'before', 'remember', 'forget', 'morning', 'evening', 'micro', 'tiny',
-        'routine', 'gewohnheit', 'vergesen', 'vergessen', 'morgens', 'abends', 'klein', 'winzig', 'automatisch',
-        'forget to do', 'hard to remember', 'no routine', 'inconsistent', 'irregular', 'sporadic', 'unreliable'
+        'routine', 'stack', 'bundle', 'anchor', 'after', 'before', 'remember', 'forget', 'morning', 'evening', 'micro', 'tiny', 'combining', 'combine', 'merge', 'group', 'tracking', 'track', 'streak',
+        'routine', 'gewohnheit', 'vergesen', 'vergessen', 'morgens', 'abends', 'klein', 'winzig', 'automatisch', 'kombinieren', 'gruppieren', 'verfolgen', 'messen', 'streak', 'kette',
+        'forget to do', 'hard to remember', 'no routine', 'inconsistent', 'irregular', 'sporadic', 'unreliable', 'combining habits', 'tracking habits', 'habit combination'
       ],
       environment: [
         'environment', 'setup', 'prepare', 'space', 'place', 'triggers', 'cues', 'digital', 'minimalism',
@@ -117,6 +143,7 @@ export class ToolboxEngine {
       'unmotiviert': 6,
       'routine': 4,
       'gewohnheit': 4,
+      'gewohnheiten': 6,
       'morgens': 4,
       'abends': 4,
       'klein': 3,
@@ -124,7 +151,19 @@ export class ToolboxEngine {
       'umgebung': 4,
       'vorbereitung': 4,
       'platz': 3,
-      'raum': 3
+      'raum': 3,
+      'kombinieren': 6,
+      'gruppieren': 6,
+      'verfolgen': 6,
+      'messen': 6,
+      'fortschritt': 6,
+      'streak': 6,
+      'kette': 6,
+      'identität': 6,
+      'werden': 4,
+      'persönlichkeit': 6,
+      'verketten': 6,
+      'zusammenfassen': 6
     };
 
     for (const [phrase, points] of Object.entries(germanPhrases)) {

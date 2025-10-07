@@ -169,70 +169,6 @@ export class CommandHandler {
     }
   }
 
-  async handleHabitAdd(interaction: CommandInteraction) {
-    if (!interaction.isChatInputCommand()) return;
-    
-    const name = interaction.options.getString('name') || '';
-    const domains = (interaction.options.getString('domains') || '').split(',');
-      const frequency = interaction.options.getInteger('frequency') || 1;
-    const context = interaction.options.getString('context') || '';
-    const difficulty = interaction.options.getString('difficulty') || '';
-    const smartGoal = interaction.options.getString('smart_goal') || '';
-    const why = interaction.options.getString('why') || '';
-    const minimalDose = interaction.options.getString('minimal_dose') || '';
-    const habitLoop = interaction.options.getString('habit_loop') || '';
-    const implementationIntentions = interaction.options.getString('implementation_intentions') || '';
-    const hurdles = interaction.options.getString('hurdles') || '';
-    const reminderType = interaction.options.getString('reminder_type') || '';
-
-    try {
-      const user = await this.notion.getUserByDiscordId(interaction.user.id);
-      if (!user) {
-        await interaction.reply({
-          content: 'Please use `/join` first to register in the system.',
-          ephemeral: true
-        });
-        return;
-      }
-
-      const habit = await this.notion.createHabit({
-        userId: user.id,
-        name,
-        domains,
-        frequency,
-        context,
-        difficulty,
-        smartGoal,
-        why,
-        minimalDose,
-        habitLoop,
-        implementationIntentions,
-        hurdles,
-        reminderType
-      });
-
-      await interaction.reply({
-        content: `🎯 **Keystone Habit Created: "${habit.name}"**
-
-✅ Habit saved to Notion database
-📊 All details recorded for tracking
-
-🚀 **Next Steps:**
-• Use \`/proof\` daily to submit evidence
-• Share insights with \`/learning\`
-• Check progress with \`/summary\`
-
-💪 **Your habit journey starts now!**`,
-        ephemeral: false
-      });
-    } catch (error) {
-      console.error('Error creating habit:', error);
-      await interaction.reply({
-        content: 'Sorry, there was an error creating your habit. Please try again.',
-        ephemeral: true
-      });
-    }
-  }
 
   async handleProof(interaction: CommandInteraction) {
     if (!interaction.isChatInputCommand()) return;
@@ -357,24 +293,52 @@ ${isMinimalDose ? '⭐ Every bit counts - minimal dose accepted!' : isCheatDay ?
       
       console.log('📊 Summary data:', summary);
 
-      // Format the summary message
+      // Format the summary message with enhanced data
       const weekLabel = week ? `Week ${week}` : 'This Week';
+      const weekRange = `${summary.weekStartDate} to ${summary.weekEndDate}`;
+      
+      // Create habit progress section
+      const habitProgressText = summary.habitProgress.length > 0 
+        ? summary.habitProgress.map(habit => {
+            const status = habit.completionRate >= 100 ? '✅' : habit.completionRate >= 50 ? '🟡' : '❌';
+            const lastProof = habit.lastProofDate ? ` (Last: ${new Date(habit.lastProofDate).toLocaleDateString()})` : ' (No proofs yet)';
+            return `${status} **${habit.habitName}**: ${habit.actualFrequency}/${habit.targetFrequency} (${habit.completionRate}%)${lastProof}`;
+          }).join('\n')
+        : 'No habits configured yet. Use `/keystonehabit` to create your first habit!';
+      
+      // Create motivational message based on performance
+      let motivationalMessage = '';
+      if (summary.completionRate >= 100) {
+        motivationalMessage = '🔥 **INCREDIBLE!** You\'re crushing all your targets!';
+      } else if (summary.completionRate >= 75) {
+        motivationalMessage = '💪 **Great job!** You\'re doing really well!';
+      } else if (summary.completionRate >= 50) {
+        motivationalMessage = '👍 **Good progress!** Keep building momentum!';
+      } else if (summary.completionRate > 0) {
+        motivationalMessage = '🚀 **Getting started!** Every step counts!';
+      } else {
+        motivationalMessage = '🌟 **Ready to begin!** Use `/proof` to start tracking!';
+      }
       
       await interaction.editReply({
         content: `📊 **Your Weekly Summary - ${weekLabel}**
+📅 **Week:** ${weekRange}
 
-🎯 **This Week's Progress:**
-• ✅ Proofs submitted: ${summary.weekProofs}/${summary.weekDays} days
+🎯 **Overall Progress:**
+• ✅ Total proofs: ${summary.weekProofs} submitted
 • ⭐ Minimal doses: ${summary.minimalDoses} days  
 • 🎯 Cheat days: ${summary.cheatDays} days
-• 📈 Completion rate: ${summary.completionRate}%
+• 📈 Overall completion: ${summary.completionRate}%
 
 💪 **Streak Status:**
-• Current streak: ${summary.currentStreak} days
-• Best streak: ${summary.bestStreak} days
-• Total habits tracked: ${summary.totalHabits}
+• 🔥 Current streak: ${summary.currentStreak} days
+• 🏆 Best streak: ${summary.bestStreak} days
+• 📊 Total habits: ${summary.totalHabits}
 
-🌟 **Keep up the great work!**
+🎯 **Habit Breakdown:**
+${habitProgressText}
+
+${motivationalMessage}
 Use \`/proof\` daily to maintain your momentum!`
       });
 
@@ -542,6 +506,77 @@ Every insight helps the community grow stronger!`,
         content: 'Sorry, there was an error sharing your learning. Please try again.',
         ephemeral: true
       });
+    }
+  }
+
+  async handleTools(interaction: ChatInputCommandInteraction) {
+    const searchQuery = interaction.options.get('search')?.value as string;
+    
+    try {
+      await interaction.deferReply({ ephemeral: false });
+      
+      // Get the website URL from environment variable or use default
+      const websiteUrl = process.env.WEBSITE_URL || 'http://localhost:3000';
+      
+      let response = `🧰 **Habit Tools Website**\n\n`;
+      response += `🌐 **Website:** ${websiteUrl}\n`;
+      response += `📊 **Total Tools:** 19 proven strategies\n`;
+      response += `🌍 **Languages:** English & German support\n\n`;
+      
+      if (searchQuery) {
+        const searchUrl = `${websiteUrl}/search?q=${encodeURIComponent(searchQuery)}`;
+        response += `🔍 **Search for:** "${searchQuery}"\n`;
+        response += `🔗 **Direct Link:** ${searchUrl}\n\n`;
+      }
+      
+      response += `**Featured Tools:**\n`;
+      response += `• Habit Stacking - Attach new habits to existing routines\n`;
+      response += `• Time Boxing - Block specific time slots\n`;
+      response += `• Habit Tracker - Visual progress tracking\n`;
+      response += `• Pomodoro Technique - Focused work intervals\n`;
+      response += `• Advanced Habit Stacking - Complex routine building\n\n`;
+      
+      response += `💡 **Tip:** Use the search function to find tools for specific challenges like "combining habits" or "no time".\n\n`;
+      response += `🚀 **Get Started:** Click the link above to explore all tools with detailed instructions and examples!`;
+      
+      await interaction.editReply({ content: response });
+      
+      await this.logger.info(
+        'COMMANDS',
+        'Tools Command',
+        `User ${interaction.user.username} requested habit tools website${searchQuery ? ` with search: "${searchQuery}"` : ''}`,
+        {
+          searchQuery: searchQuery || null,
+          websiteUrl
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
+      
+    } catch (error) {
+      console.error('Error in handleTools:', error);
+      await this.logger.logError(
+        error as Error,
+        'Tools Command Error',
+        {
+          searchQuery: searchQuery || null,
+          userId: interaction.user.id
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
+      
+      if (interaction.replied || interaction.deferred) {
+        await interaction.editReply({ content: '❌ There was an error accessing the tools website. Please try again later.' });
+      } else {
+        await interaction.reply({ content: '❌ There was an error accessing the tools website. Please try again later.', ephemeral: true });
+      }
     }
   }
 

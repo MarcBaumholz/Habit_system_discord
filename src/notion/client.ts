@@ -522,14 +522,35 @@ export class NotionClient {
     totalHabits: number;
     weekProofs: number;
     weekDays: number;
+    habitProgress: Array<{
+      habitId: string;
+      habitName: string;
+      targetFrequency: number;
+      actualFrequency: number;
+      completionRate: number;
+      lastProofDate?: string;
+    }>;
+    weekStartDate: string;
+    weekEndDate: string;
   }> {
     try {
       // Get user's habits
       const habits = await this.getHabitsByUserId(userId);
       
-      // Calculate date range for the week
+      // Calculate date range for the week (Monday to Sunday)
       const now = new Date();
-      const weekStartDate = weekStart ? new Date(weekStart) : new Date(now.setDate(now.getDate() - now.getDay()));
+      let weekStartDate: Date;
+      
+      if (weekStart) {
+        weekStartDate = new Date(weekStart);
+      } else {
+        // Get Monday of current week
+        const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1; // Sunday = 6 days from Monday
+        weekStartDate = new Date(now);
+        weekStartDate.setDate(now.getDate() - daysFromMonday);
+      }
+      
       const weekEndDate = new Date(weekStartDate);
       weekEndDate.setDate(weekStartDate.getDate() + 6);
       
@@ -542,14 +563,33 @@ export class NotionClient {
       const allProofs = await this.getProofsByUserId(userId);
       const weekProofs = await this.getProofsByUserId(userId, startDateStr, endDateStr);
       
-      // Calculate statistics
+      // Calculate habit-specific progress
+      const habitProgress = habits.map(habit => {
+        const habitProofs = weekProofs.filter(proof => proof.habitId === habit.id);
+        const lastProof = habitProofs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+        
+        return {
+          habitId: habit.id,
+          habitName: habit.name,
+          targetFrequency: habit.frequency,
+          actualFrequency: habitProofs.length,
+          completionRate: Math.round((habitProofs.length / habit.frequency) * 100),
+          lastProofDate: lastProof?.date
+        };
+      });
+      
+      // Calculate overall statistics
       const totalProofs = allProofs.length;
       const minimalDoses = weekProofs.filter(p => p.isMinimalDose).length;
       const cheatDays = weekProofs.filter(p => p.isCheatDay).length;
       const weekDays = 7;
-      const completionRate = Math.round((weekProofs.length / weekDays) * 100);
       
-      // Calculate streaks (simplified - in real implementation, you'd need more complex logic)
+      // Calculate overall completion rate based on habit targets
+      const totalTargetFrequency = habits.reduce((sum, habit) => sum + habit.frequency, 0);
+      const totalActualFrequency = weekProofs.length;
+      const completionRate = totalTargetFrequency > 0 ? Math.round((totalActualFrequency / totalTargetFrequency) * 100) : 0;
+      
+      // Calculate streaks with improved logic
       const currentStreak = this.calculateCurrentStreak(allProofs);
       const bestStreak = this.calculateBestStreak(allProofs);
       
@@ -562,7 +602,10 @@ export class NotionClient {
         bestStreak,
         totalHabits: habits.length,
         weekProofs: weekProofs.length,
-        weekDays
+        weekDays,
+        habitProgress,
+        weekStartDate: startDateStr,
+        weekEndDate: endDateStr
       };
     } catch (error) {
       console.error('Error calculating user summary:', error);
@@ -575,22 +618,50 @@ export class NotionClient {
         bestStreak: 0,
         totalHabits: 0,
         weekProofs: 0,
-        weekDays: 7
+        weekDays: 7,
+        habitProgress: [],
+        weekStartDate: '',
+        weekEndDate: ''
       };
     }
   }
 
   private calculateCurrentStreak(proofs: Proof[]): number {
-    // Simplified streak calculation - in real implementation, you'd need more complex logic
-    const sortedProofs = proofs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    let streak = 0;
-    let currentDate = new Date();
+    if (proofs.length === 0) return 0;
     
-    for (const proof of sortedProofs) {
-      const proofDate = new Date(proof.date);
-      const daysDiff = Math.floor((currentDate.getTime() - proofDate.getTime()) / (1000 * 60 * 60 * 24));
+    // Sort proofs by date (newest first)
+    const sortedProofs = proofs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    // Get unique dates (one proof per day counts as one day)
+    const uniqueDates = [...new Set(sortedProofs.map(p => p.date))].sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    
+    if (uniqueDates.length === 0) return 0;
+    
+    let streak = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Check if there's a proof today or yesterday
+    const latestProofDate = new Date(uniqueDates[0]);
+    latestProofDate.setHours(0, 0, 0, 0);
+    
+    const daysDiff = Math.floor((today.getTime() - latestProofDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    // If the latest proof is more than 2 days old, streak is broken
+    if (daysDiff > 2) return 0;
+    
+    // Start counting from the latest proof date
+    let currentDate = new Date(latestProofDate);
+    streak = 1;
+    
+    // Count consecutive days backwards
+    for (let i = 1; i < uniqueDates.length; i++) {
+      const proofDate = new Date(uniqueDates[i]);
+      proofDate.setHours(0, 0, 0, 0);
       
-      if (daysDiff === streak) {
+      const daysBetween = Math.floor((currentDate.getTime() - proofDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysBetween === 1) {
         streak++;
         currentDate = proofDate;
       } else {
@@ -602,31 +673,35 @@ export class NotionClient {
   }
 
   private calculateBestStreak(proofs: Proof[]): number {
-    // Simplified best streak calculation
-    const sortedProofs = proofs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    let bestStreak = 0;
-    let currentStreak = 0;
-    let lastDate: Date | null = null;
+    if (proofs.length === 0) return 0;
     
-    for (const proof of sortedProofs) {
-      const proofDate = new Date(proof.date);
+    // Sort proofs by date (oldest first)
+    const sortedProofs = proofs.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    // Get unique dates (one proof per day counts as one day)
+    const uniqueDates = [...new Set(sortedProofs.map(p => p.date))].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    
+    if (uniqueDates.length === 0) return 0;
+    
+    let bestStreak = 1;
+    let currentStreak = 1;
+    
+    // Count consecutive days
+    for (let i = 1; i < uniqueDates.length; i++) {
+      const prevDate = new Date(uniqueDates[i - 1]);
+      const currentDate = new Date(uniqueDates[i]);
       
-      if (lastDate) {
-        const daysDiff = Math.floor((proofDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-        if (daysDiff === 1) {
-          currentStreak++;
-        } else {
-          bestStreak = Math.max(bestStreak, currentStreak);
-          currentStreak = 1;
-        }
+      const daysBetween = Math.floor((currentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysBetween === 1) {
+        currentStreak++;
+        bestStreak = Math.max(bestStreak, currentStreak);
       } else {
         currentStreak = 1;
       }
-      
-      lastDate = proofDate;
     }
     
-    return Math.max(bestStreak, currentStreak);
+    return bestStreak;
   }
 
   async getWeeklyFrequencyCount(userId: string, habitId: string): Promise<{ current: number; target: number }> {
@@ -638,13 +713,13 @@ export class NotionClient {
         return { current: 0, target: 1 };
       }
 
-      // Calculate current week's start and end dates (Sunday 0:00 to Sunday 23:59)
+      // Calculate current week's start and end dates (Monday to Sunday)
       const now = new Date();
       const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-      const daysFromSunday = currentDay; // How many days since last Sunday
+      const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1; // Sunday = 6 days from Monday
       
       const weekStart = new Date(now);
-      weekStart.setDate(now.getDate() - daysFromSunday);
+      weekStart.setDate(now.getDate() - daysFromMonday);
       weekStart.setHours(0, 0, 0, 0);
       
       const weekEnd = new Date(weekStart);
@@ -673,19 +748,59 @@ export class NotionClient {
   getCurrentWeekInfo(): { weekStart: Date; weekEnd: Date; weekNumber: number } {
     const now = new Date();
     const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-    const daysFromSunday = currentDay;
+    const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1; // Sunday = 6 days from Monday
     
     const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - daysFromSunday);
+    weekStart.setDate(now.getDate() - daysFromMonday);
     weekStart.setHours(0, 0, 0, 0);
     
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
 
-    // Calculate week number (week of year)
-    const weekNumber = Math.ceil((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+    // Calculate week number (week of year) - ISO week
+    const weekNumber = this.getISOWeekNumber(now);
 
     return { weekStart, weekEnd, weekNumber };
+  }
+
+  private getISOWeekNumber(date: Date): number {
+    const target = new Date(date.valueOf());
+    const dayNr = (date.getDay() + 6) % 7;
+    target.setDate(target.getDate() - dayNr + 3);
+    const firstThursday = target.valueOf();
+    target.setMonth(0, 1);
+    if (target.getDay() !== 4) {
+      target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+    }
+    return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    try {
+      console.log('🔍 Fetching all users from Notion...');
+      
+      const response = await this.client.databases.query({
+        database_id: this.databases.users
+      });
+
+      console.log(`📊 Found ${response.results.length} users in Notion`);
+
+      return response.results.map((page: any) => {
+        const properties = page.properties;
+        return {
+          id: page.id,
+          discordId: properties['Discord ID ']?.title?.[0]?.text?.content || '',
+          name: properties['Name']?.rich_text?.[0]?.text?.content || 'Unknown User',
+          timezone: properties['Timezone']?.rich_text?.[0]?.text?.content || 'Europe/Berlin',
+          bestTime: properties['Best Time']?.rich_text?.[0]?.text?.content || '09:00',
+          trustCount: properties['Trust Count']?.number || 0,
+          personalChannelId: properties['Personal Channel ID']?.rich_text?.[0]?.text?.content
+        };
+      });
+    } catch (error) {
+      console.error('❌ Error fetching all users:', error);
+      return [];
+    }
   }
 }

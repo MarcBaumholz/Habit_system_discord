@@ -1,6 +1,7 @@
 import { Client, TextChannel } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { DiscordLogger } from './discord-logger';
+import { AIIncentiveManager } from './ai-incentive-manager';
 import * as cron from 'node-cron';
 
 export class DailyMessageScheduler {
@@ -10,18 +11,18 @@ export class DailyMessageScheduler {
   private accountabilityChannelId: string;
   private startDate: Date;
   private motivationalQuotes: string[];
+  private aiIncentiveManager: AIIncentiveManager;
 
   constructor(client: Client, notion: NotionClient, logger: DiscordLogger) {
     this.client = client;
     this.notion = notion;
     this.logger = logger;
     this.accountabilityChannelId = process.env.DISCORD_ACCOUNTABILITY_GROUP || '';
+    this.aiIncentiveManager = new AIIncentiveManager(client, notion, logger);
     
-    // Set start date to tomorrow (so it starts counting from day 1)
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0); // Start of tomorrow
-    this.startDate = tomorrow;
+    // Set start date to Monday, October 6, 2025 (Day 1 of the challenge)
+    // Since today is Tuesday (Day 2), we start counting from Monday
+    this.startDate = new Date('2025-10-06T00:00:00.000Z'); // Monday, Day 1
     
     // Collection of motivational quotes for 66 days
     this.motivationalQuotes = [
@@ -142,12 +143,27 @@ export class DailyMessageScheduler {
 
   /**
    * Calculate the current day number (1-66)
+   * Monday Oct 6, 2025 = Day 1
+   * Tuesday Oct 7, 2025 = Day 2  
+   * Wednesday Oct 8, 2025 = Day 3
    */
   getCurrentDay(): number {
-    const today = new Date();
-    const timeDiff = today.getTime() - this.startDate.getTime();
+    const now = new Date();
+    
+    // Normalize both dates to start of day in UTC
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfStartDate = new Date(this.startDate.getFullYear(), this.startDate.getMonth(), this.startDate.getDate());
+    
+    // Calculate difference in days
+    const timeDiff = startOfToday.getTime() - startOfStartDate.getTime();
     const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24)) + 1;
-    return Math.min(Math.max(daysDiff, 1), 66); // Clamp between 1 and 66
+    
+    // Clamp between 1 and 66, but ensure we don't go below 1
+    const currentDay = Math.max(1, Math.min(daysDiff, 66));
+    
+    console.log(`📅 Day calculation: Today=${startOfToday.toISOString().split('T')[0]}, Start=${startOfStartDate.toISOString().split('T')[0]}, Day=${currentDay}`);
+    
+    return currentDay;
   }
 
   /**
@@ -303,34 +319,98 @@ export class DailyMessageScheduler {
    * Start the daily message scheduler (runs at 6 AM every day)
    */
   startScheduler(): void {
+    const timezone = process.env.TIMEZONE || 'Europe/Berlin';
+    
     // Schedule for 6 AM every day (0 6 * * *)
     const task = cron.schedule('0 6 * * *', async () => {
-      console.log('🕰️ Sending daily motivational message...');
-      await this.logger.info(
-        'SCHEDULER',
-        'Scheduled Task Triggered',
-        'Daily motivational message task triggered by cron',
-        {
-          cronExpression: '0 6 * * *',
-          timezone: process.env.TIMEZONE || 'Europe/Berlin'
-        }
-      );
-      await this.sendDailyMessage();
+      try {
+        console.log('🕰️ Daily message scheduler triggered at 6 AM...');
+        
+        await this.logger.info(
+          'SCHEDULER',
+          'Scheduled Task Triggered',
+          'Daily motivational message task triggered by cron at 6 AM',
+          {
+            cronExpression: '0 6 * * *',
+            timezone: timezone,
+            currentDay: this.getCurrentDay(),
+            triggerTime: new Date().toISOString()
+          }
+        );
+        
+        // Send the daily message
+        await this.sendDailyMessage();
+        
+        console.log('✅ Daily message scheduler completed successfully');
+        
+      } catch (error) {
+        console.error('❌ Error in daily message scheduler:', error);
+        await this.logger.logError(
+          error as Error,
+          'Daily Message Scheduler Error',
+          {
+            cronExpression: '0 6 * * *',
+            timezone: timezone,
+            currentDay: this.getCurrentDay()
+          }
+        );
+      }
     }, {
       scheduled: true,
-      timezone: process.env.TIMEZONE || 'Europe/Berlin'
+      timezone: timezone
     });
 
-    console.log('📅 Daily message scheduler started (6 AM daily)');
+    // Schedule AI Incentive analysis for Sunday 8 AM (0 8 * * 0)
+    const aiIncentiveTask = cron.schedule('0 8 * * 0', async () => {
+      try {
+        console.log('🧠 AI Incentive scheduler triggered on Sunday at 8 AM...');
+        
+        await this.logger.info(
+          'AI_INCENTIVE',
+          'AI Incentive Task Triggered',
+          'Weekly AI incentive analysis triggered by cron on Sunday at 8 AM',
+          {
+            cronExpression: '0 8 * * 0',
+            timezone: timezone,
+            triggerTime: new Date().toISOString()
+          }
+        );
+        
+        // Run AI incentive analysis for all users
+        await this.aiIncentiveManager.runWeeklyAIIncentiveAnalysis();
+        
+        console.log('✅ AI Incentive analysis completed successfully');
+        
+      } catch (error) {
+        console.error('❌ Error in AI incentive scheduler:', error);
+        await this.logger.logError(
+          error as Error,
+          'AI Incentive Scheduler Error',
+          {
+            cronExpression: '0 8 * * 0',
+            timezone: timezone
+          }
+        );
+      }
+    }, {
+      scheduled: true,
+      timezone: timezone
+    });
+
+    console.log(`📅 Daily message scheduler started (6 AM daily, timezone: ${timezone})`);
+    console.log(`🧠 AI Incentive scheduler started (Sunday 8 AM, timezone: ${timezone})`);
     
     this.logger.success(
       'SCHEDULER',
       'Scheduler Started',
-      'Daily message scheduler started successfully',
+      'Daily message scheduler and AI incentive scheduler started successfully',
       {
-        cronExpression: '0 6 * * *',
-        timezone: process.env.TIMEZONE || 'Europe/Berlin',
-        accountabilityChannelId: this.accountabilityChannelId
+        dailyCron: '0 6 * * *',
+        aiIncentiveCron: '0 8 * * 0',
+        timezone: timezone,
+        accountabilityChannelId: this.accountabilityChannelId,
+        startDate: this.startDate.toISOString(),
+        currentDay: this.getCurrentDay()
       }
     );
   }
@@ -349,5 +429,26 @@ export class DailyMessageScheduler {
   async triggerDailyMessage(): Promise<void> {
     console.log('🧪 Manually triggering daily message...');
     await this.sendDailyMessage();
+  }
+
+  /**
+   * Get scheduler status and current day info (for debugging)
+   */
+  getSchedulerStatus(): any {
+    const currentDay = this.getCurrentDay();
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfStartDate = new Date(this.startDate.getFullYear(), this.startDate.getMonth(), this.startDate.getDate());
+    
+    return {
+      currentDay,
+      startDate: this.startDate.toISOString(),
+      today: startOfToday.toISOString(),
+      daysSinceStart: Math.floor((startOfToday.getTime() - startOfStartDate.getTime()) / (1000 * 3600 * 24)),
+      accountabilityChannelId: this.accountabilityChannelId,
+      timezone: process.env.TIMEZONE || 'Europe/Berlin',
+      cronExpression: '0 6 * * *',
+      nextMessageDate: currentDay < 66 ? `Day ${currentDay + 1}/66` : 'Challenge Complete!'
+    };
   }
 }

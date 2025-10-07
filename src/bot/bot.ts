@@ -11,6 +11,7 @@ import { DailyMessageScheduler } from './daily-message-scheduler';
 import { PersonalChannelManager } from './personal-channel-manager';
 import { DiscordLogger } from './discord-logger';
 import { PersonalAssistant } from './personal-assistant';
+import { AIIncentiveManager } from './ai-incentive-manager';
 
 export class HabitBot {
   private client: Client;
@@ -25,6 +26,7 @@ export class HabitBot {
   private dailyMessageScheduler: DailyMessageScheduler;
   private personalChannelManager: PersonalChannelManager;
   private personalAssistant: PersonalAssistant;
+  private aiIncentiveManager: AIIncentiveManager;
   private logger: DiscordLogger;
 
   constructor(notion: NotionClient) {
@@ -48,6 +50,7 @@ export class HabitBot {
     this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
     this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion, this.logger);
     this.personalAssistant = new PersonalAssistant(this.client, this.notion, this.logger);
+    this.aiIncentiveManager = new AIIncentiveManager(this.client, this.notion, this.logger);
     this.setupCommands();
     this.setupEventHandlers();
   }
@@ -58,64 +61,6 @@ export class HabitBot {
         .setName('join')
         .setDescription('Join the habit tracking system'),
       
-      new SlashCommandBuilder()
-        .setName('habit')
-        .setDescription('Manage your habits')
-        .addSubcommand(subcommand =>
-          subcommand
-            .setName('add')
-            .setDescription('Add a new keystone habit')
-            .addStringOption(option =>
-              option.setName('name')
-                .setDescription('Name of the habit')
-                .setRequired(true))
-            .addStringOption(option =>
-              option.setName('domains')
-                .setDescription('Life domains (comma-separated)')
-                .setRequired(true))
-            .addIntegerOption(option =>
-              option.setName('frequency')
-                .setDescription('Days per week (1-7)')
-                .setRequired(true)
-                .setMinValue(1)
-                .setMaxValue(7))
-            .addStringOption(option =>
-              option.setName('context')
-                .setDescription('When and where')
-                .setRequired(true))
-            .addStringOption(option =>
-              option.setName('difficulty')
-                .setDescription('Easy, medium, or hard')
-                .setRequired(true))
-            .addStringOption(option =>
-              option.setName('smart_goal')
-                .setDescription('Your SMART goal')
-                .setRequired(true))
-            .addStringOption(option =>
-              option.setName('why')
-                .setDescription('Why this habit matters')
-                .setRequired(true))
-            .addStringOption(option =>
-              option.setName('minimal_dose')
-                .setDescription('Minimal version for tough days')
-                .setRequired(true))
-            .addStringOption(option =>
-              option.setName('habit_loop')
-                .setDescription('Cue, craving, routine, reward')
-                .setRequired(true))
-            .addStringOption(option =>
-              option.setName('implementation_intentions')
-                .setDescription('If-then plans')
-                .setRequired(true))
-            .addStringOption(option =>
-              option.setName('hurdles')
-                .setDescription('Potential obstacles')
-                .setRequired(true))
-            .addStringOption(option =>
-              option.setName('reminder_type')
-                .setDescription('How you want to be reminded')
-                .setRequired(true))),
-
       new SlashCommandBuilder()
         .setName('proof')
         .setDescription('Submit daily proof')
@@ -185,6 +130,14 @@ export class HabitBot {
             .setRequired(true)),
 
       new SlashCommandBuilder()
+        .setName('tools')
+        .setDescription('Get link to the habit tools website with 19+ proven strategies')
+        .addStringOption(option =>
+          option.setName('search')
+            .setDescription('Search for a specific tool (optional)')
+            .setRequired(false)),
+
+      new SlashCommandBuilder()
         .setName('keystonehabit')
         .setDescription('Create a keystone habit - the foundation of your daily routine')
         .addStringOption(option =>
@@ -193,7 +146,7 @@ export class HabitBot {
             .setRequired(true))
         .addStringOption(option =>
           option.setName('domains')
-            .setDescription('Life domains this habit affects (comma-separated: health, fitness, work, etc.)')
+            .setDescription('Life categories this habit affects (comma-separated: health, fitness, work, relationships)')
             .setRequired(true))
         .addIntegerOption(option =>
           option.setName('frequency')
@@ -252,11 +205,11 @@ export class HabitBot {
     ];
 
     this.commands.set('join', { execute: this.commandHandler.handleJoin.bind(this.commandHandler) });
-    this.commands.set('habit', { execute: this.commandHandler.handleHabitAdd.bind(this.commandHandler) });
     this.commands.set('proof', { execute: this.commandHandler.handleProof.bind(this.commandHandler) });
     this.commands.set('summary', { execute: this.commandHandler.handleSummary.bind(this.commandHandler) });
     this.commands.set('learning', { execute: this.commandHandler.handleLearning.bind(this.commandHandler) });
     this.commands.set('hurdles', { execute: this.commandHandler.handleHurdles.bind(this.commandHandler) });
+    this.commands.set('tools', { execute: this.commandHandler.handleTools.bind(this.commandHandler) });
     this.commands.set('keystonehabit', { execute: this.commandHandler.handleKeystoneHabit.bind(this.commandHandler) });
 
     return commands;
@@ -433,34 +386,6 @@ export class HabitBot {
       await this.logger.logCommandInteraction(interaction);
 
       try {
-        // Handle subcommands
-        if (interaction.commandName === 'habit' && interaction.options.getSubcommand() === 'add') {
-          try {
-            await this.commandHandler.handleHabitAdd(interaction);
-          } catch (error) {
-            await this.logger.logError(
-              error as Error,
-              'Habit Add Command',
-              {
-                commandName: 'habit add',
-                userId: interaction.user.id,
-                guildId: interaction.guild?.id
-              },
-              {
-                channelId: interaction.channelId,
-                userId: interaction.user.id,
-                guildId: interaction.guild?.id
-              }
-            );
-            console.error('Error executing habit add command:', error);
-            if (interaction.replied || interaction.deferred) {
-              await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
-            } else {
-              await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
-            }
-          }
-          return;
-        }
 
         const command = this.commands.get(interaction.commandName);
         if (!command) {

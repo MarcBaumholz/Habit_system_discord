@@ -31,7 +31,7 @@ export class HabitFlowManager {
     },
     {
       key: 'domains',
-      prompt: 'Which life domains does this habit impact? Please list them separated by commas.',
+      prompt: 'Which life categories does this habit impact? Please list them separated by commas (e.g., health, fitness, work, relationships).',
       transform: (input: string) =>
         input
           .split(',')
@@ -95,9 +95,9 @@ export class HabitFlowManager {
       return false;
     }
 
-    // Check if this is a personal channel (starts with "personal-")
+    // Allow keystone habit flow in any channel, not just personal channels
     const channel = message.channel;
-    if (!channel || !('name' in channel) || !channel.name || !channel.name.startsWith('personal-')) {
+    if (!channel) {
       return false;
     }
 
@@ -122,7 +122,22 @@ export class HabitFlowManager {
   }
 
   private matchesTrigger(content: string): boolean {
-    return content.toLowerCase() === 'keystonehabit';
+    const lowerContent = content.toLowerCase().trim();
+    
+    // Define all possible variations of keystone habit triggers
+    const keystoneTriggers = [
+      'keystone habit',
+      'keystone habits', 
+      'keystonehabit',
+      'keystonehabits',
+      'keystone-habit',
+      'keystone-habits',
+      'keystone_habit',
+      'keystone_habits'
+    ];
+    
+    // Check if the message contains any of the trigger variations
+    return keystoneTriggers.some(trigger => lowerContent.includes(trigger));
   }
 
   private async startFlow(message: Message) {

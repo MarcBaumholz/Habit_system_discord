@@ -7,11 +7,13 @@ export const ENHANCED_TOOLS: HabitTool[] = [
     name: 'Habit Stacking',
     summary: 'Attach a new habit to an existing automatic routine.',
     categories: ['routine'],
-    keywords: ['stack', 'bundle', 'anchor', 'after', 'before', 'remember', 'forget', 'routine', 'gewohnheit', 'vergesen', 'vergessen', 'morgens', 'abends'],
+    keywords: ['stack', 'bundle', 'anchor', 'after', 'before', 'remember', 'forget', 'routine', 'gewohnheit', 'vergesen', 'vergessen', 'morgens', 'abends', 'combining', 'combine', 'merge', 'group', 'kombinieren', 'gruppieren'],
     problemPatterns: [
       'hard to remember', 'forget to do it', 'forget to do my', 'no routine', 'dont remember',
       'vergessen', 'vergesen', 'vergesse', 'routine', 'gewohnheit', 'morgens', 'abends',
-      'forget to start', 'hard to remember', 'no routine', 'inconsistent', 'irregular', 'sporadic'
+      'forget to start', 'hard to remember', 'no routine', 'inconsistent', 'irregular', 'sporadic',
+      'combining habits', 'combine habits', 'merge habits', 'group habits', 'habit combination',
+      'gewohnheiten kombinieren', 'gewohnheiten gruppieren', 'gewohnheiten zusammenfassen'
     ],
     whenToUse: ['You already have stable daily anchors', 'You forget to start'],
     steps: [
@@ -198,6 +200,186 @@ export const ENHANCED_TOOLS: HabitTool[] = [
       'Celebrate every completion.'
     ],
     sources: ['https://jamesclear.com/atomic-habits']
+  },
+  {
+    id: 'habit-tracker',
+    name: 'Habit Tracker',
+    summary: 'Visual progress tracking to maintain motivation and consistency.',
+    categories: ['motivation', 'routine'],
+    keywords: ['tracker', 'tracking', 'track', 'visual', 'streak', 'progress', 'checklist', 'measure', 'monitor', 'verfolgen', 'messen', 'fortschritt', 'streak'],
+    problemPatterns: [
+      'tracking habits', 'track habits', 'measuring progress', 'habit monitoring', 'lose motivation', 'forget progress', 'no accountability', 'inconsistent',
+      'gewohnheiten verfolgen', 'gewohnheiten messen', 'fortschritt verfolgen', 'fortschritt messen', 'gewohnheiten überwachen',
+      'lose motivation', 'forget progress', 'no accountability', 'inconsistent', 'need to track', 'want to measure', 'see progress'
+    ],
+    whenToUse: ['You need visual motivation', 'You want to see progress', 'You need accountability'],
+    steps: [
+      'Choose a simple tracking method (app, calendar, journal).',
+      'Mark completion immediately after the habit.',
+      'Don\'t break the chain - aim for consistency.',
+      'Review weekly to celebrate wins.'
+    ],
+    sources: ['https://jamesclear.com/habit-tracker']
+  },
+  {
+    id: 'advanced-habit-stacking',
+    name: 'Advanced Habit Stacking',
+    summary: 'Build complex routines by chaining multiple habits together.',
+    categories: ['routine', 'motivation'],
+    keywords: ['chain habits', 'routine sequence', 'multiple habits', 'complex routine', 'combining habits', 'combine habits', 'merge habits', 'group habits', 'kombinieren', 'gruppieren', 'verketten'],
+    problemPatterns: [
+      'combining habits', 'combine habits', 'merge habits', 'group habits', 'habit combination', 'too many habits', 'overwhelming', 'complex routine', 'hard to remember',
+      'gewohnheiten kombinieren', 'gewohnheiten gruppieren', 'gewohnheiten zusammenfassen', 'zu viele gewohnheiten', 'kompliziert', 'überwältigend',
+      'too many habits', 'overwhelming', 'complex routine', 'hard to remember', 'multiple habits', 'habit sequence'
+    ],
+    whenToUse: ['You have multiple habits to build', 'You want a comprehensive routine', 'You want to combine habits efficiently'],
+    steps: [
+      'Start with one anchor habit.',
+      'Add one new habit at a time.',
+      'Wait 2-3 weeks before adding another.',
+      'Keep the sequence simple and logical.'
+    ],
+    sources: ['https://jamesclear.com/habit-stacking']
+  },
+  {
+    id: 'identity-based-habits',
+    name: 'Identity-Based Habits',
+    summary: 'Build habits around the person you want to become, not just outcomes.',
+    categories: ['motivation'],
+    keywords: ['identity', 'who you want to be', 'person you become', 'self-image', 'become', 'different person', 'identität', 'werden', 'persönlichkeit'],
+    problemPatterns: [
+      'focus on outcome', 'lose motivation', 'not sustainable', 'external motivation', 'want to become', 'become a different',
+      'identität', 'werden', 'persönlichkeit', 'selbstbild', 'anders werden', 'verändern',
+      'focus on outcome', 'lose motivation', 'not sustainable', 'external motivation', 'want to become', 'become a different'
+    ],
+    whenToUse: ['You focus too much on results', 'Habits don\'t feel meaningful', 'You want lasting change'],
+    steps: [
+      'Decide who you want to become.',
+      'Ask: "What would this person do daily?"',
+      'Focus on being that person.',
+      'Let outcomes follow naturally.'
+    ],
+    sources: ['https://jamesclear.com/identity-based-habits']
+  },
+  {
+    id: 'streak-protection',
+    name: 'Streak Protection',
+    summary: 'Strategies to maintain your streak even on difficult days.',
+    categories: ['motivation', 'routine'],
+    keywords: ['streak', 'don\'t break chain', 'maintain consistency', 'bad days', 'protect my streak', 'streak schützen', 'kette', 'durchhalten'],
+    problemPatterns: [
+      'break streak', 'bad days', 'lose momentum', 'start over', 'breaking my habit streak', 'protect my streak',
+      'streak brechen', 'schlechte tage', 'momentum verlieren', 'von vorne anfangen', 'streak schützen', 'kette erhalten',
+      'break streak', 'bad days', 'lose momentum', 'start over', 'breaking my habit streak', 'protect my streak'
+    ],
+    whenToUse: ['You have a good streak going', 'Bad days threaten consistency', 'You want to maintain momentum'],
+    steps: [
+      'Define your minimum viable habit.',
+      'Use it on tough days.',
+      'Never miss twice in a row.',
+      'Celebrate streak milestones.'
+    ],
+    sources: ['https://jamesclear.com/never-miss-twice']
+  },
+  {
+    id: 'obstacle-mapping',
+    name: 'Obstacle Mapping',
+    summary: 'Identify and plan for potential obstacles before they derail you.',
+    categories: ['motivation', 'routine'],
+    keywords: ['obstacles', 'barriers', 'plan ahead', 'anticipate problems', 'plan for obstacles', 'hindernisse', 'probleme', 'schwierigkeiten'],
+    problemPatterns: [
+      'get derailed', 'unexpected problems', 'obstacles stop you', 'no backup plan', 'need to plan for obstacles', 'plan for obstacles',
+      'hindernisse', 'probleme', 'schwierigkeiten', 'planung', 'vorbereitung', 'obstacles', 'barriers',
+      'get derailed', 'unexpected problems', 'obstacles stop you', 'no backup plan', 'need to plan for obstacles'
+    ],
+    whenToUse: ['You frequently get derailed', 'Obstacles surprise you', 'You want to be prepared'],
+    steps: [
+      'List all possible obstacles.',
+      'Create specific if-then plans for each.',
+      'Practice your responses mentally.',
+      'Adjust plans based on experience.'
+    ],
+    sources: ['https://jamesclear.com/implementation-intentions']
+  },
+  {
+    id: 'habit-replacement',
+    name: 'Habit Replacement',
+    summary: 'Replace a bad habit with a good one using the same cue and reward.',
+    categories: ['routine', 'motivation'],
+    keywords: ['replace', 'substitute', 'swap', 'change habit', 'bad habit', 'ersetzten', 'austauschen', 'schlechte gewohnheit'],
+    problemPatterns: [
+      'bad habit', 'unwanted behavior', 'hard to stop', 'automatic response', 'need to change', 'want to replace',
+      'schlechte gewohnheit', 'unerwünschtes verhalten', 'schwer zu stoppen', 'automatische reaktion', 'ändern wollen',
+      'bad habit', 'unwanted behavior', 'hard to stop', 'automatic response', 'need to change', 'want to replace'
+    ],
+    whenToUse: ['You have a bad habit to break', 'You want to replace unwanted behavior', 'You want to change automatic responses'],
+    steps: [
+      'Identify the cue, routine, and reward.',
+      'Keep the same cue and reward.',
+      'Change only the routine.',
+      'Practice the new routine consistently.'
+    ],
+    sources: ['https://charlesduhigg.com/the-power-of-habit/']
+  },
+  {
+    id: 'environmental-triggers',
+    name: 'Environmental Triggers',
+    summary: 'Use visual and physical cues in your environment to trigger habits.',
+    categories: ['environment', 'routine'],
+    keywords: ['triggers', 'cues', 'visual reminders', 'environmental signals', 'trigger', 'hinweis', 'umgebung', 'signale'],
+    problemPatterns: [
+      'forget to start', 'no reminders', 'inconsistent triggers', 'environment doesn\'t help', 'need visual cues',
+      'vergessen zu starten', 'keine erinnerungen', 'inkonsistente trigger', 'umgebung hilft nicht', 'visuelle hinweise brauchen',
+      'forget to start', 'no reminders', 'inconsistent triggers', 'environment doesn\'t help', 'need visual cues'
+    ],
+    whenToUse: ['You forget to start habits', 'You need stronger cues', 'Your environment doesn\'t support habits'],
+    steps: [
+      'Choose obvious visual triggers.',
+      'Place them where you can\'t miss them.',
+      'Make triggers specific to the habit.',
+      'Change triggers if they stop working.'
+    ],
+    sources: ['https://jamesclear.com/environment-design']
+  },
+  {
+    id: 'social-contract',
+    name: 'Social Contract',
+    summary: 'Make a public commitment to your habit to increase accountability.',
+    categories: ['motivation', 'environment'],
+    keywords: ['public commitment', 'social pressure', 'announce goals', 'accountability', 'öffentlich', 'sozialer druck', 'verantwortlichkeit'],
+    problemPatterns: [
+      'no accountability', 'easy to quit', 'private goals', 'lack motivation', 'need social support',
+      'keine verantwortlichkeit', 'leicht aufzugeben', 'private ziele', 'motivation fehlt', 'soziale unterstützung brauchen',
+      'no accountability', 'easy to quit', 'private goals', 'lack motivation', 'need social support'
+    ],
+    whenToUse: ['You need stronger accountability', 'Private commitments aren\'t enough', 'You work better with others'],
+    steps: [
+      'Announce your habit publicly.',
+      'Share progress regularly.',
+      'Ask for support from others.',
+      'Use social pressure positively.'
+    ],
+    sources: ['https://www.psychologytoday.com/us/blog/tech-happy-life/201204/accountability-partners']
+  },
+  {
+    id: 'energy-management',
+    name: 'Energy Management',
+    summary: 'Schedule habits when your energy levels are highest.',
+    categories: ['motivation', 'time'],
+    keywords: ['energy', 'peak hours', 'optimal time', 'when you feel best', 'energie', 'spitzenzeiten', 'optimale zeit'],
+    problemPatterns: [
+      'low energy', 'wrong timing', 'feel sluggish', 'not motivated', 'tired when doing habits', 'bad timing',
+      'niedrige energie', 'falsches timing', 'träge fühlen', 'nicht motiviert', 'müde bei gewohnheiten', 'schlechtes timing',
+      'low energy', 'wrong timing', 'feel sluggish', 'not motivated', 'tired when doing habits', 'bad timing'
+    ],
+    whenToUse: ['You have low energy for habits', 'Timing doesn\'t work', 'You feel tired during habit time'],
+    steps: [
+      'Track your energy levels for 1 week.',
+      'Identify your peak energy times.',
+      'Schedule challenging habits during peaks.',
+      'Use low-energy times for easy habits.'
+    ],
+    sources: ['https://hbr.org/2007/10/manage-your-energy-not-your-time']
   }
 ];
 
