@@ -21,7 +21,7 @@ export class NotionClient {
   async createUser(user: Omit<User, 'id'>): Promise<User> {
     const properties: any = {
       // Discord ID should be title field (as per Notion database schema)
-      'Discord ID ': { title: [{ text: { content: user.discordId } }] },
+      'DiscordID': { title: [{ text: { content: user.discordId } }] },
       // Name should be rich_text field (as per Notion database schema)
       'Name': { rich_text: [{ text: { content: user.name } }] },
       'Timezone': { rich_text: [{ text: { content: user.timezone } }] },
@@ -166,7 +166,7 @@ export class NotionClient {
 
       // Add Discord ID field (it's the title property in this database)
       if (learning.discordId) {
-        properties['Discord ID '] = { title: [{ text: { content: learning.discordId } }] };
+        properties['DiscordID'] = { title: [{ text: { content: learning.discordId } }] };
       }
 
       // Add Habit relation if habitId is provided
@@ -239,7 +239,7 @@ export class NotionClient {
 
       // Add Discord ID field (it's the title property in this database)
       if (week.discordId) {
-        properties['Discord ID '] = { title: [{ text: { content: week.discordId } }] };
+        properties['DiscordID'] = { title: [{ text: { content: week.discordId } }] };
       }
 
       const response = await this.client.pages.create({
@@ -293,7 +293,7 @@ export class NotionClient {
       const response = await this.client.databases.query({
         database_id: this.databases.users,
         filter: {
-          property: 'Discord ID ',
+          property: 'DiscordID',
           title: { equals: discordId }
         }
       });
@@ -311,7 +311,7 @@ export class NotionClient {
       const page = response.results[0] as any;
       const user = {
         id: page.id,
-        discordId: page.properties['Discord ID '].title[0].text.content,
+        discordId: page.properties['DiscordID'].title[0].text.content,
         name: page.properties['Name'].rich_text[0].text.content,
         timezone: page.properties['Timezone'].rich_text[0].text.content,
         bestTime: page.properties['Best Time'].rich_text[0].text.content,
@@ -344,7 +344,7 @@ export class NotionClient {
       }
       
       if (updates.name !== undefined) {
-        properties['Discord ID '] = { title: [{ text: { content: updates.name } }] };
+        properties['DiscordID'] = { title: [{ text: { content: updates.name } }] };
       }
       
       if (updates.timezone !== undefined) {
@@ -464,7 +464,7 @@ export class NotionClient {
           id: page.id,
           userId: properties['User']?.relation?.[0]?.id || userId,
           habitId: properties['Habit']?.relation?.[0]?.id || '',
-          discordId: properties['Discord ID']?.rich_text?.[0]?.text?.content || '',
+          discordId: properties['DiscordID']?.title?.[0]?.text?.content || '',
           text: properties['Text']?.rich_text?.[0]?.text?.content || '',
           createdAt: properties['Created At']?.created_time || new Date().toISOString()
         };
@@ -790,7 +790,7 @@ export class NotionClient {
         const properties = page.properties;
         return {
           id: page.id,
-          discordId: properties['Discord ID ']?.title?.[0]?.text?.content || '',
+          discordId: properties['DiscordID']?.title?.[0]?.text?.content || '',
           name: properties['Name']?.rich_text?.[0]?.text?.content || 'Unknown User',
           timezone: properties['Timezone']?.rich_text?.[0]?.text?.content || 'Europe/Berlin',
           bestTime: properties['Best Time']?.rich_text?.[0]?.text?.content || '09:00',
