@@ -1,6 +1,7 @@
 export interface HabitTool {
   id: string;
   name: string;
+  emoji?: string;
   summary: string;
   description: string;
   categories: string[];

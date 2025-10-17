@@ -19,6 +19,7 @@ async function main() {
     'NOTION_DATABASE_HURDLES',
     'NOTION_DATABASE_WEEKS',
     'NOTION_DATABASE_GROUPS',
+    'NOTION_DATABASE_PERSONALITY',
     'DISCORD_PERSONAL_CHANNEL',
     'DISCORD_ACCOUNTABILITY_GROUP',
     'DISCORD_TOOLS',
@@ -41,7 +42,8 @@ async function main() {
     learnings: process.env.NOTION_DATABASE_LEARNINGS!,
     hurdles: process.env.NOTION_DATABASE_HURDLES!,
     weeks: process.env.NOTION_DATABASE_WEEKS!,
-    groups: process.env.NOTION_DATABASE_GROUPS!
+    groups: process.env.NOTION_DATABASE_GROUPS!,
+    personality: process.env.NOTION_DATABASE_PERSONALITY!
   });
 
   // Initialize and start bot

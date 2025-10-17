@@ -5,9 +5,9 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Habit Tools - Your Personal Habit Coach',
-  description: 'Discover proven strategies and tools to build better habits. From habit stacking to time boxing, find the perfect technique for your goals.',
-  keywords: 'habits, productivity, self-improvement, routine, focus, motivation',
+  title: 'Habit Toolbox - Dein Weg zu besseren Gewohnheiten',
+  description: 'Transformiere deine Gewohnheiten mit der Habit Toolbox. Ein systematischer Ansatz für nachhaltige Gewohnheitsbildung.',
+  keywords: 'habits, gewohnheiten, productivity, produktivität, self-improvement, routine, focus, motivation',
 }
 
 export default function RootLayout({
@@ -16,8 +16,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} bg-gray-50 text-gray-900 antialiased`}>
+    <html lang="de">
+      <body className={inter.className}>
         <div className="min-h-screen">
           {children}
         </div>

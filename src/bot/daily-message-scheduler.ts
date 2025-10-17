@@ -215,47 +215,26 @@ export class DailyMessageScheduler {
 
       const currentDay = this.getCurrentDay();
       const message = this.generateDailyMessage(currentDay);
-
-      // Only send message if it's actually time for daily message (not on startup)
       const now = new Date();
-      const currentHour = now.getHours();
+
+      // Send message immediately (cron scheduler handles timing)
+      await channel.send(message);
+      console.log(`✅ Daily message sent for day ${currentDay}/66`);
       
-      // Only send if it's actually 6 AM (or close to it)
-      if (currentHour === 6) {
-        await channel.send(message);
-        console.log(`✅ Daily message sent for day ${currentDay}/66`);
-        
-        // Only log success if message was actually sent
-        await this.logger.success(
-          'SCHEDULER',
-          'Daily Message Sent',
-          `Daily motivational message sent for day ${currentDay}/66`,
-          {
-            day: currentDay,
-            totalDays: 66,
-            channelId: this.accountabilityChannelId,
-            messageLength: message.length,
-            sentAt: now.toISOString()
-          }
-        );
-      } else {
-        console.log(`⏰ Daily message scheduled for day ${currentDay}/66 (will send at 6 AM)`);
-        
-        // Log scheduling info instead of success
-        await this.logger.info(
-          'SCHEDULER',
-          'Daily Message Scheduled',
-          `Daily motivational message scheduled for day ${currentDay}/66 (will send at 6 AM)`,
-          {
-            day: currentDay,
-            totalDays: 66,
-            channelId: this.accountabilityChannelId,
-            messageLength: message.length,
-            currentHour: currentHour,
-            scheduledFor: '06:00'
-          }
-        );
-      }
+      // Log success
+      await this.logger.success(
+        'SCHEDULER',
+        'Daily Message Sent',
+        `Daily motivational message sent for day ${currentDay}/66`,
+        {
+          day: currentDay,
+          totalDays: 66,
+          channelId: this.accountabilityChannelId,
+          messageLength: message.length,
+          sentAt: now.toISOString(),
+          timezone: process.env.TIMEZONE || 'Europe/Berlin'
+        }
+      );
 
     } catch (error) {
       await this.logger.logError(

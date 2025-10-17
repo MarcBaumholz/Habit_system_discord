@@ -1,75 +1,62 @@
 #!/bin/bash
 
-# Discord Habit System - Docker Startup Script
-# This script handles Docker container startup and configuration
+# Multi-Agent Discord Bot Docker Startup Script
 
-echo "🐳 Starting Discord Habit System in Docker..."
+echo "🚀 Starting Multi-Agent Discord Bot with Docker..."
 
 # Check if Docker is installed
 if ! command -v docker &> /dev/null; then
     echo "❌ Docker is not installed. Please install Docker first."
-    echo "📖 Installation guide: https://docs.docker.com/get-docker/"
     exit 1
 fi
 
 # Check if Docker Compose is installed
 if ! command -v docker-compose &> /dev/null; then
     echo "❌ Docker Compose is not installed. Please install Docker Compose first."
-    echo "📖 Installation guide: https://docs.docker.com/compose/install/"
-    exit 1
-fi
-
-# Check if .env file exists
-if [ ! -f .env ]; then
-    echo "⚠️  .env file not found. Creating from template..."
-    cp env.example .env
-    echo "📝 Please edit .env file with your actual tokens before starting the container."
-    echo "🔧 Required tokens:"
-    echo "   - DISCORD_BOT_TOKEN"
-    echo "   - NOTION_TOKEN"
-    echo "   - DISCORD_GUILD_ID"
-    exit 1
-fi
-
-# Check if required environment variables are set
-if grep -q "your_discord_bot_token_here" .env || grep -q "your_notion_integration_token_here" .env; then
-    echo "⚠️  Please update .env file with your actual tokens:"
-    echo "   - DISCORD_BOT_TOKEN"
-    echo "   - NOTION_TOKEN"
-    echo "   - DISCORD_GUILD_ID"
     exit 1
 fi
 
 # Create necessary directories
-mkdir -p logs data
+echo "📁 Creating directories..."
+mkdir -p logs
+mkdir -p data
 
-# Build and start the container
+# Stop existing PM2 process if running
+echo "🛑 Stopping existing PM2 processes..."
+pm2 stop habit-discord-bot 2>/dev/null || echo "No PM2 process to stop"
+
+# Build and start the Docker container
 echo "🔨 Building Docker image..."
 docker-compose build
 
-echo "🚀 Starting Discord Habit System container..."
+echo "🚀 Starting Multi-Agent Discord Bot..."
 docker-compose up -d
 
 # Wait for container to start
-echo "⏳ Waiting for container to start..."
+echo "⏳ Waiting for bot to initialize..."
 sleep 10
 
 # Check container status
-if docker-compose ps | grep -q "Up"; then
-    echo "✅ Discord Habit System is running!"
-    echo ""
-    echo "📊 Container Status:"
-    docker-compose ps
-    echo ""
-    echo "📋 Useful Commands:"
-    echo "   View logs: docker-compose logs -f"
-    echo "   Stop system: docker-compose down"
-    echo "   Restart system: docker-compose restart"
-    echo "   View container: docker-compose exec discord-habit-bot sh"
-    echo ""
-    echo "🎉 Your Discord Habit System is now running in Docker!"
-else
-    echo "❌ Failed to start container. Check logs:"
-    docker-compose logs
-    exit 1
-fi
+echo "📊 Checking container status..."
+docker-compose ps
+
+# Show logs
+echo "📋 Recent logs:"
+docker-compose logs --tail=20
+
+echo ""
+echo "✅ Multi-Agent Discord Bot is now running in Docker!"
+echo ""
+echo "🤖 Available Agents:"
+echo "   • Identity Agent: /identity"
+echo "   • Accountability Agent: /accountability" 
+echo "   • Group Agent: /group"
+echo "   • Learning Agent: /learning-agent"
+echo ""
+echo "📋 Useful Commands:"
+echo "   • View logs: docker-compose logs -f"
+echo "   • Stop bot: docker-compose down"
+echo "   • Restart bot: docker-compose restart"
+echo "   • Check status: docker-compose ps"
+echo ""
+echo "🎯 Test the agents in your Discord channel!"

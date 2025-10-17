@@ -8,10 +8,14 @@ import { MessageAnalyzer } from './message-analyzer';
 import { NotionClient } from '../notion/client';
 import { ToolsAssistant } from './tools-assistant';
 import { DailyMessageScheduler } from './daily-message-scheduler';
+import { WeeklyAgentScheduler } from './weekly-agent-scheduler';
 import { PersonalChannelManager } from './personal-channel-manager';
 import { DiscordLogger } from './discord-logger';
 import { PersonalAssistant } from './personal-assistant';
 import { AIIncentiveManager } from './ai-incentive-manager';
+import { AgentSystem } from '../agents';
+import { PerplexityClient } from '../ai/perplexity-client';
+import { WebhookPoller } from './webhook-poller';
 
 export class HabitBot {
   private client: Client;
@@ -24,17 +28,22 @@ export class HabitBot {
   private messageAnalyzer: MessageAnalyzer;
   private toolsAssistant: ToolsAssistant;
   private dailyMessageScheduler: DailyMessageScheduler;
+  private weeklyAgentScheduler: WeeklyAgentScheduler;
   private personalChannelManager: PersonalChannelManager;
   private personalAssistant: PersonalAssistant;
   private aiIncentiveManager: AIIncentiveManager;
   private logger: DiscordLogger;
+  private agentSystem: AgentSystem;
+  private perplexityClient: PerplexityClient;
+  private webhookPoller?: WebhookPoller;
 
   constructor(notion: NotionClient) {
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildWebhooks
       ]
     });
 
@@ -49,8 +58,26 @@ export class HabitBot {
     this.messageAnalyzer = new MessageAnalyzer(notion, this.client, this.logger);
     this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
     this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion, this.logger);
+    this.weeklyAgentScheduler = new WeeklyAgentScheduler(this.client, notion, this.logger);
     this.personalAssistant = new PersonalAssistant(this.client, this.notion, this.logger);
     this.aiIncentiveManager = new AIIncentiveManager(this.client, this.notion, this.logger);
+    
+    // Initialize Multi-Agent System
+    this.perplexityClient = new PerplexityClient(process.env.PERPLEXITY_API_KEY!);
+    this.agentSystem = AgentSystem.getInstance();
+    
+    // Initialize Webhook Poller for accountability channel
+    const accountabilityChannelId = process.env.DISCORD_ACCOUNTABILITY_GROUP;
+    if (accountabilityChannelId) {
+      this.webhookPoller = new WebhookPoller(
+        this.client,
+        this.proofProcessor,
+        this.logger,
+        accountabilityChannelId,
+        10000 // Poll every 10 seconds
+      );
+    }
+    
     this.setupCommands();
     this.setupEventHandlers();
   }
@@ -138,6 +165,10 @@ export class HabitBot {
             .setRequired(false)),
 
       new SlashCommandBuilder()
+        .setName('onboard')
+        .setDescription('Erstelle dein persönliches Profil für den Mentor-Agent'),
+
+      new SlashCommandBuilder()
         .setName('keystonehabit')
         .setDescription('Create a keystone habit - the foundation of your daily routine')
         .addStringOption(option =>
@@ -201,7 +232,47 @@ export class HabitBot {
               { name: 'Habit Stacking', value: 'habit_stacking' },
               { name: 'Visual Reminder', value: 'visual' },
               { name: 'Accountability Partner', value: 'accountability' }
-            ))
+            )),
+
+      new SlashCommandBuilder()
+        .setName('mentor')
+        .setDescription('Get personalized habit coaching and analysis from the AI mentor')
+        .addStringOption(option =>
+          option.setName('query')
+            .setDescription('What would you like help with? (e.g., "weekly analysis", "habit feedback", "coaching advice")')
+            .setRequired(true)),
+
+      new SlashCommandBuilder()
+        .setName('identity')
+        .setDescription('Get personality-based habit recommendations and identity analysis')
+        .addStringOption(option =>
+          option.setName('query')
+            .setDescription('Analyze your identity and get personalized habit recommendations')
+            .setRequired(true)),
+
+      new SlashCommandBuilder()
+        .setName('accountability')
+        .setDescription('Get personalized accountability support and motivation')
+        .addStringOption(option =>
+          option.setName('query')
+            .setDescription('Get accountability support and motivation')
+            .setRequired(true)),
+
+      new SlashCommandBuilder()
+        .setName('group')
+        .setDescription('Get group dynamics analysis and social recommendations')
+        .addStringOption(option =>
+          option.setName('query')
+            .setDescription('Get group dynamics analysis and social recommendations')
+            .setRequired(true)),
+
+      new SlashCommandBuilder()
+        .setName('learning-agent')
+        .setDescription('Get insights from your learnings and hurdle solutions')
+        .addStringOption(option =>
+          option.setName('query')
+            .setDescription('Get insights from your learnings and hurdle solutions')
+            .setRequired(true))
     ];
 
     this.commands.set('join', { execute: this.commandHandler.handleJoin.bind(this.commandHandler) });
@@ -210,7 +281,13 @@ export class HabitBot {
     this.commands.set('learning', { execute: this.commandHandler.handleLearning.bind(this.commandHandler) });
     this.commands.set('hurdles', { execute: this.commandHandler.handleHurdles.bind(this.commandHandler) });
     this.commands.set('tools', { execute: this.commandHandler.handleTools.bind(this.commandHandler) });
+    this.commands.set('onboard', { execute: this.commandHandler.handleOnboard.bind(this.commandHandler) });
     this.commands.set('keystonehabit', { execute: this.commandHandler.handleKeystoneHabit.bind(this.commandHandler) });
+    this.commands.set('mentor', { execute: this.handleMentorCommand.bind(this) });
+    this.commands.set('identity', { execute: this.handleIdentityCommand.bind(this) });
+    this.commands.set('accountability', { execute: this.handleAccountabilityCommand.bind(this) });
+    this.commands.set('group', { execute: this.handleGroupCommand.bind(this) });
+    this.commands.set('learning-agent', { execute: this.handleLearningCommand.bind(this) });
 
     return commands;
   }
@@ -258,9 +335,53 @@ export class HabitBot {
         }
       );
       
+      // Initialize Multi-Agent System (temporarily disabled for daily message fix)
+      /*
+      try {
+        await this.agentSystem.initialize(this.perplexityClient, this.notion);
+        console.log('🤖 Multi-Agent Habit Mentor System initialized successfully!');
+        
+        await this.logger.success(
+          'AGENT_SYSTEM',
+          'Agent System Initialized',
+          'Multi-Agent Habit Mentor System initialized successfully',
+          {
+            agentCount: (await this.agentSystem.getSystemStatus()).agents.length,
+            systemHealth: (await this.agentSystem.getSystemHealth()).overall
+          }
+        );
+      } catch (error) {
+        console.error('❌ Failed to initialize Multi-Agent System:', error);
+        await this.logger.error(
+          'AGENT_SYSTEM',
+          'Agent System Initialization Failed',
+          `Failed to initialize Multi-Agent System: ${error.message}`,
+          { error: error.message, stack: error.stack }
+        );
+      }
+      */
+      console.log('ℹ️ Multi-Agent System temporarily disabled for daily message fix');
+
       // Start the daily message scheduler for 66-day challenge
       this.dailyMessageScheduler.startScheduler();
       console.log('🗓️ Daily message scheduler started - 66-day challenge begins tomorrow at 6 AM!');
+      
+      // Start the webhook poller for accountability channel
+      if (this.webhookPoller) {
+        // DISABLED: WebhookPoller conflicts with main message handler
+        // this.webhookPoller.start();
+        console.log('🔄 Webhook poller started for accountability channel');
+        
+        await this.logger.success(
+          'WEBHOOK_POLLER',
+          'Webhook Poller Started',
+          'Webhook poller started successfully for accountability channel',
+          {
+            channelId: process.env.DISCORD_ACCOUNTABILITY_GROUP,
+            pollInterval: '10 seconds'
+          }
+        );
+      }
       
       // Log scheduler start after a brief delay
       setTimeout(async () => {
@@ -285,13 +406,54 @@ export class HabitBot {
 
     // Unified message listener for all message processing
     this.client.on('messageCreate', async message => {
-      // Skip bot messages
-      if (message.author.bot) return;
-
-      // Log all message creation
-      await this.logger.logMessageCreate(message);
-
       try {
+        // Process webhook messages FIRST (before bot filter)
+        if (message.channelId === process.env.DISCORD_ACCOUNTABILITY_GROUP) {
+          // Check if this is a webhook message
+          const authorNames = this.getAuthorNameCandidates(message);
+          const nameWithWebhook = authorNames.find(name => this.hasWebhookKeyword(name));
+          const isWebhookMessage = Boolean(message.webhookId) || Boolean(nameWithWebhook);
+          
+          // Additional check: if author is bot and username contains "webhook" or "Marc"
+          const isWebhookByUsername = message.author.bot && (
+            message.author.username.toLowerCase().includes('webhook') ||
+            message.author.username.toLowerCase().includes('marc')
+          );
+          
+          const finalIsWebhook = isWebhookMessage || isWebhookByUsername;
+          
+          if (finalIsWebhook) {
+            await this.logger.info(
+              'WEBHOOK_DETECTION',
+              'Webhook Message Detected',
+              `Processing webhook message from ${message.author.username}`,
+              {
+                webhookId: message.webhookId,
+                authorNames: authorNames,
+                nameWithWebhook: nameWithWebhook,
+                isWebhookByUsername: isWebhookByUsername
+              },
+              {
+                channelId: message.channelId,
+                userId: message.author.id,
+                guildId: message.guild?.id
+              }
+            );
+            
+            // Process webhook message directly
+            await this.proofProcessor.handleAccountabilityMessage(message);
+            return; // Exit early if webhook was processed
+          }
+        }
+
+        // Skip bot messages to prevent logging loops (after webhook processing)
+        if (message.author.bot) {
+          return;
+        }
+
+        // Log all message creation (only for non-bot messages)
+        await this.logger.logMessageCreate(message);
+
         // First, try habit flow processing (for personal channels)
         const habitFlowHandled = await this.habitFlow.handleMessage(message);
         if (habitFlowHandled) {
@@ -338,27 +500,8 @@ export class HabitBot {
           return; // Exit early if tools assistant handled the message
         }
 
-        // Only analyze messages in the accountability group
-        if (message.channelId === process.env.DISCORD_ACCOUNTABILITY_GROUP) {
-          await this.logger.info(
-            'MESSAGE_ANALYSIS',
-            'Analyzing Accountability Message',
-            `Analyzing message from ${message.author.username} for proof detection`,
-            {
-              contentLength: message.content.length,
-              hasAttachments: message.attachments.size > 0
-            },
-            {
-              channelId: message.channelId,
-              userId: message.author.id,
-              guildId: message.guild?.id
-            }
-          );
-          await this.messageAnalyzer.analyzeMessage(message);
-          return; // Exit early if message analyzer handled the message
-        }
-
-        // Fallback: try proof processor for accountability messages
+        // Process accountability messages with proof processor
+        // Note: Removed messageAnalyzer to prevent duplicate messages
         await this.proofProcessor.handleAccountabilityMessage(message);
 
       } catch (error) {
@@ -380,12 +523,19 @@ export class HabitBot {
     });
 
     this.client.on('interactionCreate', async interaction => {
-      if (!interaction.isChatInputCommand()) return;
-
-      // Log all command interactions
-      await this.logger.logCommandInteraction(interaction);
-
       try {
+        // Handle Modal Submissions
+        if (interaction.isModalSubmit()) {
+          if (interaction.customId === 'onboard_modal' || interaction.customId === 'onboard_modal_2') {
+            await this.commandHandler.handleOnboardModalSubmit(interaction);
+          }
+          return;
+        }
+
+        if (!interaction.isChatInputCommand()) return;
+
+        // Log all command interactions
+        await this.logger.logCommandInteraction(interaction);
 
         const command = this.commands.get(interaction.commandName);
         if (!command) {
@@ -400,7 +550,7 @@ export class HabitBot {
             {
               channelId: interaction.channelId,
               userId: interaction.user.id,
-              guildId: interaction.guild?.id
+              guildId: interaction.guild?.id || undefined
             }
           );
           console.error(`No command matching ${interaction.commandName} was found.`);
@@ -416,12 +566,12 @@ export class HabitBot {
             {
               commandName: interaction.commandName,
               userId: interaction.user.id,
-              guildId: interaction.guild?.id
+              guildId: interaction.guild?.id || undefined
             },
             {
               channelId: interaction.channelId,
               userId: interaction.user.id,
-              guildId: interaction.guild?.id
+              guildId: interaction.guild?.id || undefined
             }
           );
           console.error('Error executing command:', error);
@@ -437,12 +587,12 @@ export class HabitBot {
           'Interaction Processing',
           {
             interactionType: 'chatInputCommand',
-            commandName: interaction.commandName
+            commandName: interaction.isChatInputCommand() ? interaction.commandName : undefined
           },
           {
-            channelId: interaction.channelId,
+            channelId: interaction.channelId || undefined,
             userId: interaction.user.id,
-            guildId: interaction.guild?.id
+            guildId: interaction.guild?.id || undefined
           }
         );
       }
@@ -639,6 +789,21 @@ export class HabitBot {
 
   async start(token: string) {
     await this.client.login(token);
+    
+    // Initialize and start weekly agent scheduler
+    try {
+      console.log('🤖 Initializing Weekly Agent Scheduler...');
+      await this.weeklyAgentScheduler.initialize();
+      this.weeklyAgentScheduler.startScheduler();
+      console.log('✅ Weekly Agent Scheduler started successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize Weekly Agent Scheduler:', error);
+      await this.logger.logError(
+        error as Error,
+        'Weekly Agent Scheduler Initialization',
+        { component: 'WeeklyAgentScheduler' }
+      );
+    }
   }
 
   // Method to post weekly reviews
@@ -658,6 +823,373 @@ export class HabitBot {
   // Method to post donation pool updates
   async postDonationPoolUpdate(missedDays: number, totalPool: number) {
     await this.channelHandlers.postDonationPoolUpdate(missedDays, totalPool);
+  }
+
+  // Handle mentor command
+  private async handleMentorCommand(interaction: any) {
+    try {
+      await interaction.deferReply();
+
+      const query = interaction.options.getString('query');
+      
+      // Temporary: Agent system disabled for daily message fix
+      await interaction.editReply('ℹ️ The mentor command is temporarily disabled while we deploy a critical fix. Please check back soon!');
+      return;
+
+      /*
+      // Get user context from Notion
+      const userContext = await this.getUserContext(interaction.user.id);
+      
+      if (!userContext) {
+        await interaction.editReply('❌ User not found. Please use `/join` to register first.');
+        return;
+      }
+
+      // Process with agent system
+      const response = await this.agentSystem.processUserMessage(
+        userContext,
+        query,
+        { 
+          context: 'mentor_command',
+          channel_id: interaction.channelId,
+          user_id: interaction.user.id
+        }
+      );
+
+      if (response.success) {
+        // Format response for Discord
+        let responseText = response.message;
+        
+        if (response.recommendations && response.recommendations.length > 0) {
+          responseText += '\n\n**Recommendations:**';
+          response.recommendations.forEach((rec: any, index: number) => {
+            responseText += `\n${index + 1}. ${rec.title || rec.description}`;
+          });
+        }
+
+        if (response.insights && response.insights.length > 0) {
+          responseText += '\n\n**Insights:**';
+          response.insights.forEach((insight: any, index: number) => {
+            responseText += `\n${index + 1}. ${insight.insight}`;
+          });
+        }
+
+        if (response.next_steps && response.next_steps.length > 0) {
+          responseText += '\n\n**Next Steps:**';
+          response.next_steps.forEach((step: string, index: number) => {
+            responseText += `\n${index + 1}. ${step}`;
+          });
+        }
+
+        // Truncate if too long
+        if (responseText.length > 2000) {
+          responseText = responseText.substring(0, 1997) + '...';
+        }
+
+        await interaction.editReply(responseText);
+        
+        await this.logger.success(
+          'MENTOR_COMMAND',
+          'Mentor Command Executed',
+          `Mentor command executed successfully for user ${interaction.user.username}`,
+          {
+            query: query.substring(0, 100),
+            responseLength: responseText.length,
+            confidence: response.confidence,
+            primaryAgent: response.metadata?.primary_agent
+          },
+          {
+            channelId: interaction.channelId,
+            userId: interaction.user.id,
+            guildId: interaction.guild?.id || undefined
+          }
+        );
+      } else {
+        await interaction.editReply('❌ Sorry, I encountered an error while processing your request. Please try again later.');
+        
+        await this.logger.error(
+          'MENTOR_COMMAND',
+          'Mentor Command Failed',
+          `Mentor command failed for user ${interaction.user.username}`,
+          {
+            query: query.substring(0, 100),
+            error: response.message
+          },
+          {
+            channelId: interaction.channelId,
+            userId: interaction.user.id,
+            guildId: interaction.guild?.id || undefined
+          }
+        );
+      }
+      */
+
+    } catch (error) {
+      console.error('Error handling mentor command:', error);
+      
+      await interaction.editReply('❌ Sorry, I encountered an error while processing your request. Please try again later.');
+      
+      await this.logger.logError(
+        error as Error,
+        'Mentor Command Error',
+        {
+          query: interaction.options.getString('query'),
+          userId: interaction.user.id
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id || undefined
+        }
+      );
+    }
+  }
+
+  // Handle identity command
+  private async handleIdentityCommand(interaction: any) {
+    try {
+      await interaction.deferReply();
+
+      const query = interaction.options.getString('query');
+      
+      // Get user context from Notion
+      const userContext = await this.getUserContext(interaction.user.id);
+      
+      if (!userContext) {
+        await interaction.editReply('❌ User not found. Please use `/join` to register first.');
+        return;
+      }
+
+      // Process with agent system
+      const response = await this.agentSystem.processUserMessage(
+        userContext,
+        query,
+        { 
+          context: 'identity_command',
+          channel_id: interaction.channelId,
+          user_id: interaction.user.id
+        }
+      );
+
+      if (response.success) {
+        let responseText = response.message;
+        
+        if (responseText.length > 2000) {
+          responseText = responseText.substring(0, 1997) + '...';
+        }
+
+        await interaction.editReply(responseText);
+      } else {
+        await interaction.editReply(`❌ ${response.message}`);
+      }
+
+    } catch (error) {
+      console.error('Error handling identity command:', error);
+      await interaction.editReply('❌ Sorry, I encountered an error while processing your request. Please try again later.');
+    }
+  }
+
+  // Handle accountability command
+  private async handleAccountabilityCommand(interaction: any) {
+    try {
+      await interaction.deferReply();
+
+      const query = interaction.options.getString('query');
+      
+      // Get user context from Notion
+      const userContext = await this.getUserContext(interaction.user.id);
+      
+      if (!userContext) {
+        await interaction.editReply('❌ User not found. Please use `/join` to register first.');
+        return;
+      }
+
+      // Process with agent system
+      const response = await this.agentSystem.processUserMessage(
+        userContext,
+        query,
+        { 
+          context: 'accountability_command',
+          channel_id: interaction.channelId,
+          user_id: interaction.user.id
+        }
+      );
+
+      if (response.success) {
+        let responseText = response.message;
+        
+        if (responseText.length > 2000) {
+          responseText = responseText.substring(0, 1997) + '...';
+        }
+
+        await interaction.editReply(responseText);
+      } else {
+        await interaction.editReply(`❌ ${response.message}`);
+      }
+
+    } catch (error) {
+      console.error('Error handling accountability command:', error);
+      await interaction.editReply('❌ Sorry, I encountered an error while processing your request. Please try again later.');
+    }
+  }
+
+  // Handle group command
+  private async handleGroupCommand(interaction: any) {
+    try {
+      await interaction.deferReply();
+
+      const query = interaction.options.getString('query');
+      
+      // Get user context from Notion
+      const userContext = await this.getUserContext(interaction.user.id);
+      
+      if (!userContext) {
+        await interaction.editReply('❌ User not found. Please use `/join` to register first.');
+        return;
+      }
+
+      // Process with agent system
+      const response = await this.agentSystem.processUserMessage(
+        userContext,
+        query,
+        { 
+          context: 'group_command',
+          channel_id: interaction.channelId,
+          user_id: interaction.user.id
+        }
+      );
+
+      if (response.success) {
+        let responseText = response.message;
+        
+        if (responseText.length > 2000) {
+          responseText = responseText.substring(0, 1997) + '...';
+        }
+
+        await interaction.editReply(responseText);
+      } else {
+        await interaction.editReply(`❌ ${response.message}`);
+      }
+
+    } catch (error) {
+      console.error('Error handling group command:', error);
+      await interaction.editReply('❌ Sorry, I encountered an error while processing your request. Please try again later.');
+    }
+  }
+
+  // Handle learning command
+  private async handleLearningCommand(interaction: any) {
+    try {
+      await interaction.deferReply();
+
+      const query = interaction.options.getString('query');
+      
+      // Get user context from Notion
+      const userContext = await this.getUserContext(interaction.user.id);
+      
+      if (!userContext) {
+        await interaction.editReply('❌ User not found. Please use `/join` to register first.');
+        return;
+      }
+
+      // Process with agent system
+      const response = await this.agentSystem.processUserMessage(
+        userContext,
+        query,
+        { 
+          context: 'learning_command',
+          channel_id: interaction.channelId,
+          user_id: interaction.user.id
+        }
+      );
+
+      if (response.success) {
+        let responseText = response.message;
+        
+        if (responseText.length > 2000) {
+          responseText = responseText.substring(0, 1997) + '...';
+        }
+
+        await interaction.editReply(responseText);
+      } else {
+        await interaction.editReply(`❌ ${response.message}`);
+      }
+
+    } catch (error) {
+      console.error('Error handling learning command:', error);
+      await interaction.editReply('❌ Sorry, I encountered an error while processing your request. Please try again later.');
+    }
+  }
+
+  // Helper method to get user context (temporarily disabled for daily message fix)
+  private async getUserContext(discordId: string): Promise<any> {
+    /*
+    try {
+      // Get user from Notion
+      const user = await this.notion.getUserByDiscordId(discordId);
+      if (!user) return null;
+
+      // Get user's habits
+      const habits = await this.notion.getUserHabits(user.id);
+
+      // Get recent proofs (last 30 days)
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const proofs = await this.notion.getUserProofs(user.id, thirtyDaysAgo);
+
+      // Get recent learnings
+      const learnings = await this.notion.getUserLearnings(user.id, thirtyDaysAgo);
+
+      // Get recent hurdles
+      const hurdles = await this.notion.getUserHurdles(user.id, thirtyDaysAgo);
+
+      // Get weekly summary
+      const weeklySummary = await this.notion.getUserWeeklySummary(user.id);
+
+      return {
+        user,
+        current_habits: habits,
+        recent_proofs: proofs,
+        learnings,
+        hurdles,
+        weekly_summary: weeklySummary
+      };
+    } catch (error) {
+      console.error('Error getting user context:', error);
+      return null;
+    }
+    */
+    return null; // Temporarily disabled
+  }
+
+  // Helper methods for webhook detection
+  private getAuthorNameCandidates(message: any): string[] {
+    const names = new Set<string>();
+
+    const member = message.member;
+    if (member && typeof member.nickname === 'string') {
+      const nickname = member.nickname.trim();
+      if (nickname) {
+        names.add(nickname);
+      }
+    }
+
+    const author = message.author;
+    const keys = ['username', 'globalName', 'displayName', 'tag', 'name'];
+    for (const key of keys) {
+      const value = author?.[key];
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) {
+          names.add(trimmed);
+        }
+      }
+    }
+
+    return Array.from(names);
+  }
+
+  private hasWebhookKeyword(value: string): boolean {
+    return value.toLowerCase().includes('webhook');
   }
 
 }

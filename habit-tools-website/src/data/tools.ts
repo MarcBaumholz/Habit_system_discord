@@ -47,6 +47,7 @@ export const HABIT_TOOLS: HabitTool[] = [
   {
     id: 'habit-stacking',
     name: 'Habit Stacking',
+    emoji: '🧱',
     summary: 'Attach a new habit to an existing automatic routine.',
     description: 'Habit stacking is a powerful technique that leverages your existing habits as anchors for new ones. By linking a new habit to something you already do automatically, you create a natural trigger that makes the new habit easier to remember and maintain.',
     categories: ['routine'],
@@ -87,6 +88,7 @@ export const HABIT_TOOLS: HabitTool[] = [
   {
     id: 'habit-tracker',
     name: 'Habit Tracker',
+    emoji: '📊',
     summary: 'Visual progress tracking to maintain motivation and consistency.',
     description: 'A habit tracker is a simple way to measure whether you did a habit. The most basic format is to get a calendar and cross off each day you stick with your routine. This visual representation of your progress provides powerful motivation to maintain consistency.',
     categories: ['motivation', 'routine'],
@@ -126,6 +128,7 @@ export const HABIT_TOOLS: HabitTool[] = [
   {
     id: 'advanced-habit-stacking',
     name: 'Advanced Habit Stacking',
+    emoji: '⛓️',
     summary: 'Build complex routines by chaining multiple habits together.',
     description: 'Advanced habit stacking takes the basic concept further by creating comprehensive routines that chain multiple habits together. This technique is perfect for building morning or evening routines that include several beneficial habits.',
     categories: ['routine', 'motivation'],
@@ -163,6 +166,7 @@ export const HABIT_TOOLS: HabitTool[] = [
   {
     id: 'time-boxing',
     name: 'Time Boxing',
+    emoji: '⏰',
     summary: 'Block specific time slots to guarantee a start.',
     description: 'Time boxing is a time management technique where you allocate a fixed time period, called a "time box", to each planned activity. This method helps eliminate the "I don\'t have time" excuse by creating dedicated blocks for your habits.',
     categories: ['time', 'focus'],
@@ -202,6 +206,7 @@ export const HABIT_TOOLS: HabitTool[] = [
   {
     id: 'pomodoro-technique',
     name: 'Pomodoro Technique',
+    emoji: '🍅',
     summary: 'Work in focused 25-minute intervals with short breaks.',
     description: 'The Pomodoro Technique is a time management method that breaks work into intervals, traditionally 25 minutes in length, separated by short breaks. This technique helps maintain focus and prevents burnout during habit formation.',
     categories: ['focus', 'time'],

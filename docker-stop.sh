@@ -1,26 +1,13 @@
 #!/bin/bash
 
-# Discord Habit System - Docker Stop Script
-# This script stops and cleans up the Docker container
+# Multi-Agent Discord Bot Docker Stop Script
 
-echo "🛑 Stopping Discord Habit System..."
+echo "🛑 Stopping Multi-Agent Discord Bot..."
 
-# Check if container is running
-if docker-compose ps | grep -q "Up"; then
-    echo "📦 Stopping container..."
-    docker-compose down
-    
-    echo "🧹 Cleaning up..."
-    docker-compose down --volumes --remove-orphans
-    
-    echo "✅ Discord Habit System stopped successfully!"
-else
-    echo "⚠️  No running containers found."
-fi
+# Stop Docker container
+echo "📦 Stopping Docker container..."
+docker-compose down
 
+echo "✅ Multi-Agent Discord Bot stopped!"
 echo ""
-echo "📋 Container Status:"
-docker-compose ps
-
-echo ""
-echo "🔧 To start again, run: ./docker-start.sh"
+echo "📋 To start again, run: ./docker-start.sh"

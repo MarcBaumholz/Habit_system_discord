@@ -1,92 +1,72 @@
 'use client';
 
-import { ArrowRight, Sparkles, Target, Clock, Zap } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowRight, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 
 export default function Hero() {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      window.location.href = `/search?q=${encodeURIComponent(searchQuery)}`;
+    }
+  };
+
   return (
-    <section className="relative overflow-hidden py-20 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
+    <section className="relative overflow-hidden pt-28 pb-20 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto">
         <div className="text-center">
           {/* Hero Content */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
+            transition={{ duration: 0.6 }}
             className="space-y-8"
           >
-            <div className="inline-flex items-center space-x-2 glass-effect px-4 py-2 rounded-full">
-              <Sparkles className="w-4 h-4 text-yellow-400" />
-              <span className="text-sm font-medium">19 Proven Habit Tools</span>
-            </div>
-
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight">
-              Build Better Habits with
-              <span className="gradient-text block">Proven Strategies</span>
+            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-tight tracking-tight">
+              Transformiere deine<br />
+              Gewohnheiten mit der{' '}
+              <span className="gradient-text">Habit Toolbox</span>
             </h1>
 
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
-              Discover evidence-based techniques from habit stacking to time boxing. 
-              Find the perfect tool for your goals with our intelligent matching system.
+            <p className="text-lg sm:text-xl text-[var(--notion-text-secondary)] max-w-2xl mx-auto leading-relaxed">
+              Ein systematischer Ansatz für nachhaltige Gewohnheitsbildung. Folge dem bewährten Prozess und nutze unsere Tools für maximalen Erfolg.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-              <button className="button-primary text-lg px-8 py-4">
-                Explore Tools
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </button>
-              <button className="button-secondary text-lg px-8 py-4">
-                How It Works
-              </button>
-            </div>
-          </motion.div>
-
-          {/* Stats */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="grid grid-cols-2 md:grid-cols-4 gap-8 mt-16 max-w-4xl mx-auto"
-          >
-            <div className="text-center">
-              <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center mx-auto mb-3">
-                <Target className="w-6 h-6 text-blue-400" />
-              </div>
-              <div className="text-2xl font-bold">19</div>
-              <div className="text-gray-400 text-sm">Habit Tools</div>
+            {/* Search/Problem Input */}
+            <div className="max-w-2xl mx-auto mt-12">
+              <h3 className="text-xl font-semibold mb-4 text-[var(--notion-text)]">Was ist dein Gewohnheits-Problem?</h3>
+              <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="z.B. Ich möchte regelmäßig Sport treiben..."
+                    className="search-input w-full pr-12"
+                  />
+                  <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--notion-text-secondary)]" />
+                </div>
+                <button type="submit" className="button-primary px-6 py-3 whitespace-nowrap text-sm">
+                  Lösung finden
+                </button>
+              </form>
             </div>
 
-            <div className="text-center">
-              <div className="w-12 h-12 bg-purple-500/20 rounded-lg flex items-center justify-center mx-auto mb-3">
-                <Clock className="w-6 h-6 text-purple-400" />
-              </div>
-              <div className="text-2xl font-bold">5</div>
-              <div className="text-gray-400 text-sm">Categories</div>
-            </div>
-
-            <div className="text-center">
-              <div className="w-12 h-12 bg-green-500/20 rounded-lg flex items-center justify-center mx-auto mb-3">
-                <Zap className="w-6 h-6 text-green-400" />
-              </div>
-              <div className="text-2xl font-bold">2</div>
-              <div className="text-gray-400 text-sm">Languages</div>
-            </div>
-
-            <div className="text-center">
-              <div className="w-12 h-12 bg-orange-500/20 rounded-lg flex items-center justify-center mx-auto mb-3">
-                <Sparkles className="w-6 h-6 text-orange-400" />
-              </div>
-              <div className="text-2xl font-bold">100%</div>
-              <div className="text-gray-400 text-sm">Free</div>
+            {/* CTA Buttons */}
+            <div className="flex flex-col sm:flex-row gap-3 justify-center items-center mt-10 pt-4">
+              <Link href="#notion-template" className="button-secondary px-6 py-2.5 text-sm">
+                📋 Notion Template
+              </Link>
+              <Link href="#process" className="button-secondary px-6 py-2.5 text-sm">
+                🚀 Process ansehen
+              </Link>
             </div>
           </motion.div>
         </div>
-      </div>
-
-      {/* Background Elements */}
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl"></div>
       </div>
     </section>
   );

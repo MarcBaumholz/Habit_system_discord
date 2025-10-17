@@ -1,8 +1,8 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Star, Clock, Users, ArrowRight } from 'lucide-react';
 import { HabitTool } from '@/types/tools';
+import { Clock, Star } from 'lucide-react';
 
 interface ToolCardProps {
   tool: HabitTool;
@@ -10,95 +10,70 @@ interface ToolCardProps {
 }
 
 export default function ToolCard({ tool, onClick }: ToolCardProps) {
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'Beginner': return 'bg-green-500/20 text-green-400';
-      case 'Intermediate': return 'bg-yellow-500/20 text-yellow-400';
-      case 'Advanced': return 'bg-red-500/20 text-red-400';
-      default: return 'bg-gray-500/20 text-gray-400';
-    }
-  };
-
-  const renderStars = (rating: number) => {
-    return Array.from({ length: 5 }, (_, i) => (
-      <Star
-        key={i}
-        className={`w-4 h-4 ${
-          i < rating ? 'text-yellow-400 fill-current' : 'text-gray-600'
-        }`}
-      />
-    ));
+  const categoryNames: Record<string, string> = {
+    routine: 'Routine',
+    focus: 'Fokus',
+    time: 'Zeitmanagement',
+    motivation: 'Motivation',
+    environment: 'Umgebung',
   };
 
   return (
     <motion.div
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
-      className="glass-effect rounded-xl p-6 card-hover cursor-pointer group h-full"
+      initial={{ opacity: 0, y: 10 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      className="notion-card h-full flex flex-col cursor-pointer group"
       onClick={onClick}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <div className={`w-10 h-10 ${tool.color} rounded-lg flex items-center justify-center`}>
-            <span className="text-white font-bold text-lg">
-              {tool.name.charAt(0)}
+      {/* Header mit Emoji & Titel */}
+      <div className="flex items-start gap-4 mb-4">
+        <div className="text-5xl leading-none flex-shrink-0">
+          {tool.emoji || '🎯'}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-xl font-semibold mb-2 group-hover:text-[var(--notion-accent)] transition-colors">
+            {tool.name}
+          </h3>
+          <div className="flex items-center gap-2 text-sm text-[var(--notion-text-secondary)]">
+            <span className="inline-flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5" />
+              {tool.timeToImplement}
+            </span>
+            <span className="text-[var(--notion-border)]">•</span>
+            <span className="inline-flex items-center gap-1">
+              <Star className="w-3.5 h-3.5" />
+              {tool.effectiveness}/5
             </span>
           </div>
-          <div>
-            <h3 className="font-semibold text-lg group-hover:text-blue-400 transition-colors">
-              {tool.name}
-            </h3>
-            <div className="flex items-center space-x-2">
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(tool.difficulty)}`}>
-                {tool.difficulty}
-              </span>
-              <span className="text-gray-400 text-sm">
-                {tool.timeToImplement}
-              </span>
-            </div>
-          </div>
         </div>
-        <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-blue-400 transition-colors" />
       </div>
 
-      {/* Summary */}
-      <p className="text-gray-300 text-sm mb-4 line-clamp-2 leading-relaxed">
+      {/* Beschreibung */}
+      <p className="text-[var(--notion-text-secondary)] text-sm leading-relaxed mb-4 flex-1">
         {tool.summary}
       </p>
 
-      {/* Categories */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        {tool.categories.slice(0, 2).map((category) => (
-          <span
-            key={category}
-            className="px-2 py-1 bg-gray-700/50 rounded-md text-xs text-gray-300"
-          >
-            {category}
-          </span>
-        ))}
-        {tool.categories.length > 2 && (
-          <span className="px-2 py-1 bg-gray-700/50 rounded-md text-xs text-gray-300">
-            +{tool.categories.length - 2}
-          </span>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between pt-4 border-t border-gray-700/50">
-        <div className="flex items-center space-x-1">
-          {renderStars(tool.effectiveness)}
+      {/* Meta-Informationen */}
+      <div className="flex items-center justify-between pt-4 border-t border-[var(--notion-border)]">
+        <div className="flex flex-wrap gap-1.5">
+          {tool.categories.slice(0, 2).map((category) => (
+            <span
+              key={category}
+              className="px-2 py-0.5 bg-[var(--notion-surface-hover)] text-[var(--notion-text-secondary)] rounded text-xs"
+            >
+              {categoryNames[category] || category}
+            </span>
+          ))}
+          {tool.categories.length > 2 && (
+            <span className="px-2 py-0.5 bg-[var(--notion-surface-hover)] text-[var(--notion-text-secondary)] rounded text-xs">
+              +{tool.categories.length - 2}
+            </span>
+          )}
         </div>
-        <div className="flex items-center space-x-4 text-sm text-gray-400">
-          <div className="flex items-center space-x-1">
-            <Clock className="w-4 h-4" />
-            <span>{tool.timeToImplement}</span>
-          </div>
-          <div className="flex items-center space-x-1">
-            <Users className="w-4 h-4" />
-            <span>{tool.language === 'both' ? 'EN/DE' : tool.language.toUpperCase()}</span>
-          </div>
-        </div>
+        <span className="text-xs text-[var(--notion-accent)] font-medium">
+          Details →
+        </span>
       </div>
     </motion.div>
   );

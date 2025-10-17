@@ -198,28 +198,17 @@ export class MessageAnalyzer {
     isCheatDay?: boolean;
     matchedHabit?: Habit;
   }> {
-    // First check if it's a proof
-    const basicAnalysis = await this.analyzeContent(content, habits);
+    // Use the flexible analysis that includes habit matching
+    const analysis = await this.analyzeContent(content, habits);
     
-    if (!basicAnalysis.isProof) {
-      return { ...basicAnalysis, matchedHabit: undefined };
-    }
-
-    // Now try to match with specific habits using AI-powered semantic matching
-    const matchedHabit = await this.matchHabitToContent(content, habits);
-    
-    // If no habit was matched, don't create a proof
-    if (!matchedHabit) {
-      console.log('❌ No habit matched - not creating proof');
-      return {
-        isProof: false,
-        matchedHabit: undefined
-      };
+    // If a habit was matched, find the habit object
+    let matchedHabit: Habit | undefined;
+    if (analysis.habitId) {
+      matchedHabit = habits.find(h => h.id === analysis.habitId);
     }
     
     return {
-      ...basicAnalysis,
-      habitId: matchedHabit.id,
+      ...analysis,
       matchedHabit
     };
   }
@@ -261,7 +250,9 @@ CRITICAL INSTRUCTIONS:
 2. Analyze activity keywords and synonyms (e.g., "exercise" → Exercise habit)
 3. Consider time patterns (e.g., "10min meditation" → Meditation habit)
 4. Match based on activity type, not just keywords
-5. Return ONLY the exact habit name that matches, or "unknown" if no clear match
+5. Look for PARTIAL matches (e.g., "Deep work" → "Deep work and single tasking")
+6. Consider synonyms and related terms (e.g., "focused work", "concentration" → Deep work)
+7. Return ONLY the exact habit name that matches, or "unknown" if no clear match
 
 COMMON PATTERNS:
 - "10min meditation" → Meditation
@@ -271,6 +262,16 @@ COMMON PATTERNS:
 - "played guitar" → Guitar/Music
 - "went running" → Running
 - "cooked dinner" → Cooking
+- "Deep work" → Deep work and single tasking
+- "focused work" → Deep work and single tasking
+- "concentration" → Deep work and single tasking
+- "single tasking" → Deep work and single tasking
+
+SYNONYMS TO CONSIDER:
+- Deep work = focused work, concentration, single tasking, deep focus
+- Meditation = mindfulness, breathing, calm
+- Exercise = workout, training, sports, fitness
+- Reading = books, literature, studying
 
 Return only the exact habit name, nothing else.`;
 
@@ -333,6 +334,25 @@ Return only the exact habit name, nothing else.`;
       console.log(`✅ Direct habit name match found: ${directMatch.name}`);
       return directMatch;
     }
+
+    // Check for partial habit name matches (high priority)
+    const partialMatch = habits.find(habit => {
+      const habitName = habit.name.toLowerCase();
+      const habitWords = habitName.split(' ');
+      
+      // Check if any significant word from habit name is in the content
+      return habitWords.some(word => {
+        if (word.length > 3) { // Only consider words longer than 3 characters
+          return lowerContent.includes(word);
+        }
+        return false;
+      });
+    });
+    
+    if (partialMatch) {
+      console.log(`✅ Partial habit name match found: ${partialMatch.name}`);
+      return partialMatch;
+    }
     
     // Check for time + activity patterns
     const timeActivityPattern = /(\d+(?:\.\d+)?)\s*(min|minutes?|hour|hours?|hr|hrs)\s+(\w+)/i;
@@ -369,6 +389,27 @@ Return only the exact habit name, nothing else.`;
         if (word.length > 2 && lowerContent.includes(word)) {
           score += 10;
           console.log(`✅ Partial name match "${word}": +10`);
+        }
+      });
+
+      // Synonym matching for common habit types
+      const synonyms: Record<string, string[]> = {
+        'deep work': ['deep work', 'focused work', 'concentration', 'single tasking', 'deep focus', 'focused time', 'concentrated work'],
+        'meditation': ['meditation', 'mindfulness', 'breathing', 'calm', 'meditate'],
+        'exercise': ['exercise', 'workout', 'training', 'sports', 'fitness', 'gym', 'running', 'cycling'],
+        'reading': ['reading', 'books', 'literature', 'study', 'studying', 'read'],
+        'journaling': ['journaling', 'journal', 'writing', 'morning pages', 'diary']
+      };
+
+      // Check for synonym matches
+      Object.entries(synonyms).forEach(([key, values]) => {
+        if (habitName.includes(key)) {
+          values.forEach(synonym => {
+            if (lowerContent.includes(synonym)) {
+              score += 15;
+              console.log(`✅ Synonym match "${synonym}" for "${key}": +15`);
+            }
+          });
         }
       });
       
@@ -487,6 +528,142 @@ Return only the exact habit name, nothing else.`;
     return undefined;
   }
 
+  /**
+   * Flexible habit matching - finds ANY word variation from habit names
+   * This makes the system automatically detect proofs without requiring "proof" keywords
+   */
+  private findFlexibleHabitMatch(content: string, habits: Habit[]): { habit: Habit; matchType: string; matchedWords: string[] } | null {
+    console.log('🔍 Flexible Habit Matching - Checking for ANY word variations...');
+    
+    // Comprehensive synonym dictionary for common habit types
+    const synonyms: Record<string, string[]> = {
+      'deep work': ['deep work', 'focused work', 'concentration', 'single tasking', 'deep focus', 'focused time', 'concentrated work', 'deep', 'work', 'focus'],
+      'meditation': ['meditation', 'mindfulness', 'breathing', 'calm', 'meditate', 'meditating', 'mindful'],
+      'exercise': ['exercise', 'workout', 'training', 'sports', 'fitness', 'gym', 'running', 'cycling', 'swimming', 'lifting', 'cardio'],
+      'reading': ['reading', 'books', 'literature', 'study', 'studying', 'read', 'book', 'text'],
+      'journaling': ['journaling', 'journal', 'writing', 'morning pages', 'diary', 'write', 'written', 'log', 'wrote'],
+      'sleep': ['sleep', 'sleeping', 'bed', 'rest', 'nap', 'slept'],
+      'water': ['water', 'hydration', 'hydrated', 'drink', 'drinking', 'fluid'],
+      'walking': ['walking', 'walk', 'walked', 'stroll', 'hiking', 'step'],
+      'cooking': ['cooking', 'cook', 'cooked', 'meal', 'food', 'kitchen'],
+      'cleaning': ['cleaning', 'clean', 'cleaned', 'tidy', 'organize', 'organized'],
+      'learning': ['learning', 'learn', 'learned', 'study', 'studying', 'education', 'skill'],
+      'practicing': ['practicing', 'practice', 'practiced', 'rehearse', 'training', 'skill'],
+      'socializing': ['socializing', 'social', 'friends', 'family', 'meeting', 'chat', 'conversation'],
+      'planning': ['planning', 'plan', 'planned', 'organize', 'schedule', 'preparation'],
+      'reflection': ['reflection', 'reflect', 'reflected', 'thinking', 'contemplation', 'review']
+    };
+
+    // Score each habit based on how well it matches
+    const habitScores = habits.map(habit => {
+      let score = 0;
+      let matchedWords: string[] = [];
+      const habitName = habit.name.toLowerCase();
+      const habitWords = habitName.split(' ').filter(word => word.length > 2);
+      
+      console.log(`🎯 Analyzing habit: "${habit.name}"`);
+      
+      // 1. Direct habit name match (highest score)
+      if (content.includes(habitName)) {
+        score += 100;
+        matchedWords.push(habitName);
+        console.log(`✅ Direct name match: +100`);
+      }
+      
+      // 2. Partial habit name match (high score)
+      habitWords.forEach(word => {
+        if (content.includes(word)) {
+          score += 50;
+          matchedWords.push(word);
+          console.log(`✅ Partial name match "${word}": +50`);
+        }
+      });
+      
+      // 3. Synonym matching (medium-high score)
+      Object.entries(synonyms).forEach(([key, values]) => {
+        if (habitName.includes(key)) {
+          values.forEach(synonym => {
+            if (content.includes(synonym)) {
+              score += 30;
+              matchedWords.push(synonym);
+              console.log(`✅ Synonym match "${synonym}" for "${key}": +30`);
+            }
+          });
+        }
+      });
+      
+      // 4. SMART goal keyword matching (medium score)
+      if (habit.smartGoal) {
+        const goalWords = habit.smartGoal.toLowerCase().split(' ').filter(word => word.length > 3);
+        goalWords.forEach(word => {
+          if (content.includes(word)) {
+            score += 20;
+            matchedWords.push(word);
+            console.log(`✅ Goal word match "${word}": +20`);
+          }
+        });
+      }
+      
+      // 5. Context and why matching (lower score)
+      if (habit.context) {
+        const contextWords = habit.context.toLowerCase().split(' ').filter(word => word.length > 3);
+        contextWords.forEach(word => {
+          if (content.includes(word)) {
+            score += 15;
+            matchedWords.push(word);
+            console.log(`✅ Context word match "${word}": +15`);
+          }
+        });
+      }
+      
+      if (habit.why) {
+        const whyWords = habit.why.toLowerCase().split(' ').filter(word => word.length > 3);
+        whyWords.forEach(word => {
+          if (content.includes(word)) {
+            score += 10;
+            matchedWords.push(word);
+            console.log(`✅ Why word match "${word}": +10`);
+          }
+        });
+      }
+      
+      console.log(`📊 Total score for "${habit.name}": ${score}`);
+      
+      return {
+        habit,
+        score,
+        matchedWords: [...new Set(matchedWords)] // Remove duplicates
+      };
+    });
+    
+    // Find the habit with the highest score
+    const bestMatch = habitScores.reduce((best, current) => 
+      current.score > best.score ? current : best
+    );
+    
+    // Only return a match if score is above threshold (very flexible - any reasonable match)
+    if (bestMatch.score >= 10) {
+      console.log(`🎯 Best match: "${bestMatch.habit.name}" with score ${bestMatch.score}`);
+      console.log(`📝 Matched words: ${bestMatch.matchedWords.join(', ')}`);
+      
+      let matchType = 'unknown';
+      if (bestMatch.score >= 100) matchType = 'direct_name';
+      else if (bestMatch.score >= 50) matchType = 'partial_name';
+      else if (bestMatch.score >= 30) matchType = 'synonym';
+      else if (bestMatch.score >= 20) matchType = 'goal_keyword';
+      else matchType = 'context_keyword';
+      
+      return {
+        habit: bestMatch.habit,
+        matchType,
+        matchedWords: bestMatch.matchedWords
+      };
+    }
+    
+    console.log('❌ No habit match found - score too low');
+    return null;
+  }
+
   private async analyzeContent(content: string, habits: Habit[]): Promise<{
     isProof: boolean;
     habitId?: string;
@@ -497,17 +674,14 @@ Return only the exact habit name, nothing else.`;
   }> {
     const lowerContent = content.toLowerCase();
     
-    console.log('🔍 Enhanced Proof Detection Analysis...');
+    console.log('🔍 Enhanced Flexible Proof Detection Analysis...');
     console.log('📝 Content:', lowerContent);
     
-    // 1. Check for direct habit name in message (highest priority)
-    const directHabitMatch = habits.find(habit => {
-      const habitName = habit.name.toLowerCase();
-      return lowerContent.includes(habitName);
-    });
+    // 1. Check for ANY word variation from habit names (FLEXIBLE APPROACH)
+    const habitMatch = this.findFlexibleHabitMatch(lowerContent, habits);
     
-    if (directHabitMatch) {
-      console.log(`✅ Direct habit name found: ${directHabitMatch.name}`);
+    if (habitMatch) {
+      console.log(`✅ Flexible habit match found: ${habitMatch.habit.name}`);
       
       // Extract unit from message
       const unitMatch = content.match(/(\d+(?:\.\d+)?)\s*(minutes?|hours?|reps?|sets?|km|miles?|kg|lbs?|min)/i);
@@ -526,7 +700,7 @@ Return only the exact habit name, nothing else.`;
       
       return {
         isProof: true,
-        habitId: directHabitMatch.id,
+        habitId: habitMatch.habit.id,
         unit,
         note: content,
         isMinimalDose,

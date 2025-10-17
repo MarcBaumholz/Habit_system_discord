@@ -1,26 +1,15 @@
 version: '3.8'
 
 services:
-  discord-habit-bot:
+  habit-discord-bot:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: discord-habit-system
+    image: habit-discord-bot:optimized
+    container_name: habit-discord-bot
     restart: unless-stopped
     
-    # Environment variables
-    env_file:
-      - .env
-    
-    # Volume for logs (optional)
-    volumes:
-      - ./logs:/app/logs
-    
-    # Network configuration
-    networks:
-      - discord-bot-network
-    
-    # Resource limits
+    # Resource Limits (prevents memory leaks from crashing system)
     deploy:
       resources:
         limits:
@@ -30,21 +19,69 @@ services:
           memory: 256M
           cpus: '0.25'
     
-    # Health check
-    healthcheck:
-      test: ["CMD", "node", "-e", "console.log('Health check passed')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    env_file:
+      - .env
     
-    # Logging configuration
+    environment:
+      # Discord Bot Configuration
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+      
+      # Discord Channel IDs
+      - DISCORD_LEARNINGS_CHANNEL=${DISCORD_LEARNINGS_CHANNEL}
+      - DISCORD_WEEKLY_REVIEWS_CHANNEL=${DISCORD_WEEKLY_REVIEWS_CHANNEL}
+      - DISCORD_ACCOUNTABILITY_GROUP=${DISCORD_ACCOUNTABILITY_GROUP}
+      - DISCORD_PERSONAL_CHANNEL=${DISCORD_PERSONAL_CHANNEL}
+      - DISCORD_INFO_CHANNEL=${DISCORD_INFO_CHANNEL}
+      - DISCORD_TOOLS=${DISCORD_TOOLS}
+      - DISCORD_LOG_CHANNEL=${DISCORD_LOG_CHANNEL}
+      
+      # Notion Configuration
+      - NOTION_TOKEN=${NOTION_TOKEN}
+      - NOTION_DATABASE_USERS=${NOTION_DATABASE_USERS}
+      - NOTION_DATABASE_HABITS=${NOTION_DATABASE_HABITS}
+      - NOTION_DATABASE_PROOFS=${NOTION_DATABASE_PROOFS}
+      - NOTION_DATABASE_LEARNINGS=${NOTION_DATABASE_LEARNINGS}
+      - NOTION_DATABASE_HURDLES=${NOTION_DATABASE_HURDLES}
+      - NOTION_DATABASE_WEEKS=${NOTION_DATABASE_WEEKS}
+      - NOTION_DATABASE_GROUPS=${NOTION_DATABASE_GROUPS}
+      - NOTION_DATABASE_PERSONALITY=${NOTION_DATABASE_PERSONALITY}
+      
+      # AI Configuration
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL}
+      
+      # Bot Configuration
+      - NODE_ENV=production
+      - TZ=${TIMEZONE:-Europe/Berlin}
+    
+    volumes:
+      # Mount logs directory for persistence
+      - ./logs:/app/logs
+      # Mount data directory for any local storage
+      - ./data:/app/data
+    
+    networks:
+      - habit-network
+    
+    # Optimized logging
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+        compress: "true"
+    
+    # Health check configuration
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 networks:
-  discord-bot-network:
+  habit-network:
     driver: bridge

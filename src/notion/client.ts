@@ -1,5 +1,5 @@
 import { Client } from '@notionhq/client';
-import { User, Habit, Proof, Learning, Hurdle, Week, Group } from '../types';
+import { User, Habit, Proof, Learning, Hurdle, Week, Group, UserProfile } from '../types';
 
 export class NotionClient {
   private client: Client;
@@ -11,6 +11,7 @@ export class NotionClient {
     hurdles: string;
     weeks: string;
     groups: string;
+    personality: string; // Neue Personality DB
   };
 
   constructor(notionToken: string, databaseIds: Record<string, string>) {
@@ -294,7 +295,7 @@ export class NotionClient {
         database_id: this.databases.users,
         filter: {
           property: 'DiscordID',
-          title: { equals: discordId }
+          rich_text: { equals: discordId }  // Fixed: DiscordID is rich_text, not title
         }
       });
 
@@ -309,14 +310,29 @@ export class NotionClient {
       }
 
       const page = response.results[0] as any;
+      
+      // Debug: Log the actual structure of the properties
+      console.log('🔍 Page properties structure:', JSON.stringify(page.properties, null, 2));
+      
+      // Safely extract properties with fallbacks
+      const getTitleContent = (prop: any) => {
+        if (!prop?.title || !Array.isArray(prop.title) || prop.title.length === 0) return '';
+        return prop.title[0]?.text?.content || prop.title[0]?.plain_text || '';
+      };
+      
+      const getRichTextContent = (prop: any) => {
+        if (!prop?.rich_text || !Array.isArray(prop.rich_text) || prop.rich_text.length === 0) return '';
+        return prop.rich_text[0]?.text?.content || prop.rich_text[0]?.plain_text || '';
+      };
+      
       const user = {
         id: page.id,
-        discordId: page.properties['DiscordID'].title[0].text.content,
-        name: page.properties['Name'].rich_text[0].text.content,
-        timezone: page.properties['Timezone'].rich_text[0].text.content,
-        bestTime: page.properties['Best Time'].rich_text[0].text.content,
-        trustCount: page.properties['Trust Count'].number,
-        personalChannelId: page.properties['Personal Channel ID']?.rich_text?.[0]?.text?.content
+        discordId: getRichTextContent(page.properties['DiscordID']),  // Fixed: DiscordID is rich_text, not title
+        name: getTitleContent(page.properties['Name']),                // Fixed: Name is title, not rich_text
+        timezone: getRichTextContent(page.properties['Timezone']),
+        bestTime: getRichTextContent(page.properties['Best Time']),
+        trustCount: page.properties['Trust Count']?.number || 0,
+        personalChannelId: getRichTextContent(page.properties['Personal Channel ID'])
       };
 
       console.log('✅ User found:', {
@@ -786,21 +802,292 @@ export class NotionClient {
 
       console.log(`📊 Found ${response.results.length} users in Notion`);
 
+      const getTitleContent = (prop: any) => {
+        if (!prop?.title || !Array.isArray(prop.title) || prop.title.length === 0) return '';
+        return prop.title[0]?.text?.content || prop.title[0]?.plain_text || '';
+      };
+
+      const getRichTextContent = (prop: any) => {
+        if (!prop?.rich_text || !Array.isArray(prop.rich_text) || prop.rich_text.length === 0) return '';
+        return prop.rich_text[0]?.text?.content || prop.rich_text[0]?.plain_text || '';
+      };
+
       return response.results.map((page: any) => {
         const properties = page.properties;
         return {
           id: page.id,
-          discordId: properties['DiscordID']?.title?.[0]?.text?.content || '',
-          name: properties['Name']?.rich_text?.[0]?.text?.content || 'Unknown User',
-          timezone: properties['Timezone']?.rich_text?.[0]?.text?.content || 'Europe/Berlin',
-          bestTime: properties['Best Time']?.rich_text?.[0]?.text?.content || '09:00',
+          discordId: getRichTextContent(properties['DiscordID']),
+          name: getTitleContent(properties['Name']) || 'Unknown User',
+          timezone: getRichTextContent(properties['Timezone']) || 'Europe/Berlin',
+          bestTime: getRichTextContent(properties['Best Time']) || '09:00',
           trustCount: properties['Trust Count']?.number || 0,
-          personalChannelId: properties['Personal Channel ID']?.rich_text?.[0]?.text?.content
+          personalChannelId: getRichTextContent(properties['Personal Channel ID'])
         };
       });
     } catch (error) {
       console.error('❌ Error fetching all users:', error);
       return [];
     }
+  }
+
+  async getAllGroups(): Promise<Group[]> {
+    try {
+      const response = await this.client.databases.query({
+        database_id: this.databases.groups,
+        page_size: 100
+      });
+
+      return response.results.map((page: any) => ({
+        id: page.id,
+        name: page.properties.Name?.title?.[0]?.text?.content || '',
+        channelId: page.properties['Channel ID']?.rich_text?.[0]?.text?.content || '',
+        donationPool: page.properties['Donation Pool']?.number || 0
+      }));
+
+    } catch (error) {
+      console.error('Error getting all groups:', error);
+      return [];
+    }
+  }
+
+  async getLearningsByDiscordId(discordId: string): Promise<Learning[]> {
+    try {
+      // First, get the user by Discord ID to get their user ID
+      const user = await this.getUserByDiscordId(discordId);
+      if (!user) {
+        console.log('No user found for Discord ID:', discordId);
+        return [];
+      }
+
+      // Query learnings by User relation (more reliable than title field)
+      const response = await this.client.databases.query({
+        database_id: this.databases.learnings,
+        filter: {
+          property: 'User',
+          relation: {
+            contains: user.id
+          }
+        },
+        page_size: 100
+      });
+
+      return response.results.map((page: any) => ({
+        id: page.id,
+        userId: page.properties.User?.relation?.[0]?.id || '',
+        habitId: page.properties.Habit?.relation?.[0]?.id || '',
+        discordId: page.properties['Discord ID ']?.title?.[0]?.text?.content || '',  // Fixed: title field with trailing space
+        text: page.properties.Text?.rich_text?.[0]?.text?.content || '',
+        createdAt: page.properties['Created At']?.date?.start || new Date().toISOString()
+      }));
+
+    } catch (error) {
+      console.error('Error getting learnings by Discord ID:', error);
+      return [];
+    }
+  }
+
+  async getHurdlesByDiscordId(discordId: string): Promise<Hurdle[]> {
+    try {
+      // First, get the user by Discord ID to get their user ID
+      const user = await this.getUserByDiscordId(discordId);
+      if (!user) {
+        console.log('No user found for Discord ID:', discordId);
+        return [];
+      }
+
+      // Then query hurdles by User relation (Hurdles DB has no Discord ID field)
+      const response = await this.client.databases.query({
+        database_id: this.databases.hurdles,
+        filter: {
+          property: 'User',
+          relation: {
+            contains: user.id
+          }
+        },
+        page_size: 100
+      });
+
+      return response.results.map((page: any) => ({
+        id: page.id,
+        userId: page.properties.User?.relation?.[0]?.id || '',
+        habitId: page.properties.Habit?.relation?.[0]?.id || '',
+        name: page.properties.Name?.title?.[0]?.text?.content || '',
+        hurdleType: page.properties['Hurdle Type']?.select?.name || 'Other',  // Fixed: property name is "Hurdle Type"
+        description: page.properties.Description?.rich_text?.[0]?.text?.content || '',
+        date: page.properties.Date?.date?.start || new Date().toISOString()
+      }));
+
+    } catch (error) {
+      console.error('Error getting hurdles by Discord ID:', error);
+      return [];
+    }
+  }
+
+  // Personality DB Methods
+  async createUserProfile(profile: Omit<UserProfile, 'id'>): Promise<UserProfile> {
+    const properties: any = {
+      'Discord ID': { title: [{ text: { content: profile.discordId } }] },
+    };
+
+    // Add optional fields if they exist
+    if (profile.user?.id) {
+      properties['User'] = { relation: [{ id: profile.user.id }] };
+    }
+    if (profile.joinDate) {
+      properties['Join Date'] = { date: { start: profile.joinDate } };
+    }
+    if (profile.personalityType) {
+      properties['Personality T...'] = { select: { name: profile.personalityType } };
+    }
+    if (profile.coreValues && profile.coreValues.length > 0) {
+      properties['Core Values'] = { multi_select: profile.coreValues.map(value => ({ name: value })) };
+    }
+    if (profile.lifeVision) {
+      properties['Life Vision'] = { rich_text: [{ text: { content: profile.lifeVision } }] };
+    }
+    if (profile.mainGoals && profile.mainGoals.length > 0) {
+      properties['Main Goals'] = { rich_text: [{ text: { content: profile.mainGoals.join('\n') } }] };
+    }
+    if (profile.bigFiveTraits) {
+      properties['Big five traits'] = { rich_text: [{ text: { content: profile.bigFiveTraits } }] };
+    }
+    if (profile.lifeDomains && profile.lifeDomains.length > 0) {
+      properties['Life domains'] = { multi_select: profile.lifeDomains.map(domain => ({ name: domain })) };
+    }
+    if (profile.lifePhase) {
+      properties['Life Phase'] = { select: { name: profile.lifePhase } };
+    }
+    if (profile.desiredIdentity) {
+      properties['Desired Identity'] = { rich_text: [{ text: { content: profile.desiredIdentity } }] };
+    }
+    if (profile.openSpace) {
+      properties['Open Space'] = { rich_text: [{ text: { content: profile.openSpace } }] };
+    }
+
+    // Validate configuration before creating the page to produce clearer errors
+    if (!this.databases || !this.databases.personality) {
+      throw new Error('NOTION_DATABASE_PERSONALITY is not configured. Please set it in your .env');
+    }
+
+    try {
+      const response = await this.client.pages.create({
+        parent: { database_id: this.databases.personality },
+        properties
+      });
+
+      return {
+        id: response.id,
+        ...profile
+      };
+    } catch (error: any) {
+      const rawMessage = (error?.body && error.body.message) || error?.message || 'Unknown error';
+      // Provide a clear hint when a Page ID was configured instead of a Database ID
+      if (typeof rawMessage === 'string' && rawMessage.toLowerCase().includes('is a page, not a database')) {
+        throw new Error('NOTION_DATABASE_PERSONALITY points to a PAGE, not a DATABASE. Please provide the Database ID and share it with the integration.');
+      }
+      if (typeof rawMessage === 'string' && rawMessage.toLowerCase().includes('parent') && rawMessage.toLowerCase().includes('database')) {
+        throw new Error(`Invalid Notion parent for personality profile. Ensure NOTION_DATABASE_PERSONALITY is a valid Database ID. Original error: ${rawMessage}`);
+      }
+      throw error;
+    }
+  }
+
+  async getUserProfileByDiscordId(discordId: string): Promise<UserProfile | null> {
+    try {
+      const response = await this.client.databases.query({
+        database_id: this.databases.personality,
+        filter: {
+          property: 'Discord ID',
+          title: {
+            equals: discordId
+          }
+        }
+      });
+
+      if (response.results.length === 0) {
+        return null;
+      }
+
+      const page = response.results[0] as any;
+      const properties = page.properties;
+
+      return {
+        id: page.id,
+        discordId: this.extractTextFromProperty(properties['Discord ID']),
+        joinDate: properties['Join Date']?.date?.start,
+        personalityType: properties['Personality T...']?.select?.name,
+        coreValues: properties['Core Values']?.multi_select?.map((item: any) => item.name) || [],
+        lifeVision: this.extractTextFromProperty(properties['Life Vision']),
+        mainGoals: this.extractTextFromProperty(properties['Main Goals'])?.split('\n').filter(g => g.trim()) || [],
+        bigFiveTraits: this.extractTextFromProperty(properties['Big five traits']),
+        lifeDomains: properties['Life domains']?.multi_select?.map((item: any) => item.name) || [],
+        lifePhase: properties['Life Phase']?.select?.name,
+        desiredIdentity: this.extractTextFromProperty(properties['Desired Identity']),
+        openSpace: this.extractTextFromProperty(properties['Open Space'])
+      };
+    } catch (error) {
+      console.error('Error getting user profile:', error);
+      return null;
+    }
+  }
+
+  async updateUserProfile(discordId: string, updates: Partial<UserProfile>): Promise<UserProfile | null> {
+    try {
+      // First get the existing profile
+      const existingProfile = await this.getUserProfileByDiscordId(discordId);
+      if (!existingProfile) {
+        return null;
+      }
+
+      const properties: any = {};
+
+      // Only update provided fields
+      if (updates.personalityType) {
+        properties['Personality T...'] = { select: { name: updates.personalityType } };
+      }
+      if (updates.coreValues) {
+        properties['Core Values'] = { multi_select: updates.coreValues.map(value => ({ name: value })) };
+      }
+      if (updates.lifeVision) {
+        properties['Life Vision'] = { rich_text: [{ text: { content: updates.lifeVision } }] };
+      }
+      if (updates.mainGoals) {
+        properties['Main Goals'] = { rich_text: [{ text: { content: updates.mainGoals.join('\n') } }] };
+      }
+      if (updates.bigFiveTraits) {
+        properties['Big five traits'] = { rich_text: [{ text: { content: updates.bigFiveTraits } }] };
+      }
+      if (updates.lifeDomains) {
+        properties['Life domains'] = { multi_select: updates.lifeDomains.map(domain => ({ name: domain })) };
+      }
+      if (updates.lifePhase) {
+        properties['Life Phase'] = { select: { name: updates.lifePhase } };
+      }
+      if (updates.desiredIdentity) {
+        properties['Desired Identity'] = { rich_text: [{ text: { content: updates.desiredIdentity } }] };
+      }
+      if (updates.openSpace) {
+        properties['Open Space'] = { rich_text: [{ text: { content: updates.openSpace } }] };
+      }
+
+      await this.client.pages.update({
+        page_id: existingProfile.id,
+        properties
+      });
+
+      // Return updated profile
+      return await this.getUserProfileByDiscordId(discordId);
+    } catch (error) {
+      console.error('Error updating user profile:', error);
+      return null;
+    }
+  }
+
+  private extractTextFromProperty(property: any): string {
+    if (!property) return '';
+    if (property.rich_text && property.rich_text.length > 0) {
+      return property.rich_text[0].text.content;
+    }
+    return '';
   }
 }

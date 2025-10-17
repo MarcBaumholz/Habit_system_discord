@@ -95,7 +95,7 @@ export class DiscordLogger {
 
       // Send to Discord log channel
       const channel = await this.getLogChannel();
-      if (channel) {
+      if (channel && channel.id !== entry.channelId) {
         const formattedMessage = this.formatLogEntry(entry);
         
         // Split long messages if needed
@@ -182,6 +182,11 @@ export class DiscordLogger {
 
   // Specialized logging methods for Discord events
   async logMessageCreate(message: Message): Promise<void> {
+    // Skip logging if this is a bot message or if it's in the log channel itself
+    if (message.author.bot || message.channelId === this.logChannelId) {
+      return;
+    }
+
     await this.info(
       'MESSAGE',
       'Message Created',

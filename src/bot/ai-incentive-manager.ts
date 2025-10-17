@@ -169,8 +169,9 @@ Instructions:
 2. If completion rate is below 80%: Provide constructive feedback and ask what challenges they faced
 3. Be supportive, not judgmental
 4. Suggest specific improvements if needed
-5. Keep response under 200 words
+5. Keep response under 60 words (very short!)
 6. Write in German
+7. Be concise and direct
 
 Provide a motivational, helpful response:`;
 
@@ -229,7 +230,8 @@ Provide a motivational, helpful response:`;
       // Create the AI incentive message
       const message = await this.createAIIncentiveMessage(user, habitAnalysis, weekInfo);
       
-      await channel.send(message);
+      // Send message with proper splitting if too long
+      await this.sendLongMessage(channel, message);
 
       console.log(`✅ AI incentive sent to user ${user.name}`);
 
@@ -251,6 +253,91 @@ Provide a motivational, helpful response:`;
   }
 
   /**
+   * Send a long message by splitting it into multiple Discord messages if needed
+   */
+  private async sendLongMessage(channel: TextChannel, message: string): Promise<void> {
+    const maxLength = 1950; // Leave some buffer for Discord's 2000 char limit
+    
+    if (message.length <= maxLength) {
+      // Message is short enough, send as is
+      await channel.send(message);
+      return;
+    }
+
+    console.log(`📝 Message too long (${message.length} chars), splitting into multiple parts...`);
+    
+    // Split message into logical chunks
+    const chunks = this.splitMessageIntoChunks(message, maxLength);
+    
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const partIndicator = chunks.length > 1 ? `\n\n*Teil ${i + 1}/${chunks.length}*\n` : '';
+      
+      await channel.send(partIndicator + chunk);
+      
+      // Small delay between messages to avoid rate limiting
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    
+    console.log(`✅ Sent message in ${chunks.length} parts`);
+  }
+
+  /**
+   * Split a long message into logical chunks while preserving content structure
+   */
+  private splitMessageIntoChunks(message: string, maxLength: number): string[] {
+    const chunks: string[] = [];
+    
+    // First, try to split by major sections (double newlines)
+    const sections = message.split('\n\n');
+    let currentChunk = '';
+    
+    for (const section of sections) {
+      // If adding this section would exceed the limit, start a new chunk
+      if (currentChunk.length + section.length + 2 > maxLength && currentChunk.length > 0) {
+        chunks.push(currentChunk.trim());
+        currentChunk = section;
+      } else {
+        currentChunk += (currentChunk ? '\n\n' : '') + section;
+      }
+    }
+    
+    // Add the last chunk if it has content
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    // If any chunk is still too long, split it further by lines
+    const finalChunks: string[] = [];
+    for (const chunk of chunks) {
+      if (chunk.length <= maxLength) {
+        finalChunks.push(chunk);
+      } else {
+        // Split by lines for very long sections
+        const lines = chunk.split('\n');
+        let currentSubChunk = '';
+        
+        for (const line of lines) {
+          if (currentSubChunk.length + line.length + 1 > maxLength && currentSubChunk.length > 0) {
+            finalChunks.push(currentSubChunk.trim());
+            currentSubChunk = line;
+          } else {
+            currentSubChunk += (currentSubChunk ? '\n' : '') + line;
+          }
+        }
+        
+        if (currentSubChunk.trim()) {
+          finalChunks.push(currentSubChunk.trim());
+        }
+      }
+    }
+    
+    return finalChunks;
+  }
+
+  /**
    * Create the AI incentive message content
    */
   private async createAIIncentiveMessage(
@@ -264,40 +351,37 @@ Provide a motivational, helpful response:`;
     const successfulHabits = habitAnalysis.filter(h => !h.needsImprovement);
 
     let message = `🧠 **Wöchentliche AI-Analyse - ${weekRange}**\n\n`;
-    message += `Hallo ${user.name}! 👋\n\n`;
-    message += `Ich habe deine Gewohnheiten diese Woche analysiert. Hier ist mein Feedback:\n\n`;
+    message += `Hallo ${user.name}! 👋 Hier ist mein Feedback:\n\n`;
 
-    // Show successful habits first
+    // Show successful habits first (compact)
     if (successfulHabits.length > 0) {
       message += `🎉 **Erfolgreiche Gewohnheiten:**\n`;
       for (const habit of successfulHabits) {
-        message += `✅ **${habit.habitName}**: ${habit.actualFrequency}/${habit.targetFrequency} (${habit.completionRate}%)\n`;
+        message += `✅ ${habit.habitName}: ${habit.actualFrequency}/${habit.targetFrequency} (${habit.completionRate}%)\n`;
       }
       message += `\n`;
     }
 
-    // Show struggling habits with AI analysis
+    // Show struggling habits with AI analysis (compact)
     if (strugglingHabits.length > 0) {
       message += `🤔 **Gewohnheiten, die Aufmerksamkeit brauchen:**\n\n`;
       
       for (const habit of strugglingHabits) {
         message += `📊 **${habit.habitName}**\n`;
-        message += `• Ziel: ${habit.targetFrequency}x pro Woche\n`;
-        message += `• Tatsächlich: ${habit.actualFrequency}x\n`;
-        message += `• Erfüllung: ${habit.completionRate}%\n\n`;
+        message += `• ${habit.actualFrequency}/${habit.targetFrequency} (${habit.completionRate}%)\n\n`;
         
         message += `🤖 **AI-Feedback:**\n`;
         message += `${habit.aiAnalysis}\n\n`;
         
-        message += `💭 **Meine Fragen an dich:**\n`;
-        message += `• Was hat dich diese Woche daran gehindert, ${habit.habitName} zu machen?\n`;
-        message += `• Gibt es etwas, das du ändern möchtest?\n`;
-        message += `• Brauchst du Unterstützung oder neue Strategien?\n\n`;
+        message += `💭 **Fragen:**\n`;
+        message += `• Was hat dich gehindert?\n`;
+        message += `• Was möchtest du ändern?\n`;
+        message += `• Brauchst du Unterstützung?\n\n`;
       }
     }
 
     message += `💪 **Nächste Woche wird besser!**\n`;
-    message += `Antworte einfach hier, wenn du über deine Gewohnheiten sprechen möchtest. Ich bin da, um zu helfen! 🚀`;
+    message += `Antworte hier, wenn du über deine Gewohnheiten sprechen möchtest! 🚀`;
 
     return message;
   }
@@ -307,10 +391,10 @@ Provide a motivational, helpful response:`;
    */
   private async getAllUsers(): Promise<User[]> {
     try {
-      // This would need to be implemented in NotionClient
-      // For now, we'll return empty array and implement this method
-      console.log('⚠️ getAllUsers method needs to be implemented in NotionClient');
-      return [];
+      console.log('🔍 Fetching all users from Notion for AI incentive analysis...');
+      const users = await this.notion.getAllUsers();
+      console.log(`📊 Found ${users.length} users for AI analysis`);
+      return users;
     } catch (error) {
       console.error('❌ Error getting all users:', error);
       return [];
