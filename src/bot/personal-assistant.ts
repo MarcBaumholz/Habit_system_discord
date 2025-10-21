@@ -133,8 +133,9 @@ export class PersonalAssistant {
         userContext
       );
 
-      // Send response
-      await channel.send(`🤖 **AI Assistant:**\n\n${aiResponse}`);
+      // Send response with length checking
+      const fullMessage = `🤖 **AI Assistant:**\n\n${aiResponse}`;
+      await this.sendLongMessage(channel, fullMessage);
 
       // Log the AI interaction
       await this.logger.info(
@@ -455,5 +456,99 @@ export class PersonalAssistant {
     } catch (error) {
       console.error('Error sending personal recommendation:', error);
     }
+  }
+
+  /**
+   * Send a long message by splitting it into multiple Discord messages if needed
+   */
+  private async sendLongMessage(channel: TextChannel, message: string): Promise<void> {
+    const maxLength = 1950; // Leave some buffer for Discord's 2000 char limit
+    
+    if (message.length <= maxLength) {
+      // Message is short enough, send as is
+      await channel.send(message);
+      return;
+    }
+
+    console.log(`📝 Message too long (${message.length} chars), splitting into multiple parts...`);
+    
+    // Split message into logical chunks
+    const chunks = this.splitMessageIntoChunks(message, maxLength);
+    
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const partIndicator = chunks.length > 1 ? `\n\n*Teil ${i + 1}/${chunks.length}*\n` : '';
+      
+      await channel.send(partIndicator + chunk);
+      
+      // Small delay between messages to avoid rate limiting
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    
+    console.log(`✅ Sent message in ${chunks.length} parts`);
+  }
+
+  /**
+   * Split a long message into logical chunks while preserving content structure
+   */
+  private splitMessageIntoChunks(message: string, maxLength: number): string[] {
+    const chunks: string[] = [];
+    
+    // First, try to split by major sections (double newlines)
+    const sections = message.split('\n\n');
+    let currentChunk = '';
+    
+    for (const section of sections) {
+      // If adding this section would exceed the limit
+      if (currentChunk.length + section.length + 2 > maxLength) {
+        // If current chunk has content, save it
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+          currentChunk = '';
+        }
+        
+        // If the section itself is too long, split it by lines
+        if (section.length > maxLength) {
+          const lines = section.split('\n');
+          let lineChunk = '';
+          
+          for (const line of lines) {
+            if (lineChunk.length + line.length + 1 > maxLength) {
+              if (lineChunk.trim()) {
+                chunks.push(lineChunk.trim());
+                lineChunk = '';
+              }
+              
+              // If a single line is still too long, force split it
+              if (line.length > maxLength) {
+                chunks.push(line.substring(0, maxLength));
+                lineChunk = line.substring(maxLength);
+              } else {
+                lineChunk = line;
+              }
+            } else {
+              lineChunk += (lineChunk ? '\n' : '') + line;
+            }
+          }
+          
+          if (lineChunk.trim()) {
+            currentChunk = lineChunk;
+          }
+        } else {
+          currentChunk = section;
+        }
+      } else {
+        currentChunk += (currentChunk ? '\n\n' : '') + section;
+      }
+    }
+    
+    // Add the last chunk if it has content
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    return chunks;
   }
 }

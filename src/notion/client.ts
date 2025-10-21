@@ -501,12 +501,7 @@ export class NotionClient {
             contains: userId
           }
         },
-        sorts: [
-          {
-            property: 'Created At',
-            direction: 'descending'
-          }
-        ],
+        // Note: Hurdles database doesn't have 'Created At' property, so we don't sort
         page_size: limit
       });
 
