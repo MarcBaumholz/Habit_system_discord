@@ -387,16 +387,16 @@ Provide a motivational, helpful response:`;
   }
 
   /**
-   * Get all users from Notion
+   * Get active users from Notion (excludes paused users)
    */
   private async getAllUsers(): Promise<User[]> {
     try {
-      console.log('🔍 Fetching all users from Notion for AI incentive analysis...');
-      const users = await this.notion.getAllUsers();
-      console.log(`📊 Found ${users.length} users for AI analysis`);
+      console.log('🔍 Fetching active users from Notion for AI incentive analysis...');
+      const users = await this.notion.getActiveUsers();
+      console.log(`📊 Found ${users.length} active users for AI analysis`);
       return users;
     } catch (error) {
-      console.error('❌ Error getting all users:', error);
+      console.error('❌ Error getting active users:', error);
       return [];
     }
   }

@@ -182,29 +182,53 @@ export class ToolboxEngine {
   }
 }
 
-export function formatToolboxReply(problem: string, matches: Array<{ tool: HabitTool; score: number }>): string {
+export function formatToolboxReply(problem: string, matches: Array<{ tool: HabitTool; score: number; reasoning?: string }>): string {
   if (matches.length === 0) {
-    return `🧰 I couldn't map your problem to a tool yet. Try describing it with a bit more detail (what blocks you, when, where).`;
+    return `**No Perfect Match Found**\n\nI couldn't find a tool that perfectly fits your problem. Try describing:\n• What specifically blocks you\n• When this happens\n• What you've already tried`;
   }
 
   const lines: string[] = [];
-  lines.push(`🤖 **Toolbox Suggestions**`);
-  lines.push('');
-  lines.push(`📝 Your problem: ${problem}`);
+
+  // Clean header - Notion style
+  lines.push(`**🎯 Tool Recommendations**`);
   lines.push('');
 
-  for (const { tool } of matches) {
-    lines.push(`🔧 **${tool.name}** — ${tool.summary}`);
-    if (tool.whenToUse.length) lines.push(`• When to use: ${tool.whenToUse.join('; ')}`);
-    if (tool.steps.length) {
-      lines.push('• How to apply:');
-      for (const step of tool.steps.slice(0, 4)) lines.push(`  - ${step}`);
+  // Each tool gets a clean, structured block
+  for (const match of matches) {
+    const { tool, reasoning } = match;
+
+    // Tool name as bold header
+    lines.push(`**${tool.name}**`);
+
+    // Why it fits (AI reasoning or summary)
+    if (reasoning) {
+      lines.push(`*${reasoning}*`);
+    } else {
+      lines.push(`*${tool.summary}*`);
     }
-    if (tool.sources.length) lines.push(`• Sources: ${tool.sources.map(s => s).join(' | ')}`);
     lines.push('');
+
+    // How to apply - keep it concise (max 3 steps)
+    lines.push(`**How to Apply:**`);
+    const topSteps = tool.steps.slice(0, 3);
+    for (let i = 0; i < topSteps.length; i++) {
+      lines.push(`${i + 1}. ${topSteps[i]}`);
+    }
+    lines.push('');
+
+    // Source link if available
+    if (tool.sources.length > 0) {
+      lines.push(`[Learn More](${tool.sources[0]})`);
+      lines.push('');
+    }
+
+    // Separator between tools
+    if (matches.indexOf(match) < matches.length - 1) {
+      lines.push('─────────────────────');
+      lines.push('');
+    }
   }
 
-  lines.push('💡 Add more tools easily by editing `src/toolbox/tools.ts` (no code changes needed).');
   return lines.join('\n');
 }
 

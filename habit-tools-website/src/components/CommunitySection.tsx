@@ -1,8 +1,11 @@
-'use client';
+'use client'
 
-import { motion } from 'framer-motion';
-import { Users, BarChart3, Target, MessageCircle } from 'lucide-react';
-import Link from 'next/link';
+import { motion } from 'framer-motion'
+import { Users, BarChart3, Target, MessageCircle } from 'lucide-react'
+import Link from 'next/link'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 
 const features = [
   {
@@ -11,63 +14,60 @@ const features = [
   },
   {
     icon: BarChart3,
-    text: 'Wöchentliche Check-ins',
+    text: 'Weekly Momentum Calls',
   },
   {
     icon: Target,
-    text: 'Gemeinsame Ziele setzen',
+    text: 'Gemeinsame Ziel-Sprints',
   },
-];
+]
 
 export default function CommunitySection() {
   return (
-    <section id="community" className="py-20 px-4 sm:px-6 lg:px-8 bg-[#1a1f2e]/50">
-      <div className="max-w-5xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="text-center"
-        >
-          <h2 className="text-4xl sm:text-5xl font-bold mb-4">
-            Community & Accountability
-          </h2>
-          <h3 className="text-2xl font-semibold text-gray-300 mb-8">
-            Schließe dich unserer WhatsApp Community an
-          </h3>
-          <p className="text-xl text-gray-400 max-w-3xl mx-auto mb-12 leading-relaxed">
-            Erfolg ist einfacher, wenn du nicht alleine bist. Tausche dich mit anderen aus, 
-            teile deine Fortschritte und erhalte Motivation von Gleichgesinnten.
-          </p>
+    <section
+      id="community"
+      className="relative mx-auto max-w-6xl overflow-hidden rounded-[56px] border-2 border-white/15 bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-white/[0.02] px-6 py-24 shadow-[0_8px_48px_rgba(18,255,195,0.1)] backdrop-blur-3xl"
+    >
+      <div className="pointer-events-none absolute -right-12 top-10 h-80 w-80 rounded-full bg-[#12ffc3]/20 blur-3xl" />
 
-          {/* Features Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-            {features.map((feature, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
-                className="glass-effect rounded-xl p-6 text-center"
-              >
-                <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-purple-500/20 flex items-center justify-center">
-                  <feature.icon className="w-6 h-6 text-purple-400" />
-                </div>
-                <p className="text-gray-300 font-medium">{feature.text}</p>
-              </motion.div>
-            ))}
-          </div>
+      <div className="mx-auto flex max-w-3xl flex-col items-center gap-6 text-center">
+        <Badge className="bg-white/10 text-[0.6rem] tracking-[0.4em] text-white/70">
+          Collective energy
+        </Badge>
+        <h2 className="text-4xl font-semibold tracking-tight md:text-5xl">
+          Community & Accountability wie im futuristischen Studio.
+        </h2>
+        <p className="text-sm text-white/60 md:text-base">
+          Live Sessions, Fokus-Spots und reale Verbindlichkeit. Unsere Community bringt die Ästhetik von
+          lusion.co in deine Gewohnheitsarbeit – nur mit echten Ergebnissen.
+        </p>
+      </div>
 
-          {/* CTA Button */}
-          <Link href="#" className="button-primary text-lg px-10 py-5 inline-flex items-center gap-3">
-            <MessageCircle className="w-6 h-6" />
-            Community beitreten
+      <div className="mx-auto mt-16 grid max-w-3xl grid-cols-1 gap-6 md:grid-cols-3">
+        {features.map((feature, index) => (
+          <motion.div
+            key={feature.text}
+            initial={{ opacity: 0, y: 24 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.2 }}
+            transition={{ duration: 0.5, delay: index * 0.08, ease: 'easeOut' }}
+            className="flex flex-col items-center gap-3 rounded-3xl border-2 border-white/10 bg-gradient-to-br from-white/[0.08] to-white/[0.03] px-6 py-10 shadow-lg backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:border-white/20 hover:shadow-xl"
+          >
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10">
+              <feature.icon className="h-7 w-7 text-white/80" />
+            </div>
+            <p className="text-sm font-medium text-white/70">{feature.text}</p>
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="mt-16 flex justify-center">
+        <Button asChild className="h-12 px-10 text-sm font-semibold">
+          <Link href="#contact" className="inline-flex items-center gap-3">
+            <MessageCircle className="h-5 w-5" /> Community beitreten
           </Link>
-        </motion.div>
+        </Button>
       </div>
     </section>
-  );
+  )
 }
-

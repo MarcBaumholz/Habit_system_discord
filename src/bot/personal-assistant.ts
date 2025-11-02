@@ -196,14 +196,14 @@ export class PersonalAssistant {
       const habits = await this.notion.getHabitsByUserId(userId);
       console.log('✅ Habits retrieved:', habits.length);
 
-      // Get recent proofs (last 7 days) - with error handling
-      console.log('📊 Getting recent proofs...');
+      // Get current week proofs (Monday-Sunday) - with error handling
+      console.log('📊 Getting current week proofs...');
       let recentProofs: any[] = [];
       try {
-        recentProofs = await this.getRecentProofs(userId, 7);
-        console.log('✅ Recent proofs retrieved:', recentProofs.length);
+        recentProofs = await this.getCurrentWeekProofs(userId);
+        console.log('✅ Current week proofs retrieved:', recentProofs.length);
       } catch (error) {
-        console.error('⚠️ Error getting recent proofs:', error);
+        console.error('⚠️ Error getting current week proofs:', error);
         recentProofs = [];
       }
 
@@ -270,32 +270,86 @@ export class PersonalAssistant {
     }
   }
 
-  private async getRecentProofs(userId: string, days: number): Promise<any[]> {
+  /**
+   * Get proofs for the current week (Monday to Sunday)
+   * Optimized: Fetches habits once and creates a lookup map
+   */
+  private async getCurrentWeekProofs(userId: string): Promise<any[]> {
     try {
-      const endDate = new Date().toISOString().split('T')[0];
-      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      // Calculate Monday and Sunday of current week
+      const now = new Date();
+      const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
       
+      // Calculate days to subtract to get to Monday
+      // If today is Sunday (0), go back 6 days; if Monday (1), go back 0 days, etc.
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      
+      // Get Monday of current week
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - daysToMonday);
+      monday.setHours(0, 0, 0, 0);
+      
+      // Get Sunday of current week (end of week)
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      sunday.setHours(23, 59, 59, 999);
+      
+      // Format dates as ISO strings (YYYY-MM-DD)
+      const startDate = monday.toISOString().split('T')[0];
+      const endDate = sunday.toISOString().split('T')[0];
+      
+      console.log(`📅 Current week range: ${startDate} (Monday) to ${endDate} (Sunday)`);
+      
+      // Fetch proofs for current week
       const proofs = await this.notion.getProofsByUserId(userId, startDate, endDate);
+      console.log(`✅ Retrieved ${proofs.length} proofs from Notion`);
       
-      // Enrich proofs with habit names
-      const enrichedProofs = await Promise.all(
-        proofs.map(async (proof) => {
-          try {
-            const habits = await this.notion.getHabitsByUserId(userId);
-            const habit = habits.find(h => h.id === proof.habitId);
-            return {
-              ...proof,
-              habitName: habit?.name || 'Unknown Habit'
-            };
-          } catch (error) {
-            return { ...proof, habitName: 'Unknown Habit' };
-          }
-        })
-      );
+      // Fetch habits ONCE and create lookup map for efficient enrichment
+      let habits: any[] = [];
+      try {
+        habits = await this.notion.getHabitsByUserId(userId);
+        console.log(`✅ Retrieved ${habits.length} habits for enrichment`);
+      } catch (error) {
+        console.error('⚠️ Error fetching habits for enrichment:', error);
+      }
       
+      // Create habit lookup map by habitId
+      const habitMap = new Map<string, any>();
+      habits.forEach(habit => {
+        habitMap.set(habit.id, habit);
+      });
+      
+      // Enrich proofs with habit names using the lookup map
+      const enrichedProofs = proofs.map((proof) => {
+        const habit = habitMap.get(proof.habitId);
+        
+        // Format date for better readability
+        const proofDate = new Date(proof.date);
+        const dayName = proofDate.toLocaleDateString('en-US', { weekday: 'long' });
+        const formattedDate = `${dayName}, ${proofDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`;
+        
+        return {
+          ...proof,
+          habitName: habit?.name || 'Unknown Habit',
+          formattedDate: formattedDate,
+          dayName: dayName
+        };
+      });
+      
+      // Validate and log warnings
+      const unknownHabits = enrichedProofs.filter(p => p.habitName === 'Unknown Habit');
+      if (unknownHabits.length > 0) {
+        console.warn(`⚠️ Warning: ${unknownHabits.length} proofs have unknown habit IDs`);
+        unknownHabits.forEach(proof => {
+          console.warn(`   - Proof ${proof.id} has habitId: ${proof.habitId}`);
+        });
+      }
+      
+      console.log(`✅ Enriched ${enrichedProofs.length} proofs with habit names`);
       return enrichedProofs;
+      
     } catch (error) {
-      console.error('Error getting recent proofs:', error);
+      console.error('❌ Error getting current week proofs:', error);
       return [];
     }
   }

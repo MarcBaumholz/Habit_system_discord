@@ -688,7 +688,8 @@ Return only the exact habit name, nothing else.`;
       const unit = unitMatch ? `${unitMatch[1]} ${unitMatch[2]}` : '1 session';
       
       // Check for minimal dose and cheat day indicators
-      const minimalDoseIndicators = ['minimal', 'small', 'quick', 'brief', 'just', 'only'];
+      // Only assign minimal dose if user explicitly indicates it
+      const minimalDoseIndicators = ['minimal dose', 'minimal', 'kleine dosis'];
       const isMinimalDose = minimalDoseIndicators.some(indicator => 
         lowerContent.includes(indicator)
       );
@@ -727,7 +728,7 @@ Return only the exact habit name, nothing else.`;
       if (activityHabitMatch) {
         console.log(`✅ Activity matched to habit: ${activityHabitMatch.name}`);
         
-        const minimalDoseIndicators = ['minimal', 'small', 'quick', 'brief', 'just', 'only'];
+        const minimalDoseIndicators = ['minimal dose', 'minimal', 'kleine dosis'];
         const isMinimalDose = minimalDoseIndicators.some(indicator => 
           lowerContent.includes(indicator)
         );
@@ -773,7 +774,7 @@ Return only the exact habit name, nothing else.`;
     const unit = unitMatch ? `${unitMatch[1]} ${unitMatch[2]}` : '1 session';
 
     // Check for minimal dose indicators
-    const minimalDoseIndicators = ['minimal', 'small', 'quick', 'brief', 'just', 'only'];
+    const minimalDoseIndicators = ['minimal dose', 'minimal', 'kleine dosis'];
     const isMinimalDose = minimalDoseIndicators.some(indicator => 
       lowerContent.includes(indicator)
     );

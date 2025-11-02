@@ -171,13 +171,50 @@ export class ProofProcessor {
     });
   }
 
-  private matchHabit(habits: Habit[], habitName: string | undefined) {
+  private matchHabit(habits: Habit[], habitName: string | undefined): Habit | null {
     if (!habitName) {
+      console.log('🔍 MATCH_HABIT: No habit name provided');
       return null;
     }
 
     const normalized = habitName.trim().toLowerCase();
-    return habits.find(habit => habit.name.trim().toLowerCase() === normalized) || null;
+    console.log(`🔍 MATCH_HABIT: Looking for "${habitName}" (normalized: "${normalized}")`);
+    console.log(`🔍 MATCH_HABIT: Available habits: ${habits.map(h => `"${h.name}"`).join(', ')}`);
+    
+    // Strategy 1: Exact match (highest priority)
+    const exactMatch = habits.find(habit => 
+      habit.name.trim().toLowerCase() === normalized
+    );
+    if (exactMatch) {
+      console.log(`✅ MATCH_HABIT: Exact match found: "${exactMatch.name}"`);
+      return exactMatch;
+    }
+
+    // Strategy 2: Partial match (habit name contains or is contained in classified name)
+    const partialMatch = habits.find(habit => {
+      const habitNameLower = habit.name.trim().toLowerCase();
+      return habitNameLower.includes(normalized) || normalized.includes(habitNameLower);
+    });
+    if (partialMatch) {
+      console.log(`✅ MATCH_HABIT: Partial match found: "${partialMatch.name}"`);
+      return partialMatch;
+    }
+
+    // Strategy 3: Word-based match (if significant words match)
+    const classifiedWords = normalized.split(/\s+/).filter(w => w.length > 2);
+    const wordMatch = habits.find(habit => {
+      const habitWords = habit.name.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      return classifiedWords.some(word => 
+        habitWords.some(hw => hw.includes(word) || word.includes(hw))
+      );
+    });
+    if (wordMatch) {
+      console.log(`✅ MATCH_HABIT: Word-based match found: "${wordMatch.name}"`);
+      return wordMatch;
+    }
+
+    console.log(`❌ MATCH_HABIT: No match found for "${habitName}" among habits: ${habits.map(h => `"${h.name}"`).join(', ')}`);
+    return null;
   }
 
   private getAuthorNameCandidates(message: Message): string[] {
@@ -352,7 +389,23 @@ export class ProofProcessor {
       ? attachments.map(att => `${att.name || 'attachment'} (${att.contentType || 'unknown type'}): ${att.url}`).join('\n')
       : 'Keine Anhänge';
 
-    const prompt = `Du bist ein Experte für Gewohnheits-Proofs mit KI-gestützter semantischer Analyse.\n\nVerfügbare Habits:\n${habitDescriptions}\n\nDiscord Nachricht:\n${messageContent || '(leer)'}\n\nAnhänge:\n${attachmentDescriptions}\n\nANALYSE-ANWEISUNGEN:\n1. Analysiere JEDES Wort in der Nachricht auf semantische Bedeutung\n2. Berücksichtige Synonyme, verwandte Aktivitäten und Kontext\n3. Suche nach indirekten Referenzen (z.B. "gespielt" könnte Musik, Sport oder Spiele bedeuten)\n4. Berücksichtige Zeitangaben, Intensität und Aktivitätstyp\n5. Verwende semantisches Verständnis für bessere Zuordnung\n\nGib eine JSON-Antwort mit folgendem Format zurück:\n{\n  "habitName": string // exakter Name aus der Liste oder "unknown"\n  "unit": string // z.B. "30 min", "5 km" oder "1x"\n  "note": string // kurze Zusammenfassung in max. 140 Zeichen\n  "isMinimalDose": boolean\n  "isCheatDay": boolean\n}\n\nWICHTIG: \n- Nutze "unknown", wenn keine Habit passt\n- Verwende nur gültiges JSON ohne Zusatztext\n- Sei besonders vorsichtig bei Musik-Instrumenten wie Gitarre - diese sollten nur Musik-Habits zugeordnet werden, nicht Meditation\n- Analysiere Synonyme und verwandte Begriffe für bessere Zuordnung\n- Berücksichtige Kontext und Intention der Nachricht`;
+    const prompt = `Du bist ein Experte für Gewohnheits-Proofs mit KI-gestützter semantischer Analyse.\n\n
+    Verfügbare Habits:\n${habitDescriptions}\n\nDiscord Nachricht:\n${messageContent || '(leer)'}\n\n
+    Anhänge:\n${attachmentDescriptions}\n\nANALYSE-ANWEISUNGEN:\n
+    1. Analysiere JEDES Wort in der Nachricht auf semantische Bedeutung\n
+    2. Berücksichtige Synonyme, verwandte Aktivitäten und Kontext\n
+    3. Suche nach indirekten Referenzen (z.B. "gespielt" könnte Musik, Sport oder Spiele bedeuten)\n
+    4. Berücksichtige Zeitangaben, Intensität und Aktivitätstyp\n
+    5. Verwende semantisches Verständnis für bessere Zuordnung\n\n
+    Gib eine JSON-Antwort mit folgendem Format zurück:\n{\n  
+    "habitName": string // exakter Name aus der Liste oder "unknown"\n  
+    // "unit": string // z.B. "30 min", "5 km" oder "1x"\n  
+    // "note": string // kurze Zusammenfassung in max. 140 Zeichen\n  
+    // "isMinimalDose": boolean\n  "isCheatDay": boolean\n}\n\n
+    // WICHTIG: \n- Nutze "unknown", wenn keine Habit passt\n- Verwende nur gültiges JSON ohne Zusatztext\n-
+    // Analysiere Synonyme und verwandte Begriffe für bessere Zuordnung\n- Berücksichtige Kontext und Intention der Nachricht\n- 
+    // Setze "isMinimalDose" nur auf true, wenn der Nutzer EXPLIZIT "minimal dose", "minimal", "kleine dosis" verwendet\n- 
+    // schau das du anhand der Habits die der nutzer hat und der Nachricht die richtige Zuordnung findest`;
 
     if (!this.perplexityApiKey) {
       console.error('Perplexity API key not configured');

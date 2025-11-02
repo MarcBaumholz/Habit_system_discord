@@ -46,8 +46,8 @@ export class GroupAgent extends BaseAgent {
     this.log('info', 'Processing group analysis request', { userId: userContext.user.id });
 
     try {
-      // Get all users and groups
-      const allUsers = await this.notionClient.getAllUsers();
+      // Get active users and groups (excludes paused users)
+      const allUsers = await this.notionClient.getActiveUsers();
       const groups = await this.notionClient.getAllGroups();
       
       // Analyze group dynamics and user compatibility

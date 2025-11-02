@@ -105,3 +105,15 @@ notion-backup/
 # Certificate files
 *.pem
 *.crt
+
+# ===========================================
+# Python virtual environments
+# ===========================================
+venv/
+env/
+ENV/
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+.Python

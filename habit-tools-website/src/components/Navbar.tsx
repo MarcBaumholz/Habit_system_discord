@@ -1,77 +1,87 @@
-'use client';
+'use client'
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { Menu, X } from 'lucide-react';
+import { useState } from 'react'
+import Link from 'next/link'
+import { Menu, X } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
 
 export default function Navbar() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
 
   return (
-    <nav className="fixed top-0 w-full z-50 bg-[var(--notion-surface)]/95 backdrop-blur-md border-b border-[var(--notion-border)]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          {/* Logo */}
-          <Link href="/" className="flex items-center space-x-3 group">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center gradient-bg">
-              <span className="text-xl">⚡</span>
-            </div>
-            <span className="text-lg font-semibold group-hover:text-[var(--notion-accent)] transition-colors">Habit Toolbox</span>
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-gradient-to-b from-black/90 via-black/80 to-black/60 backdrop-blur-2xl shadow-lg">
+      <nav
+        aria-label="Primary"
+        className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5"
+      >
+        <Link
+          aria-label="Habit Toolbox"
+          href="/"
+          className="group flex items-center gap-3 text-white transition-all duration-300 hover:scale-105"
+        >
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-r from-[#5B4BFF] via-[#6C6CFF] to-[#48D2FF] text-xl font-semibold shadow-[0_4px_16px_rgba(72,210,255,0.4)] transition-all duration-300 group-hover:shadow-[0_6px_24px_rgba(72,210,255,0.6)]">
+            ⚡
+          </div>
+          <span className="text-base font-bold uppercase tracking-[0.3em] text-white transition-colors group-hover:text-white">
+            Habit Toolbox
+          </span>
+        </Link>
+
+        <div className="hidden items-center gap-8 text-sm md:flex">
+          <Link
+            className="relative font-medium text-white/70 transition-all duration-300 hover:text-white after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-0 after:bg-gradient-to-r after:from-[#5B4BFF] after:to-[#48D2FF] after:transition-all after:duration-300 hover:after:w-full"
+            href="/"
+          >
+            Tools
           </Link>
-
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-6">
-            <Link href="/" className="text-sm text-[var(--notion-text-secondary)] hover:text-[var(--notion-text)] transition-colors">
-              Tools
-            </Link>
-            <Link href="#process" className="text-sm text-[var(--notion-text-secondary)] hover:text-[var(--notion-text)] transition-colors">
-              Process
-            </Link>
-            <Link href="#community" className="text-sm text-[var(--notion-text-secondary)] hover:text-[var(--notion-text)] transition-colors">
-              Community
-            </Link>
-          </div>
-
-          {/* Mobile menu button */}
-          <div className="md:hidden">
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="text-[var(--notion-text-secondary)] hover:text-[var(--notion-text)] transition-colors p-2"
-            >
-              {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-          </div>
+          <Link
+            className="relative font-medium text-white/70 transition-all duration-300 hover:text-white after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-0 after:bg-gradient-to-r after:from-[#5B4BFF] after:to-[#48D2FF] after:transition-all after:duration-300 hover:after:w-full"
+            href="#process"
+          >
+            Process
+          </Link>
+          <Link
+            className="relative font-medium text-white/70 transition-all duration-300 hover:text-white after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-0 after:bg-gradient-to-r after:from-[#5B4BFF] after:to-[#48D2FF] after:transition-all after:duration-300 hover:after:w-full"
+            href="#community"
+          >
+            Community
+          </Link>
         </div>
 
-        {/* Mobile Navigation */}
-        {isMenuOpen && (
-          <div className="md:hidden pb-4">
-            <div className="px-2 pt-2 pb-3 space-y-1">
-              <Link 
-                href="/" 
-                className="block px-4 py-2 text-sm text-[var(--notion-text-secondary)] hover:text-[var(--notion-text)] hover:bg-[var(--notion-surface-hover)] transition-colors rounded-md"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Tools
-              </Link>
-              <Link 
-                href="#process" 
-                className="block px-4 py-2 text-sm text-[var(--notion-text-secondary)] hover:text-[var(--notion-text)] hover:bg-[var(--notion-surface-hover)] transition-colors rounded-md"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Process
-              </Link>
-              <Link 
-                href="#community" 
-                className="block px-4 py-2 text-sm text-[var(--notion-text-secondary)] hover:text-[var(--notion-text)] hover:bg-[var(--notion-surface-hover)] transition-colors rounded-md"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Community
-              </Link>
-            </div>
+        <div className="hidden md:block">
+          <Button>Get started</Button>
+        </div>
+
+        <button
+          aria-controls="mobile-nav"
+          aria-expanded={isMenuOpen}
+          className="md:hidden text-white"
+          onClick={() => setIsMenuOpen((open) => !open)}
+          type="button"
+        >
+          {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+        </button>
+      </nav>
+
+      {isMenuOpen ? (
+        <div id="mobile-nav" className="border-t border-white/10 bg-black/90 px-6 py-6 md:hidden">
+          <div className="flex flex-col gap-4 text-lg text-white/70">
+            <Link href="/" onClick={() => setIsMenuOpen(false)}>
+              Tools
+            </Link>
+            <Link href="#process" onClick={() => setIsMenuOpen(false)}>
+              Process
+            </Link>
+            <Link href="#community" onClick={() => setIsMenuOpen(false)}>
+              Community
+            </Link>
+            <Button className="mt-4 w-full" onClick={() => setIsMenuOpen(false)}>
+              Get started
+            </Button>
           </div>
-        )}
-      </div>
-    </nav>
-  );
+        </div>
+      ) : null}
+    </header>
+  )
 }

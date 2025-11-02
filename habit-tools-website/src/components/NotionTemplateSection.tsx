@@ -1,117 +1,108 @@
-'use client';
+'use client'
 
-import { motion } from 'framer-motion';
-import { CheckCircle2, Download } from 'lucide-react';
-import Link from 'next/link';
+import { motion } from 'framer-motion'
+import { CheckCircle2, Download } from 'lucide-react'
+import Link from 'next/link'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+
+const checklist = [
+  'Vorgefertigte Struktur für alle Toolboxen',
+  'Automatisierte Tracking-Boards',
+  'Progress-Visualisierung mit Glow Effects',
+  'Community-Integration via WhatsApp & Loom',
+]
 
 export default function NotionTemplateSection() {
   return (
-    <section id="notion-template" className="py-20 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-          {/* Left Side - Content */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-          >
-            <h2 className="text-4xl sm:text-5xl font-bold mb-6">
-              Notion Template
-            </h2>
-            <p className="text-xl text-gray-300 mb-8 leading-relaxed">
-              Lade dir unser strukturiertes Notion Template herunter und starte sofort mit der Umsetzung deiner Gewohnheitsziele.
-            </p>
+    <section id="notion-template" className="mx-auto max-w-6xl px-6 pb-28">
+      <div className="grid grid-cols-1 gap-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+        <motion.div
+          initial={{ opacity: 0, y: 32 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className="flex flex-col gap-8"
+        >
+          <Badge className="w-fit bg-white/10 text-[0.6rem] tracking-[0.4em] text-white/70">
+            Template system
+          </Badge>
+          <h2 className="text-4xl font-semibold tracking-tight md:text-5xl">
+            Das Habit OS für Notion – inspiriert von immersiven Digital Studios.
+          </h2>
+          <p className="max-w-xl text-sm text-white/60 md:text-base">
+            Hol dir das komplette Setup: Kanban, Automationen, Reporting. Alles sauber designt und sofort
+            einsatzbereit – inklusive futuristischer Visuals und schnellen Quick-Actions.
+          </p>
 
-            <ul className="space-y-4 mb-8">
-              {[
-                'Vorgefertigte Strukturen für alle Toolboxen',
-                'Automatische Tracking-Systeme',
-                'Progress-Visualisierungen',
-                'Community-Integration',
-              ].map((feature, index) => (
-                <li key={index} className="flex items-start space-x-3">
-                  <CheckCircle2 className="w-6 h-6 text-green-400 flex-shrink-0 mt-0.5" />
-                  <span className="text-gray-300 text-lg">{feature}</span>
-                </li>
-              ))}
-            </ul>
+          <ul className="space-y-4">
+            {checklist.map((item) => (
+              <li key={item} className="flex items-start gap-3 text-sm text-white/70">
+                <CheckCircle2 className="mt-0.5 h-5 w-5 text-[#48d2ff]" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
 
-            <Link href="#" className="button-primary text-lg px-8 py-4 inline-flex items-center gap-3">
-              <Download className="w-5 h-5" />
-              Template herunterladen
+          <Button asChild className="mt-4 h-12 w-fit px-8 text-sm font-semibold">
+            <Link href="#download">
+              <Download className="mr-2 h-5 w-5" /> Template herunterladen
             </Link>
-          </motion.div>
+          </Button>
+        </motion.div>
 
-          {/* Right Side - Mockup */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="relative"
-          >
-            <div className="glass-effect rounded-2xl p-6 shadow-2xl">
-              {/* Mockup Header */}
-              <div className="flex items-center space-x-2 mb-4">
-                <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                <div className="w-3 h-3 rounded-full bg-green-500"></div>
-              </div>
-
-              {/* Mockup Content */}
-              <div className="bg-[#1a1f2e] rounded-xl p-6">
-                <h4 className="text-2xl font-bold mb-4">Habit Toolbox - Fitness</h4>
-                
-                {/* Progress Bar */}
-                <div className="mb-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-gray-400 text-sm">75% Complete</span>
-                  </div>
-                  <div className="w-full h-3 bg-gray-700/50 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full rounded-full gradient-bg"
-                      style={{ width: '75%' }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* Mock Tasks */}
-                <div className="space-y-3">
-                  {[
-                    { text: 'Morning workout routine', completed: true },
-                    { text: 'Track daily progress', completed: true },
-                    { text: 'Evening stretching', completed: true },
-                    { text: 'Weekly review', completed: false },
-                  ].map((task, index) => (
-                    <div key={index} className="flex items-center space-x-3 p-3 bg-white/5 rounded-lg">
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        task.completed 
-                          ? 'bg-purple-500 border-purple-500' 
-                          : 'border-gray-600'
-                      }`}>
-                        {task.completed && (
-                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </div>
-                      <span className={`text-sm ${task.completed ? 'text-gray-400 line-through' : 'text-gray-300'}`}>
-                        {task.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true, amount: 0.4 }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className="relative"
+        >
+          <div className="absolute -inset-8 rounded-[40px] bg-gradient-to-br from-[#5b4bff]/30 via-[#6c6cff]/15 to-[#48d2ff]/20 blur-3xl transition-all duration-700 hover:blur-[4rem]" />
+          <div className="relative overflow-hidden rounded-[32px] border-2 border-white/15 bg-gradient-to-br from-white/[0.12] via-white/[0.06] to-white/[0.03] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.3)] backdrop-blur-2xl">
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-white/30">
+              <span className="h-2 w-2 rounded-full bg-[#48d2ff]" />
+              Habit Dashboard
             </div>
 
-            {/* Floating Elements */}
-            <div className="absolute -top-4 -right-4 w-24 h-24 bg-purple-500/20 rounded-full blur-2xl"></div>
-            <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-teal-500/20 rounded-full blur-2xl"></div>
-          </motion.div>
-        </div>
+            <div className="mt-8 space-y-6">
+              <div>
+                <p className="text-sm text-white/50">Progress</p>
+                <p className="mt-1 text-2xl font-semibold text-white">75% Complete</p>
+                <div className="mt-4 h-3 w-full rounded-full bg-white/10">
+                  <div className="h-full w-3/4 rounded-full bg-gradient-to-r from-[#5b4bff] via-[#6c6cff] to-[#48d2ff]" />
+                </div>
+              </div>
+
+              <div className="grid gap-3 text-sm text-white/70">
+                {[
+                  { text: 'Morning Energy Stack', completed: true },
+                  { text: 'Habit Health Check', completed: true },
+                  { text: 'Creative Ritual', completed: false },
+                  { text: 'Weekly Reflection', completed: false },
+                ].map((item) => (
+                  <div
+                    key={item.text}
+                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4"
+                  >
+                    <span className={item.completed ? 'text-white/40 line-through' : 'text-white/80'}>
+                      {item.text}
+                    </span>
+                    <span
+                      className={
+                        item.completed
+                          ? 'h-5 w-5 rounded-full bg-gradient-to-r from-[#5b4bff] to-[#48d2ff]'
+                          : 'h-5 w-5 rounded-full border border-white/30'
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </motion.div>
       </div>
     </section>
-  );
+  )
 }
-

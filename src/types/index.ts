@@ -6,6 +6,9 @@ export interface User {
   bestTime: string;
   trustCount: number;
   personalChannelId?: string;
+  status?: 'active' | 'pause';
+  pauseReason?: string;
+  pauseDuration?: string;
 }
 
 export interface Habit {
@@ -150,4 +153,64 @@ export interface HurdleSolution {
   implementationSteps: string[];
   successRate: number;
   createdAt: string;
+}
+
+// Price Pool Entry (Money Accountability)
+export interface PricePoolEntry {
+  id: string;
+  discordId: string;
+  userId?: string; // Relation to Users DB
+  weekDate: string; // Monday of the week (YYYY-MM-DD)
+  message: string; // Description of the charge
+  price: number; // Charge amount in euros
+}
+
+// Habit Compliance Tracking
+export interface HabitCompliance {
+  habitId: string;
+  habitName: string;
+  targetFrequency: number; // Expected completions per week
+  actualProofs: number; // Actual completions
+  missedCount: number; // Number of missed iterations
+  charge: number; // Fee charged (€0.50 per miss)
+  completionRate: number; // Percentage (0-100)
+}
+
+// User Compliance for Weekly Report
+export interface UserCompliance {
+  userId: string;
+  discordId: string;
+  name: string;
+  habits: HabitCompliance[];
+  totalCharge: number;
+  perfectWeek: boolean; // All habits completed
+  totalHabits: number;
+  completedHabits: number; // Habits with 100% compliance
+  overallCompletionRate: number; // Average across all habits
+  currentStreak: number; // Consecutive perfect weeks
+}
+
+// Weekly Accountability Report
+export interface WeeklyAccountabilityReport {
+  weekStart: string; // Monday
+  weekEnd: string; // Sunday
+  userCompliance: UserCompliance[];
+  leaderboard: LeaderboardEntry[];
+  totalWeeklyCharges: number;
+  totalPoolBalance: number;
+  socialInsights?: string; // From Group Agent
+  generatedAt: string;
+}
+
+// Leaderboard Entry
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  discordId: string;
+  name: string;
+  overallCompletionRate: number;
+  totalHabits: number;
+  completedHabits: number;
+  currentStreak: number;
+  badge?: string; // e.g., "🏆", "🥇", "🔥"
 }

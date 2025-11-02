@@ -9,6 +9,7 @@ import { NotionClient } from '../notion/client';
 import { ToolsAssistant } from './tools-assistant';
 import { DailyMessageScheduler } from './daily-message-scheduler';
 import { WeeklyAgentScheduler } from './weekly-agent-scheduler';
+import { AccountabilityScheduler } from './accountability-scheduler';
 import { PersonalChannelManager } from './personal-channel-manager';
 import { DiscordLogger } from './discord-logger';
 import { PersonalAssistant } from './personal-assistant';
@@ -29,6 +30,7 @@ export class HabitBot {
   private toolsAssistant: ToolsAssistant;
   private dailyMessageScheduler: DailyMessageScheduler;
   private weeklyAgentScheduler: WeeklyAgentScheduler;
+  private accountabilityScheduler: AccountabilityScheduler;
   private personalChannelManager: PersonalChannelManager;
   private personalAssistant: PersonalAssistant;
   private aiIncentiveManager: AIIncentiveManager;
@@ -59,6 +61,7 @@ export class HabitBot {
     this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
     this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion, this.logger);
     this.weeklyAgentScheduler = new WeeklyAgentScheduler(this.client, notion, this.logger);
+    this.accountabilityScheduler = new AccountabilityScheduler(this.client, notion, this.logger);
     this.personalAssistant = new PersonalAssistant(this.client, this.notion, this.logger);
     this.aiIncentiveManager = new AIIncentiveManager(this.client, this.notion, this.logger);
     
@@ -166,73 +169,15 @@ export class HabitBot {
 
       new SlashCommandBuilder()
         .setName('onboard')
-        .setDescription('Erstelle dein persönliches Profil für den Mentor-Agent'),
+        .setDescription('Erstelle dein persönliches Profil für den Mentor-Agent / Create your personal profile'),
 
       new SlashCommandBuilder()
-        .setName('keystonehabit')
-        .setDescription('Create a keystone habit - the foundation of your daily routine')
-        .addStringOption(option =>
-          option.setName('name')
-            .setDescription('Name of your keystone habit')
-            .setRequired(true))
-        .addStringOption(option =>
-          option.setName('domains')
-            .setDescription('Life categories this habit affects (comma-separated: health, fitness, work, relationships)')
-            .setRequired(true))
-        .addIntegerOption(option =>
-          option.setName('frequency')
-            .setDescription('How many days per week? (1-7)')
-            .setRequired(true)
-            .setMinValue(1)
-            .setMaxValue(7))
-        .addStringOption(option =>
-          option.setName('context')
-            .setDescription('When and where will you do this habit?')
-            .setRequired(true))
-        .addStringOption(option =>
-          option.setName('difficulty')
-            .setDescription('How challenging is this habit?')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Easy - Takes minimal effort', value: 'easy' },
-              { name: 'Medium - Requires some discipline', value: 'medium' },
-              { name: 'Hard - Needs strong commitment', value: 'hard' }
-            ))
-        .addStringOption(option =>
-          option.setName('smart_goal')
-            .setDescription('Your specific, measurable goal for this habit')
-            .setRequired(true))
-        .addStringOption(option =>
-          option.setName('why')
-            .setDescription('Why is this habit important to you?')
-            .setRequired(true))
-        .addStringOption(option =>
-          option.setName('minimal_dose')
-            .setDescription('What\'s the smallest version you can do on tough days?')
-            .setRequired(true))
-        .addStringOption(option =>
-          option.setName('habit_loop')
-            .setDescription('Describe your habit loop: Cue → Craving → Routine → Reward')
-            .setRequired(true))
-        .addStringOption(option =>
-          option.setName('implementation_intentions')
-            .setDescription('If-then plans for obstacles (e.g., "If I feel tired, then I will do 5 minutes")')
-            .setRequired(true))
-        .addStringOption(option =>
-          option.setName('hurdles')
-            .setDescription('What challenges might you face?')
-            .setRequired(true))
-        .addStringOption(option =>
-          option.setName('reminder_type')
-            .setDescription('How will you remember to do this habit?')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Phone Alarm', value: 'phone_alarm' },
-              { name: 'Calendar Event', value: 'calendar' },
-              { name: 'Habit Stacking', value: 'habit_stacking' },
-              { name: 'Visual Reminder', value: 'visual' },
-              { name: 'Accountability Partner', value: 'accountability' }
-            )),
+        .setName('profile')
+        .setDescription('Zeige dein Persönlichkeitsprofil an / View your personality profile'),
+
+      new SlashCommandBuilder()
+        .setName('profile-edit')
+        .setDescription('Bearbeite dein Persönlichkeitsprofil / Edit your personality profile'),
 
       new SlashCommandBuilder()
         .setName('mentor')
@@ -272,7 +217,23 @@ export class HabitBot {
         .addStringOption(option =>
           option.setName('query')
             .setDescription('Get insights from your learnings and hurdle solutions')
+            .setRequired(true)),
+
+      new SlashCommandBuilder()
+        .setName('pause')
+        .setDescription('Pause your participation in the habit system')
+        .addStringOption(option =>
+          option.setName('reason')
+            .setDescription('Why you are pausing (required)')
             .setRequired(true))
+        .addStringOption(option =>
+          option.setName('duration')
+            .setDescription('How long you expect to pause (informational, optional)')
+            .setRequired(false)),
+
+      new SlashCommandBuilder()
+        .setName('activate')
+        .setDescription('Reactivate your participation in the habit system')
     ];
 
     this.commands.set('join', { execute: this.commandHandler.handleJoin.bind(this.commandHandler) });
@@ -282,12 +243,15 @@ export class HabitBot {
     this.commands.set('hurdles', { execute: this.commandHandler.handleHurdles.bind(this.commandHandler) });
     this.commands.set('tools', { execute: this.commandHandler.handleTools.bind(this.commandHandler) });
     this.commands.set('onboard', { execute: this.commandHandler.handleOnboard.bind(this.commandHandler) });
-    this.commands.set('keystonehabit', { execute: this.commandHandler.handleKeystoneHabit.bind(this.commandHandler) });
+    this.commands.set('profile', { execute: this.commandHandler.handleProfile.bind(this.commandHandler) });
+    this.commands.set('profile-edit', { execute: this.commandHandler.handleProfileEdit.bind(this.commandHandler) });
     this.commands.set('mentor', { execute: this.handleMentorCommand.bind(this) });
     this.commands.set('identity', { execute: this.handleIdentityCommand.bind(this) });
     this.commands.set('accountability', { execute: this.handleAccountabilityCommand.bind(this) });
     this.commands.set('group', { execute: this.handleGroupCommand.bind(this) });
     this.commands.set('learning-agent', { execute: this.handleLearningCommand.bind(this) });
+    this.commands.set('pause', { execute: this.commandHandler.handlePause.bind(this.commandHandler) });
+    this.commands.set('activate', { execute: this.commandHandler.handleActivate.bind(this.commandHandler) });
 
     return commands;
   }
@@ -414,10 +378,10 @@ export class HabitBot {
           const nameWithWebhook = authorNames.find(name => this.hasWebhookKeyword(name));
           const isWebhookMessage = Boolean(message.webhookId) || Boolean(nameWithWebhook);
           
-          // Additional check: if author is bot and username contains "webhook" or "Marc"
+          // Additional check: if author is bot and username contains "webhook"
+          // Removed "marc" check to prevent regular users from being classified as webhooks
           const isWebhookByUsername = message.author.bot && (
-            message.author.username.toLowerCase().includes('webhook') ||
-            message.author.username.toLowerCase().includes('marc')
+            message.author.username.toLowerCase().includes('webhook')
           );
           
           const finalIsWebhook = isWebhookMessage || isWebhookByUsername;
@@ -526,8 +490,35 @@ export class HabitBot {
       try {
         // Handle Modal Submissions
         if (interaction.isModalSubmit()) {
+          // Onboarding modals
           if (interaction.customId === 'onboard_modal' || interaction.customId === 'onboard_modal_2') {
             await this.commandHandler.handleOnboardModalSubmit(interaction);
+            return;
+          }
+          // Profile edit modal
+          if (interaction.customId === 'profile_edit_modal') {
+            await this.commandHandler.handleProfileEditModalSubmit(interaction);
+            return;
+          }
+          // Keystone habit modals
+          if (interaction.customId.startsWith('keystone_modal_')) {
+            await this.habitFlow.handleModalSubmit(interaction);
+            return;
+          }
+          return;
+        }
+
+        // Handle Button Interactions
+        if (interaction.isButton()) {
+          // Onboarding flow buttons
+          if (interaction.customId === 'onboard_modal_2_trigger') {
+            await this.commandHandler.handleSecondOnboardModal(interaction);
+            return;
+          }
+          // Keystone habit buttons
+          if (interaction.customId.startsWith('keystone_')) {
+            await this.habitFlow.handleButtonInteraction(interaction);
+            return;
           }
           return;
         }
@@ -789,7 +780,7 @@ export class HabitBot {
 
   async start(token: string) {
     await this.client.login(token);
-    
+
     // Initialize and start weekly agent scheduler
     try {
       console.log('🤖 Initializing Weekly Agent Scheduler...');
@@ -802,6 +793,21 @@ export class HabitBot {
         error as Error,
         'Weekly Agent Scheduler Initialization',
         { component: 'WeeklyAgentScheduler' }
+      );
+    }
+
+    // Initialize and start accountability scheduler (Sunday 8 PM)
+    try {
+      console.log('💰 Initializing Accountability & Money Scheduler...');
+      await this.accountabilityScheduler.initialize();
+      this.accountabilityScheduler.startScheduler();
+      console.log('✅ Accountability Scheduler started successfully (Sunday 8 PM)');
+    } catch (error) {
+      console.error('❌ Failed to initialize Accountability Scheduler:', error);
+      await this.logger.logError(
+        error as Error,
+        'Accountability Scheduler Initialization',
+        { component: 'AccountabilityScheduler' }
       );
     }
   }

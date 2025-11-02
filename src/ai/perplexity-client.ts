@@ -152,14 +152,37 @@ export class PerplexityClient {
       context += '\n';
     }
 
-    // Add recent proofs
+    // Add current week proofs
     if (userData.recentProofs.length > 0) {
-      context += 'Recent Activity (Last 7 days):\n';
-      userData.recentProofs.slice(0, 5).forEach((proof, index) => {
-        context += `${index + 1}. ${proof.habitName} - ${proof.unit} on ${proof.date}\n`;
-        if (proof.note) context += `   Note: ${proof.note.substring(0, 100)}...\n`;
+      // Group proofs by habit for better organization
+      const proofsByHabit = new Map<string, any[]>();
+      userData.recentProofs.forEach(proof => {
+        const habitName = proof.habitName || 'Unknown Habit';
+        if (!proofsByHabit.has(habitName)) {
+          proofsByHabit.set(habitName, []);
+        }
+        proofsByHabit.get(habitName)!.push(proof);
+      });
+      
+      context += 'This Week\'s Activity (Monday-Sunday):\n';
+      
+      // Show proofs grouped by habit
+      proofsByHabit.forEach((proofs, habitName) => {
+        context += `\n${habitName}:\n`;
+        proofs.forEach((proof) => {
+          const dateDisplay = proof.formattedDate || proof.date || 'Unknown date';
+          context += `  - ${proof.unit || 'completed'} on ${dateDisplay}`;
+          if (proof.isMinimalDose) context += ' (Minimal Dose)';
+          if (proof.isCheatDay) context += ' (Cheat Day)';
+          context += '\n';
+          if (proof.note) {
+            context += `    Note: ${proof.note.substring(0, 80)}${proof.note.length > 80 ? '...' : ''}\n`;
+          }
+        });
       });
       context += '\n';
+    } else {
+      context += 'This Week\'s Activity: No proofs recorded yet this week.\n\n';
     }
 
     // Add summary information

@@ -1,227 +1,251 @@
-import { notFound } from 'next/navigation';
-import Link from 'next/link';
-import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
-import { HABIT_TOOLS } from '@/data/tools';
-import { ArrowLeft, Clock, Target, Lightbulb, BookOpen, CheckCircle2, ExternalLink } from 'lucide-react';
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+
+import Footer from '@/components/Footer'
+import Navbar from '@/components/Navbar'
+import ToolCard from '@/components/ToolCard'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { HABIT_TOOLS, TOOL_CATEGORIES } from '@/data/tools'
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  CheckCircle2,
+  ExternalLink,
+  Lightbulb,
+  Sparkles,
+  Target,
+} from 'lucide-react'
 
 interface ToolDetailPageProps {
   params: {
-    id: string;
-  };
+    id: string
+  }
 }
 
+const CATEGORY_NAME = new Map(TOOL_CATEGORIES.map((category) => [category.id, category.name]))
+
 export default function ToolDetailPage({ params }: ToolDetailPageProps) {
-  const tool = HABIT_TOOLS.find(t => t.id === params.id);
+  const tool = HABIT_TOOLS.find((entry) => entry.id === params.id)
 
   if (!tool) {
-    notFound();
+    notFound()
+    return null
   }
 
+  const relatedTools = HABIT_TOOLS.filter(
+    (entry) => entry.id !== tool.id && entry.categories.some((category) => tool.categories.includes(category)),
+  ).slice(0, 3)
+
+  const metrics = [
+    { label: 'Schwierigkeit', value: tool.difficulty },
+    { label: 'Zeitaufwand', value: tool.timeToImplement },
+    { label: 'Effektivität', value: `${tool.effectiveness}/5` },
+    {
+      label: 'Sprache',
+      value: tool.language === 'both' ? 'DE & EN' : tool.language.toUpperCase(),
+    },
+  ]
+
   return (
-    <main className="min-h-screen">
+    <main className="bg-black text-white">
       <Navbar />
-      
-      {/* Notion-Style Header */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-16">
-        {/* Breadcrumb */}
-        <Link 
-          href="/tools" 
-          className="inline-flex items-center text-sm text-[var(--notion-text-secondary)] hover:text-[var(--notion-accent)] transition-colors mb-8"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Alle Tools
-        </Link>
 
-        {/* Page Icon & Title */}
-        <div className="mb-8">
-          <div className="text-7xl mb-6 leading-none">
-            {tool.emoji || '🎯'}
-          </div>
-          <h1 className="text-5xl font-bold mb-4 leading-tight">
-            {tool.name}
-          </h1>
-          <p className="text-xl text-[var(--notion-text-secondary)] leading-relaxed">
-            {tool.summary}
-          </p>
-        </div>
+      <section className="relative isolate overflow-hidden px-6 pb-20 pt-32">
+        <div className="pointer-events-none absolute -left-32 top-20 h-[520px] w-[520px] rounded-full bg-[#5B4BFF]/25 blur-3xl" />
+        <div className="pointer-events-none absolute -right-24 bottom-12 h-[380px] w-[380px] rounded-full bg-[#48D2FF]/20 blur-3xl" />
 
-        {/* Properties Grid (Notion-Style) */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
-          <div className="notion-card">
-            <div className="text-xs text-[var(--notion-text-secondary)] mb-1">Schwierigkeit</div>
-            <div className="text-sm font-medium">{tool.difficulty}</div>
-          </div>
-          <div className="notion-card">
-            <div className="text-xs text-[var(--notion-text-secondary)] mb-1">Zeitaufwand</div>
-            <div className="text-sm font-medium">{tool.timeToImplement}</div>
-          </div>
-          <div className="notion-card">
-            <div className="text-xs text-[var(--notion-text-secondary)] mb-1">Effektivität</div>
-            <div className="text-sm font-medium">{tool.effectiveness}/5 ⭐</div>
-          </div>
-          <div className="notion-card">
-            <div className="text-xs text-[var(--notion-text-secondary)] mb-1">Sprache</div>
-            <div className="text-sm font-medium">{tool.language === 'both' ? 'DE/EN' : tool.language.toUpperCase()}</div>
-          </div>
-        </div>
+        <div className="mx-auto flex max-w-5xl flex-col gap-12">
+          <Link
+            className="inline-flex w-fit items-center gap-2 text-sm text-white/60 transition hover:text-white"
+            href="/tools"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Zurück zur Übersicht
+          </Link>
 
-        {/* Main Content */}
-        <div className="space-y-12">
-          {/* Beschreibung */}
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <BookOpen className="w-5 h-5 text-[var(--notion-accent)]" />
-              <h2 className="text-2xl font-semibold">Über dieses Tool</h2>
-            </div>
-            <div className="notion-callout">
-              <p className="text-[var(--notion-text)] leading-relaxed">
-                {tool.description}
-              </p>
-            </div>
-          </section>
+          <div className="flex flex-col gap-10 lg:flex-row lg:items-start">
+            <div className="flex-1 space-y-6">
+              <Badge className="w-fit bg-white/10 text-[0.6rem] tracking-[0.4em] text-white/70">
+                {tool.categories
+                  .map((category) => CATEGORY_NAME.get(category) ?? category)
+                  .join(' · ')}
+              </Badge>
 
-          {/* Wann verwenden */}
-          {tool.whenToUse && tool.whenToUse.length > 0 && (
-            <section>
-              <div className="flex items-center gap-2 mb-4">
-                <Target className="w-5 h-5 text-[var(--notion-green)]" />
-                <h2 className="text-2xl font-semibold">Wann verwenden?</h2>
+              <div className="flex items-center gap-4 text-6xl font-semibold tracking-tight">
+                <span>{tool.emoji ?? '🎯'}</span>
+                <h1 className="text-balance leading-[1.05] md:text-6xl">{tool.name}</h1>
               </div>
-              <div className="space-y-3">
-                {tool.whenToUse.map((item, index) => (
-                  <div key={index} className="flex items-start gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-[var(--notion-green)] flex-shrink-0 mt-0.5" />
-                    <p className="text-[var(--notion-text-secondary)]">{item}</p>
+
+              <p className="max-w-2xl text-base text-white/70 md:text-lg">{tool.summary}</p>
+
+              <div className="flex flex-wrap gap-3">
+                <Button className="h-11 px-6 text-sm" variant="default">
+                  <Sparkles className="mr-2 h-4 w-4" /> Direkt anwenden
+                </Button>
+                <Button className="h-11 px-6 text-sm" variant="ghost" asChild>
+                  <Link href={`/search?q=${encodeURIComponent(tool.name)}`}>Ähnliche Tools finden</Link>
+                </Button>
+              </div>
+            </div>
+
+            <Card className="w-full max-w-sm border-white/10 bg-white/[0.08] p-8">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.4em] text-white/50">Quick Stats</h2>
+              <div className="mt-6 grid grid-cols-1 gap-4">
+                {metrics.map((metric) => (
+                  <div key={metric.label} className="rounded-2xl border border-white/10 bg-black/40 px-5 py-4">
+                    <p className="text-xs uppercase tracking-[0.3em] text-white/40">{metric.label}</p>
+                    <p className="mt-2 text-base font-medium text-white">{metric.value}</p>
                   </div>
                 ))}
               </div>
-            </section>
-          )}
+            </Card>
+          </div>
+        </div>
+      </section>
 
-          {/* Schritt-für-Schritt Anleitung */}
-          {tool.steps && tool.steps.length > 0 && (
-            <section>
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-5 h-5 rounded bg-[var(--notion-accent)] flex items-center justify-center text-white text-xs font-bold">
-                  1
-                </div>
-                <h2 className="text-2xl font-semibold">Schritt-für-Schritt</h2>
+      <section className="mx-auto max-w-5xl space-y-12 px-6 pb-24">
+        <Card className="border-white/10 bg-white/[0.05] p-10">
+          <div className="flex items-center gap-3 text-white/60">
+            <BookOpen className="h-5 w-5" />
+            <span className="text-sm uppercase tracking-[0.3em]">Über dieses Ritual</span>
+          </div>
+          <p className="mt-6 text-pretty text-base text-white/80 md:text-lg">{tool.description}</p>
+        </Card>
+
+        <div className="grid gap-8 lg:grid-cols-[1.2fr_1fr]">
+          {tool.steps?.length ? (
+            <Card className="border-white/10 bg-white/[0.05] p-8">
+              <div className="flex items-center gap-3 text-white/60">
+                <Target className="h-5 w-5" />
+                <span className="text-sm uppercase tracking-[0.3em]">Schritt-für-Schritt</span>
               </div>
-              <div className="space-y-4">
+              <ol className="mt-6 space-y-4">
                 {tool.steps.map((step, index) => (
-                  <div key={index} className="notion-card flex items-start gap-4">
-                    <div className="w-7 h-7 rounded-full bg-[var(--notion-accent)] flex items-center justify-center text-white text-sm font-semibold flex-shrink-0">
+                  <li key={step} className="flex gap-4">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white/70">
                       {index + 1}
-                    </div>
-                    <p className="text-[var(--notion-text)] flex-1 pt-1">{step}</p>
-                  </div>
+                    </span>
+                    <p className="text-sm text-white/70">{step}</p>
+                  </li>
                 ))}
-              </div>
-            </section>
-          )}
+              </ol>
+            </Card>
+          ) : null}
 
-          {/* Beispiele */}
-          {tool.examples && tool.examples.length > 0 && (
-            <section>
-              <div className="flex items-center gap-2 mb-4">
-                <Lightbulb className="w-5 h-5 text-[var(--notion-yellow)]" />
-                <h2 className="text-2xl font-semibold">Praxis-Beispiele</h2>
+          {tool.whenToUse?.length ? (
+            <Card className="border-white/10 bg-white/[0.05] p-8">
+              <div className="flex items-center gap-3 text-white/60">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="text-sm uppercase tracking-[0.3em]">Wann einsetzen?</span>
               </div>
-              <div className="space-y-3">
-                {tool.examples.map((example, index) => (
-                  <div key={index} className="notion-card bg-[var(--notion-surface-hover)] border-l-4 border-[var(--notion-yellow)]">
-                    <p className="text-[var(--notion-text-secondary)] italic leading-relaxed">
-                      "{example}"
-                    </p>
-                  </div>
+              <ul className="mt-6 space-y-3 text-sm text-white/70">
+                {tool.whenToUse.map((item) => (
+                  <li key={item} className="flex gap-3">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[#48D2FF]" />
+                    {item}
+                  </li>
                 ))}
-              </div>
-            </section>
-          )}
-
-          {/* Pro Tips */}
-          {tool.tips && tool.tips.length > 0 && (
-            <section>
-              <div className="flex items-center gap-2 mb-4">
-                <Lightbulb className="w-5 h-5 text-[var(--notion-accent)]" />
-                <h2 className="text-2xl font-semibold">Pro Tipps</h2>
-              </div>
-              <div className="space-y-2">
-                {tool.tips.map((tip, index) => (
-                  <div key={index} className="flex items-start gap-3 py-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-[var(--notion-accent)] flex-shrink-0 mt-2" />
-                    <p className="text-[var(--notion-text-secondary)]">{tip}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Quellen */}
-          {tool.sources && tool.sources.length > 0 && (
-            <section>
-              <h3 className="text-lg font-semibold mb-3">Quellen & Referenzen</h3>
-              <div className="space-y-2">
-                {tool.sources.map((source, index) => (
-                  <a
-                    key={index}
-                    href={source}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-[var(--notion-accent)] hover:underline"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    <span className="text-sm">Mehr erfahren</span>
-                  </a>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* CTA Buttons */}
-          <div className="flex gap-3 pt-8 border-t border-[var(--notion-border)]">
-            <Link href="/tools" className="button-primary flex-1 justify-center">
-              Mehr Tools entdecken
-            </Link>
-            <Link href="/search" className="button-secondary flex-1 justify-center">
-              Ähnliche Tools finden
-            </Link>
-          </div>
+              </ul>
+            </Card>
+          ) : null}
         </div>
 
-        {/* Related Tools */}
-        {HABIT_TOOLS.filter(t => t.id !== tool.id && t.categories.some(cat => tool.categories.includes(cat))).length > 0 && (
-          <section className="mt-16 pt-16 border-t border-[var(--notion-border)]">
-            <h2 className="text-2xl font-semibold mb-6">Ähnliche Tools</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {HABIT_TOOLS
-                .filter(t => t.id !== tool.id && t.categories.some(cat => tool.categories.includes(cat)))
-                .slice(0, 4)
-                .map((relatedTool) => (
-                  <Link
-                    key={relatedTool.id}
-                    href={`/tools/${relatedTool.id}`}
-                    className="notion-card flex items-center gap-4 group"
-                  >
-                    <div className="text-3xl">{relatedTool.emoji || '🎯'}</div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-sm mb-1 group-hover:text-[var(--notion-accent)] transition-colors">
-                        {relatedTool.name}
-                      </h3>
-                      <p className="text-xs text-[var(--notion-text-secondary)] line-clamp-2">
-                        {relatedTool.summary}
-                      </p>
-                    </div>
-                  </Link>
+        <div className="grid gap-8 lg:grid-cols-2">
+          {tool.examples?.length ? (
+            <Card className="border-white/10 bg-white/[0.05] p-8">
+              <div className="flex items-center gap-3 text-white/60">
+                <Lightbulb className="h-5 w-5" />
+                <span className="text-sm uppercase tracking-[0.3em]">Praxis-Beispiele</span>
+              </div>
+              <div className="mt-6 space-y-4">
+                {tool.examples.map((example) => (
+                  <blockquote key={example} className="rounded-2xl border border-white/15 bg-black/40 p-5 text-sm text-white/70">
+                    &ldquo;{example}&rdquo;
+                  </blockquote>
                 ))}
+              </div>
+            </Card>
+          ) : null}
+
+          {tool.tips?.length ? (
+            <Card className="border-white/10 bg-white/[0.05] p-8">
+              <div className="flex items-center gap-3 text-white/60">
+                <Sparkles className="h-5 w-5" />
+                <span className="text-sm uppercase tracking-[0.3em]">Pro Tipps</span>
+              </div>
+              <ul className="mt-6 space-y-3 text-sm text-white/70">
+                {tool.tips.map((tip) => (
+                  <li key={tip} className="flex gap-3">
+                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[#5B4BFF]" />
+                    {tip}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+        </div>
+
+        {tool.sources?.length ? (
+          <Card className="border-white/10 bg-white/[0.05] p-8">
+            <div className="flex items-center gap-3 text-white/60">
+              <ExternalLink className="h-5 w-5" />
+              <span className="text-sm uppercase tracking-[0.3em]">Quellen & Referenzen</span>
             </div>
-          </section>
-        )}
-      </div>
+            <ul className="mt-6 space-y-3 text-sm text-white/70">
+              {tool.sources.map((source) => (
+                <li key={source}>
+                  <a className="inline-flex items-center gap-2 text-[#48D2FF] hover:underline" href={source} target="_blank" rel="noreferrer">
+                    Mehr erfahren
+                    <ArrowRight className="h-4 w-4" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
+
+        <div className="flex flex-wrap items-center justify-between gap-6 rounded-[32px] border border-white/10 bg-white/[0.05] px-8 py-8">
+          <div>
+            <p className="text-xs uppercase tracking-[0.4em] text-white/40">Bereit für den nächsten Schritt?</p>
+            <p className="mt-2 text-base text-white/70">
+              Nutze den Habit Matcher, um verwandte Techniken sofort zu finden.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Button asChild className="h-11 px-6 text-sm" variant="default">
+              <Link href="/tools">Alle Tools ansehen</Link>
+            </Button>
+            <Button asChild className="h-11 px-6 text-sm" variant="outline">
+              <Link href="/search">Intelligente Suche</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {relatedTools.length ? (
+        <section className="mx-auto max-w-6xl px-6 pb-32">
+          <div className="mb-10 flex flex-col gap-3">
+            <Badge className="w-fit bg-white/10 text-[0.6rem] tracking-[0.4em] text-white/70">
+              Verwandte Rituale
+            </Badge>
+            <h2 className="text-3xl font-semibold tracking-tight">Diese Tools ergänzen {tool.name}</h2>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {relatedTools.map((relatedTool) => (
+              <Link key={relatedTool.id} href={`/tools/${relatedTool.id}`}>
+                <ToolCard tool={relatedTool} />
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <Footer />
     </main>
-  );
+  )
 }
 

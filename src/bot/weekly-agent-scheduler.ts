@@ -101,6 +101,20 @@ export class WeeklyAgentScheduler {
         throw new Error(`User not found for Discord ID: ${this.marcDiscordId}`);
       }
 
+      // Check if user is paused - skip analysis if paused
+      if (user.status === 'pause') {
+        await this.logger.info(
+          'WEEKLY_SCHEDULER',
+          'User Paused - Skipping Analysis',
+          `User ${user.name} is paused, skipping weekly analysis`,
+          {
+            userId: user.id,
+            pauseReason: user.pauseReason || 'not specified'
+          }
+        );
+        throw new Error(`User ${user.name} is paused - skipping weekly analysis`);
+      }
+
       // Get current habits
       const habits = await this.notion.getHabitsByUserId(user.id);
       
@@ -201,8 +215,24 @@ export class WeeklyAgentScheduler {
       const channel = await this.getTargetChannel();
       await channel.send('🤖 **Weekly Agent Analysis Starting...**\n\n⏳ Running comprehensive analysis with all 5 agents. This will take about 30-60 seconds...\n\n');
 
-      // Gather user context
-      const userContext = await this.gatherUserContext();
+      // Gather user context (will throw if user is paused)
+      let userContext: UserContext;
+      try {
+        userContext = await this.gatherUserContext();
+      } catch (error) {
+        // If user is paused, send message and return early
+        if (error instanceof Error && error.message.includes('paused')) {
+          await channel.send('⏸️ **Weekly Analysis Skipped**\n\nYour participation is currently paused. Use `/activate` in your personal channel to reactivate and resume weekly analyses.');
+          await this.logger.info(
+            'WEEKLY_SCHEDULER',
+            'Analysis Skipped - User Paused',
+            'Weekly analysis skipped because user is paused',
+            { reason: 'user_paused' }
+          );
+          return;
+        }
+        throw error; // Re-throw if it's a different error
+      }
 
       // Run each agent and collect responses
       const responses: Array<{ agentName: string; response: AgentResponse; emoji: string }> = [];
