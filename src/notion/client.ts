@@ -1,5 +1,5 @@
 import { Client } from '@notionhq/client';
-import { User, Habit, Proof, Learning, Hurdle, Week, Group, UserProfile, PricePoolEntry } from '../types';
+import { User, Habit, Proof, Learning, Hurdle, Week, Group, UserProfile, PricePoolEntry, ChallengeProof, BuddyProgressData } from '../types';
 
 export class NotionClient {
   private client: Client;
@@ -13,6 +13,7 @@ export class NotionClient {
     groups: string;
     personality: string; // Neue Personality DB
     pricePool: string; // Price Pool DB for financial accountability
+    challengeProofs: string; // Challenge Proofs DB for weekly challenges
   };
 
   constructor(notionToken: string, databaseIds: Record<string, string>) {
@@ -75,23 +76,44 @@ export class NotionClient {
   }
 
   async createHabit(habit: Omit<Habit, 'id'>): Promise<Habit> {
+    const properties: any = {
+      'Name': { title: [{ text: { content: habit.name } }] },
+      'User': { relation: [{ id: habit.userId }] },
+      'Domains': { multi_select: habit.domains.map(domain => ({ name: domain })) },
+      'Frequency': { number: habit.frequency },
+      'Context': { rich_text: [{ text: { content: habit.context } }] },
+      'Difficulty': { rich_text: [{ text: { content: habit.difficulty } }] },
+      'SMART Goal ': { rich_text: [{ text: { content: habit.smartGoal } }] },
+      'Why': { rich_text: [{ text: { content: habit.why } }] },
+      'Minimal Dose': { rich_text: [{ text: { content: habit.minimalDose } }] },
+      'Habit Loop': { rich_text: [{ text: { content: habit.habitLoop } }] },
+      'Hurdles': { rich_text: [{ text: { content: habit.hurdles } }] },
+      'Reminder Type': { rich_text: [{ text: { content: habit.reminderType } }] }
+    };
+
+    // Add optional fields if they exist
+    if (habit.selectedDays && habit.selectedDays.length > 0) {
+      properties['Selected Days'] = { multi_select: habit.selectedDays.map(day => ({ name: day })) };
+    }
+    if (habit.implementationIntentions) {
+      properties['Implementation Intentions'] = { rich_text: [{ text: { content: habit.implementationIntentions } }] };
+    }
+    if (habit.autonomy) {
+      properties['Autonomy'] = { rich_text: [{ text: { content: habit.autonomy } }] };
+    }
+    if (habit.curiosityPassionPurpose) {
+      properties['Curiosity Passion Purpose'] = { rich_text: [{ text: { content: habit.curiosityPassionPurpose } }] };
+    }
+    if (habit.consequences) {
+      properties['Consequences'] = { rich_text: [{ text: { content: habit.consequences } }] };
+    }
+    if (habit.commitmentSignature) {
+      properties['Commitment Signature'] = { rich_text: [{ text: { content: habit.commitmentSignature } }] };
+    }
+
     const response = await this.client.pages.create({
       parent: { database_id: this.databases.habits },
-      properties: {
-        'Name': { title: [{ text: { content: habit.name } }] },
-        'User': { relation: [{ id: habit.userId }] },
-        'Domains': { multi_select: habit.domains.map(domain => ({ name: domain })) },
-        'Frequency': { number: habit.frequency },
-        'Context': { rich_text: [{ text: { content: habit.context } }] },
-        'Difficulty': { rich_text: [{ text: { content: habit.difficulty } }] },
-        'SMART Goal ': { rich_text: [{ text: { content: habit.smartGoal } }] },
-        'Why': { rich_text: [{ text: { content: habit.why } }] },
-        'Minimal Dose': { rich_text: [{ text: { content: habit.minimalDose } }] },
-        'Habit Loop': { rich_text: [{ text: { content: habit.habitLoop } }] },
-        'Implementation Intentions': { rich_text: [{ text: { content: habit.implementationIntentions } }] },
-        'Hurdles': { rich_text: [{ text: { content: habit.hurdles } }] },
-        'Reminder Type': { rich_text: [{ text: { content: habit.reminderType } }] }
-      }
+      properties
     });
 
     return {
@@ -117,12 +139,18 @@ export class NotionClient {
         return value.length > 0 ? value[0].plain_text || value[0].text?.content || '' : '';
       };
 
+      const getMultiSelect = (key: string) => {
+        const value = properties[key]?.multi_select || [];
+        return value.map((item: any) => item.name).filter(Boolean);
+      };
+
       return {
         id: page.id,
         userId,
         name: properties['Name']?.title?.[0]?.plain_text || properties['Name']?.title?.[0]?.text?.content || 'Untitled Habit',
-        domains: (properties['Domains']?.multi_select || []).map((domain: any) => domain.name).filter(Boolean),
+        domains: getMultiSelect('Domains'),
         frequency: properties['Frequency']?.number || 1,
+        selectedDays: getMultiSelect('Selected Days'),
         context: getRichText('Context'),
         difficulty: getRichText('Difficulty'),
         smartGoal: getRichText('SMART Goal '),
@@ -131,7 +159,11 @@ export class NotionClient {
         habitLoop: getRichText('Habit Loop'),
         implementationIntentions: getRichText('Implementation Intentions'),
         hurdles: getRichText('Hurdles'),
-        reminderType: getRichText('Reminder Type')
+        reminderType: getRichText('Reminder Type'),
+        autonomy: getRichText('Autonomy'),
+        curiosityPassionPurpose: getRichText('Curiosity Passion Purpose'),
+        consequences: getRichText('Consequences'),
+        commitmentSignature: getRichText('Commitment Signature')
       } as Habit;
     });
   }
@@ -357,19 +389,46 @@ export class NotionClient {
         if (!prop?.select) return undefined;
         return prop.select.name;
       };
+
+      const getDateContent = (prop: any): string | undefined => {
+        if (!prop?.date) return undefined;
+        return prop.date.start;
+      };
+
+      // Debug: Log Status field value
+      const statusRaw = getSelectContent(page.properties['Status']);
+      console.log('🔍 Status field from Notion:', {
+        raw: statusRaw,
+        type: typeof statusRaw,
+        properties: JSON.stringify(page.properties['Status'])
+      });
+      
+      // Normalize status: default to 'active' if undefined/null, and ensure lowercase
+      const normalizedStatus = statusRaw ? statusRaw.toLowerCase().trim() : 'active';
+      const finalStatus = (normalizedStatus === 'pause' ? 'pause' : 'active') as 'active' | 'pause';
+      
+      console.log('✅ Normalized status:', {
+        raw: statusRaw,
+        normalized: normalizedStatus,
+        final: finalStatus
+      });
       
       const user = {
         id: page.id,
         discordId: getRichTextContent(page.properties['DiscordID']),  // Fixed: DiscordID is rich_text, not title
         name: getTitleContent(page.properties['Name']),                // Fixed: Name is title, not rich_text
+        nickname: getRichTextContent(page.properties['nickname']),     // Read nickname field
         timezone: getRichTextContent(page.properties['Timezone']),
         bestTime: getRichTextContent(page.properties['Best Time']),
         trustCount: page.properties['Trust Count']?.number || 0,
         personalChannelId: getRichTextContent(page.properties['Personal Channel ID']),
-        status: (getSelectContent(page.properties['Status']) || 'active') as 'active' | 'pause',
+        status: finalStatus,
         // Pause Reason and Duration are optional - only extract if property exists
         pauseReason: page.properties['Pause Reason'] ? getRichTextContent(page.properties['Pause Reason']) : undefined,
-        pauseDuration: page.properties['Pause Duration'] ? getRichTextContent(page.properties['Pause Duration']) : undefined
+        pauseDuration: page.properties['Pause Duration'] ? getRichTextContent(page.properties['Pause Duration']) : undefined,
+        // Buddy fields
+        buddy: getSelectContent(page.properties['buddy']),
+        buddyStart: getDateContent(page.properties['BuddyStart'])
       };
 
       console.log('✅ User found:', {
@@ -382,6 +441,53 @@ export class NotionClient {
       return user;
     } catch (error) {
       console.error('❌ Error fetching user by Discord ID:', discordId, error);
+      return null;
+    }
+  }
+
+  async getUserById(userId: string): Promise<User | null> {
+    try {
+      const response = await this.client.pages.retrieve({ page_id: userId });
+      const page = response as any;
+
+      const getRichTextContent = (prop: any) => {
+        if (!prop?.rich_text || !Array.isArray(prop.rich_text) || prop.rich_text.length === 0) return '';
+        return prop.rich_text[0]?.text?.content || prop.rich_text[0]?.plain_text || '';
+      };
+
+      const getTitleContent = (prop: any) => {
+        if (!prop?.title || !Array.isArray(prop.title) || prop.title.length === 0) return '';
+        return prop.title[0]?.text?.content || prop.title[0]?.plain_text || '';
+      };
+
+      const getSelectContent = (prop: any): string | undefined => {
+        if (!prop?.select) return undefined;
+        return prop.select.name;
+      };
+
+      const getDateContent = (prop: any): string | undefined => {
+        if (!prop?.date) return undefined;
+        return prop.date.start;
+      };
+
+      return {
+        id: page.id,
+        discordId: getRichTextContent(page.properties['DiscordID']),
+        name: getTitleContent(page.properties['Name']),
+        nickname: getRichTextContent(page.properties['nickname']),
+        timezone: getRichTextContent(page.properties['Timezone']),
+        bestTime: getRichTextContent(page.properties['Best Time']),
+        trustCount: page.properties['Trust Count']?.number || 0,
+        personalChannelId: getRichTextContent(page.properties['Personal Channel ID']),
+        status: (getSelectContent(page.properties['Status']) as 'active' | 'pause') || 'active',
+        pauseReason: getRichTextContent(page.properties['Pause Reason']),
+        pauseDuration: getRichTextContent(page.properties['Pause Duration']),
+        // Buddy fields
+        buddy: getSelectContent(page.properties['buddy']),
+        buddyStart: getDateContent(page.properties['BuddyStart'])
+      };
+    } catch (error) {
+      console.error('❌ Error fetching user by ID:', userId, error);
       return null;
     }
   }
@@ -416,6 +522,22 @@ export class NotionClient {
         properties['Status'] = { select: { name: updates.status } };
       }
 
+      if (updates.buddy !== undefined) {
+        if (updates.buddy === null) {
+          properties['buddy'] = { select: null };
+        } else {
+          properties['buddy'] = { select: { name: updates.buddy } };
+        }
+      }
+
+      if (updates.buddyStart !== undefined) {
+        if (updates.buddyStart === null) {
+          properties['BuddyStart'] = { date: null };
+        } else {
+          properties['BuddyStart'] = { date: { start: updates.buddyStart } };
+        }
+      }
+
       // Note: Pause Reason and Pause Duration fields are optional
       // Only update if they exist in the database (to avoid errors)
       // For now, we'll skip these fields if they're not in the DB
@@ -446,6 +568,11 @@ export class NotionClient {
         if (!prop?.select) return undefined;
         return prop.select.name;
       };
+
+      const getDateContent = (prop: any): string | undefined => {
+        if (!prop?.date) return undefined;
+        return prop.date.start;
+      };
       
       return {
         id: response.id,
@@ -458,12 +585,219 @@ export class NotionClient {
         status: (getSelectContent(pageProps['Status']) || 'active') as 'active' | 'pause',
         // Pause Reason and Duration are optional - only extract if property exists
         pauseReason: pageProps['Pause Reason'] ? getRichTextContent(pageProps['Pause Reason']) : undefined,
-        pauseDuration: pageProps['Pause Duration'] ? getRichTextContent(pageProps['Pause Duration']) : undefined
+        pauseDuration: pageProps['Pause Duration'] ? getRichTextContent(pageProps['Pause Duration']) : undefined,
+        // Buddy fields
+        buddy: getSelectContent(pageProps['buddy']),
+        buddyStart: getDateContent(pageProps['BuddyStart'])
       };
     } catch (error) {
       console.error('❌ Error updating user in Notion:', error);
       const message = error instanceof Error ? error.message : 'Unknown error';
       throw new Error(`Failed to update user: ${message}`);
+    }
+  }
+
+  /**
+   * Get user by nickname (nickname field or Name field as fallback)
+   */
+  async getUserByNickname(nickname: string): Promise<User | null> {
+    try {
+      console.log('🔍 Looking up user by nickname:', nickname);
+      
+      // First try to find by nickname field (if it exists)
+      let response = await this.client.databases.query({
+        database_id: this.databases.users,
+        filter: {
+          property: 'nickname',
+          rich_text: { equals: nickname }
+        }
+      });
+
+      // If not found, try Name field as fallback
+      if (response.results.length === 0) {
+        response = await this.client.databases.query({
+          database_id: this.databases.users,
+          filter: {
+            property: 'Name',
+            title: { equals: nickname }
+          }
+        });
+      }
+
+      // If still not found, try Name as rich_text (some databases use rich_text for Name)
+      if (response.results.length === 0) {
+        response = await this.client.databases.query({
+          database_id: this.databases.users,
+          filter: {
+            property: 'Name',
+            rich_text: { equals: nickname }
+          }
+        });
+      }
+
+      if (response.results.length === 0) {
+        console.log('❌ No user found with nickname:', nickname);
+        return null;
+      }
+
+      const page = response.results[0] as any;
+      
+      const getTitleContent = (prop: any) => {
+        if (!prop?.title || !Array.isArray(prop.title) || prop.title.length === 0) return '';
+        return prop.title[0]?.text?.content || prop.title[0]?.plain_text || '';
+      };
+      
+      const getRichTextContent = (prop: any) => {
+        if (!prop?.rich_text || !Array.isArray(prop.rich_text) || prop.rich_text.length === 0) return '';
+        return prop.rich_text[0]?.text?.content || prop.rich_text[0]?.plain_text || '';
+      };
+      
+      const getSelectContent = (prop: any): string | undefined => {
+        if (!prop?.select) return undefined;
+        return prop.select.name;
+      };
+
+      const getDateContent = (prop: any): string | undefined => {
+        if (!prop?.date) return undefined;
+        return prop.date.start;
+      };
+      
+      const user = {
+        id: page.id,
+        discordId: getRichTextContent(page.properties['DiscordID']),
+        name: getTitleContent(page.properties['Name']),
+        nickname: getRichTextContent(page.properties['nickname']),
+        timezone: getRichTextContent(page.properties['Timezone']),
+        bestTime: getRichTextContent(page.properties['Best Time']),
+        trustCount: page.properties['Trust Count']?.number || 0,
+        personalChannelId: getRichTextContent(page.properties['Personal Channel ID']),
+        status: (getSelectContent(page.properties['Status']) || 'active') as 'active' | 'pause',
+        pauseReason: page.properties['Pause Reason'] ? getRichTextContent(page.properties['Pause Reason']) : undefined,
+        pauseDuration: page.properties['Pause Duration'] ? getRichTextContent(page.properties['Pause Duration']) : undefined,
+        buddy: getSelectContent(page.properties['buddy']),
+        buddyStart: getDateContent(page.properties['BuddyStart'])
+      };
+
+      console.log('✅ User found by nickname:', {
+        id: user.id,
+        name: user.name,
+        nickname: user.nickname,
+        searchedNickname: nickname
+      });
+
+      return user;
+    } catch (error) {
+      console.error('❌ Error fetching user by nickname:', nickname, error);
+      return null;
+    }
+  }
+
+  /**
+   * Update user's buddy assignment
+   */
+  async updateUserBuddy(userId: string, buddyNickname: string | null, buddyStart: string | null): Promise<void> {
+    try {
+      console.log('👥 Updating user buddy:', { userId, buddyNickname, buddyStart });
+      
+      const properties: any = {};
+      
+      if (buddyNickname === null) {
+        properties['buddy'] = { select: null };
+      } else {
+        properties['buddy'] = { select: { name: buddyNickname } };
+      }
+      
+      if (buddyStart === null) {
+        properties['BuddyStart'] = { date: null };
+      } else {
+        properties['BuddyStart'] = { date: { start: buddyStart } };
+      }
+
+      await this.client.pages.update({
+        page_id: userId,
+        properties
+      });
+
+      console.log('✅ User buddy updated successfully');
+    } catch (error) {
+      console.error('❌ Error updating user buddy:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to update user buddy: ${message}`);
+    }
+  }
+
+  /**
+   * Get buddy's progress data for a specific week
+   */
+  async getBuddyProgress(buddyNickname: string, weekStart: Date, weekEnd: Date): Promise<BuddyProgressData | null> {
+    try {
+      console.log('📊 Getting buddy progress:', { buddyNickname, weekStart, weekEnd });
+      
+      // Get buddy user by nickname
+      const buddyUser = await this.getUserByNickname(buddyNickname);
+      if (!buddyUser) {
+        console.log('❌ Buddy not found:', buddyNickname);
+        return null;
+      }
+
+      // Get buddy's habits
+      const habits = await this.getHabitsByUserId(buddyUser.id);
+      
+      // Get buddy's proofs for the week
+      const weekStartStr = weekStart.toISOString().split('T')[0];
+      const weekEndStr = weekEnd.toISOString().split('T')[0];
+      const proofs = await this.getProofsByUserId(buddyUser.id, weekStartStr, weekEndStr);
+      
+      // Calculate completion rate
+      const totalExpected = habits.reduce((sum, habit) => sum + habit.frequency, 0);
+      const totalActual = proofs.length;
+      const completionRate = totalExpected > 0 ? (totalActual / totalExpected) * 100 : 0;
+      
+      // Calculate current streak (consecutive days with proofs)
+      const proofDates = proofs.map(p => new Date(p.date).toISOString().split('T')[0]).sort();
+      let currentStreak = 0;
+      if (proofDates.length > 0) {
+        const today = new Date().toISOString().split('T')[0];
+        let checkDate = new Date(today);
+        while (proofDates.includes(checkDate.toISOString().split('T')[0])) {
+          currentStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        }
+      }
+      
+      // Find habits with issues (below target frequency)
+      const habitsWithIssues: Array<{
+        habitName: string;
+        targetFrequency: number;
+        actualFrequency: number;
+        goal: string;
+      }> = [];
+      
+      for (const habit of habits) {
+        const habitProofs = proofs.filter(p => p.habitId === habit.id);
+        const actualFrequency = habitProofs.length;
+        
+        if (actualFrequency < habit.frequency) {
+          habitsWithIssues.push({
+            habitName: habit.name,
+            targetFrequency: habit.frequency,
+            actualFrequency,
+            goal: habit.smartGoal
+          });
+        }
+      }
+      
+      return {
+        nickname: buddyNickname,
+        habits,
+        proofs,
+        completionRate: Math.round(completionRate),
+        currentStreak,
+        habitsWithIssues
+      };
+    } catch (error) {
+      console.error('❌ Error getting buddy progress:', error);
+      return null;
     }
   }
 
@@ -930,20 +1264,40 @@ export class NotionClient {
         return prop.rich_text[0]?.text?.content || prop.rich_text[0]?.plain_text || '';
       };
 
+      const getSelectContent = (prop: any): string | undefined => {
+        if (!prop?.select) return undefined;
+        return prop.select.name;
+      };
+
+      const getDateContent = (prop: any): string | undefined => {
+        if (!prop?.date) return undefined;
+        return prop.date.start;
+      };
+
       return response.results.map((page: any) => {
         const properties = page.properties;
+        
+        // Normalize status from Notion (should be 'active' since we filtered, but normalize anyway)
+        const statusRaw = getSelectContent(properties['Status']);
+        const normalizedStatus = statusRaw ? statusRaw.toLowerCase().trim() : 'active';
+        const finalStatus = (normalizedStatus === 'pause' ? 'pause' : 'active') as 'active' | 'pause';
+        
         return {
           id: page.id,
           discordId: getRichTextContent(properties['DiscordID']),
           name: getTitleContent(properties['Name']) || 'Unknown User',
+          nickname: getRichTextContent(properties['nickname']),
           timezone: getRichTextContent(properties['Timezone']) || 'Europe/Berlin',
           bestTime: getRichTextContent(properties['Best Time']) || '09:00',
           trustCount: properties['Trust Count']?.number || 0,
           personalChannelId: getRichTextContent(properties['Personal Channel ID']),
-          status: 'active' as const,
+          status: finalStatus,
           // Pause Reason and Duration are optional - only extract if property exists
           pauseReason: properties['Pause Reason'] ? getRichTextContent(properties['Pause Reason']) : undefined,
-          pauseDuration: properties['Pause Duration'] ? getRichTextContent(properties['Pause Duration']) : undefined
+          pauseDuration: properties['Pause Duration'] ? getRichTextContent(properties['Pause Duration']) : undefined,
+          // Buddy fields
+          buddy: getSelectContent(properties['buddy']),
+          buddyStart: getDateContent(properties['BuddyStart'])
         };
       });
     } catch (error) {
@@ -1155,52 +1509,87 @@ export class NotionClient {
 
   async updateUserProfile(discordId: string, updates: Partial<UserProfile>): Promise<UserProfile | null> {
     try {
+      console.log('📝 updateUserProfile called for Discord ID:', discordId);
+      console.log('📝 Updates to apply:', JSON.stringify(updates, null, 2));
+
       // First get the existing profile
       const existingProfile = await this.getUserProfileByDiscordId(discordId);
       if (!existingProfile) {
+        console.error('❌ Existing profile not found for Discord ID:', discordId);
         return null;
       }
+
+      console.log('✅ Existing profile found:', existingProfile.id);
 
       const properties: any = {};
 
       // Only update provided fields
-      if (updates.personalityType) {
+      if (updates.personalityType !== undefined && updates.personalityType !== null) {
         properties['Personality Type'] = { select: { name: updates.personalityType } };
       }
-      if (updates.coreValues) {
+      if (updates.coreValues && updates.coreValues.length > 0) {
         properties['Core Values'] = { multi_select: updates.coreValues.map(value => ({ name: value })) };
       }
-      if (updates.lifeVision) {
-        properties['Life Vision'] = { rich_text: [{ text: { content: updates.lifeVision } }] };
+      if (updates.lifeVision !== undefined && updates.lifeVision !== null) {
+        properties['Life Vision'] = { rich_text: [{ text: { content: updates.lifeVision || '' } }] };
       }
-      if (updates.mainGoals) {
+      if (updates.mainGoals && updates.mainGoals.length > 0) {
         properties['Main Goals'] = { rich_text: [{ text: { content: updates.mainGoals.join('\n') } }] };
       }
-      if (updates.bigFiveTraits) {
-        properties['Big five traits'] = { rich_text: [{ text: { content: updates.bigFiveTraits } }] };
+      if (updates.bigFiveTraits !== undefined && updates.bigFiveTraits !== null) {
+        properties['Big five traits'] = { rich_text: [{ text: { content: updates.bigFiveTraits || '' } }] };
       }
-      if (updates.lifeDomains) {
+      if (updates.lifeDomains && updates.lifeDomains.length > 0) {
         properties['Life domains'] = { multi_select: updates.lifeDomains.map(domain => ({ name: domain })) };
       }
-      if (updates.lifePhase) {
-        properties['Life Phase'] = { rich_text: [{ text: { content: updates.lifePhase } }] };
+      if (updates.lifePhase !== undefined && updates.lifePhase !== null) {
+        properties['Life Phase'] = { rich_text: [{ text: { content: updates.lifePhase || '' } }] };
       }
-      if (updates.desiredIdentity) {
-        properties['Desired Identity'] = { rich_text: [{ text: { content: updates.desiredIdentity } }] };
+      if (updates.desiredIdentity !== undefined && updates.desiredIdentity !== null) {
+        properties['Desired Identity'] = { rich_text: [{ text: { content: updates.desiredIdentity || '' } }] };
       }
-      if (updates.openSpace) {
-        properties['Open Space'] = { rich_text: [{ text: { content: updates.openSpace } }] };
+      if (updates.openSpace !== undefined && updates.openSpace !== null) {
+        properties['Open Space'] = { rich_text: [{ text: { content: updates.openSpace || '' } }] };
       }
+
+      // Check if we have any properties to update
+      const propertyKeys = Object.keys(properties);
+      if (propertyKeys.length === 0) {
+        console.warn('⚠️ No properties to update, returning existing profile');
+        return existingProfile;
+      }
+
+      console.log('📝 Properties to update:', propertyKeys);
+      console.log('📝 Properties object:', JSON.stringify(properties, null, 2));
 
       await this.client.pages.update({
         page_id: existingProfile.id,
         properties
       });
 
+      console.log('✅ Notion page updated successfully');
+
       // Return updated profile
-      return await this.getUserProfileByDiscordId(discordId);
-    } catch (error) {
-      console.error('Error updating user profile:', error);
+      const updatedProfile = await this.getUserProfileByDiscordId(discordId);
+      if (updatedProfile) {
+        console.log('✅ Updated profile retrieved successfully');
+      } else {
+        console.error('⚠️ Could not retrieve updated profile');
+      }
+      return updatedProfile;
+    } catch (error: any) {
+      console.error('❌ Error updating user profile:');
+      console.error('   Error type:', error?.constructor?.name || typeof error);
+      console.error('   Error message:', error?.message || String(error));
+      console.error('   Error code:', error?.code);
+      console.error('   Error status:', error?.status);
+      if (error?.body) {
+        console.error('   Error body:', JSON.stringify(error.body, null, 2));
+      }
+      if (error?.stack) {
+        console.error('   Stack trace:', error.stack);
+      }
+      // Return null for backward compatibility, but log detailed error
       return null;
     }
   }
@@ -1405,5 +1794,243 @@ export class NotionClient {
       return property.rich_text[0].text.content;
     }
     return '';
+  }
+
+  // ============================================
+  // WEEKLY CHALLENGE METHODS
+  // ============================================
+
+  /**
+   * Create a challenge proof entry
+   */
+  async createChallengeProof(proof: Omit<ChallengeProof, 'id'>): Promise<ChallengeProof> {
+    try {
+      console.log('🎯 Creating challenge proof in Notion:', {
+        challengeNumber: proof.challengeNumber,
+        challengeName: proof.challengeName,
+        userId: proof.userId,
+        date: proof.date
+      });
+
+      const title = `Challenge ${proof.challengeNumber} - Proof - ${proof.date}`;
+
+      const properties: any = {
+        'Title': { title: [{ text: { content: title } }] },
+        'Challenge Number': { number: proof.challengeNumber },
+        'Challenge Name': { rich_text: [{ text: { content: proof.challengeName } }] },
+        'User': { relation: [{ id: proof.userId }] },
+        'Date': { date: { start: proof.date } },
+        'Unit': { rich_text: [{ text: { content: proof.unit } }] },
+        'Is Minimal Dose': { checkbox: proof.isMinimalDose },
+        'Week Start ': { date: { start: proof.weekStart } }, // Note: trailing space in field name!
+        'Week End': { date: { start: proof.weekEnd } }
+      };
+
+      // Add note if provided
+      if (proof.note) {
+        properties['Note'] = { rich_text: [{ text: { content: proof.note } }] };
+      }
+
+      const response = await this.client.pages.create({
+        parent: { database_id: this.databases.challengeProofs },
+        properties
+      });
+
+      console.log('✅ Challenge proof created successfully:', response.id);
+
+      return {
+        id: response.id,
+        ...proof
+      };
+    } catch (error) {
+      console.error('❌ Error creating challenge proof:', error);
+      throw new Error(`Failed to create challenge proof: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Get challenge proofs for a specific week and challenge number
+   */
+  async getChallengeProofsByWeek(weekStart: string, challengeNumber: number): Promise<ChallengeProof[]> {
+    try {
+      const response = await this.client.databases.query({
+        database_id: this.databases.challengeProofs,
+        filter: {
+          and: [
+            {
+              property: 'Week Start ',
+              date: {
+                equals: weekStart
+              }
+            },
+            {
+              property: 'Challenge Number',
+              number: {
+                equals: challengeNumber
+              }
+            }
+          ]
+        },
+        sorts: [
+          {
+            property: 'Date',
+            direction: 'ascending'
+          }
+        ]
+      });
+
+      return response.results.map((page: any) => {
+        const props = page.properties;
+        return {
+          id: page.id,
+          challengeNumber: props['Challenge Number']?.number || 0,
+          challengeName: props['Challenge Name']?.rich_text?.[0]?.text?.content || '',
+          userId: props['User']?.relation?.[0]?.id || '',
+          date: props['Date']?.date?.start || '',
+          unit: props['Unit']?.rich_text?.[0]?.text?.content || '',
+          note: props['Note']?.rich_text?.[0]?.text?.content,
+          isMinimalDose: props['Is Minimal Dose']?.checkbox || false,
+          weekStart: props['Week Start ']?.date?.start || '', // Note: trailing space!
+          weekEnd: props['Week End']?.date?.start || ''
+        };
+      });
+    } catch (error) {
+      console.error('Error getting challenge proofs by week:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get challenge proofs for a specific user in the current week
+   */
+  async getUserChallengeProofs(userId: string, weekStart: string, challengeNumber: number): Promise<ChallengeProof[]> {
+    try {
+      const response = await this.client.databases.query({
+        database_id: this.databases.challengeProofs,
+        filter: {
+          and: [
+            {
+              property: 'User',
+              relation: {
+                contains: userId
+              }
+            },
+            {
+              property: 'Week Start ',
+              date: {
+                equals: weekStart
+              }
+            },
+            {
+              property: 'Challenge Number',
+              number: {
+                equals: challengeNumber
+              }
+            }
+          ]
+        },
+        sorts: [
+          {
+            property: 'Date',
+            direction: 'ascending'
+          }
+        ]
+      });
+
+      return response.results.map((page: any) => {
+        const props = page.properties;
+        return {
+          id: page.id,
+          challengeNumber: props['Challenge Number']?.number || 0,
+          challengeName: props['Challenge Name']?.rich_text?.[0]?.text?.content || '',
+          userId: props['User']?.relation?.[0]?.id || '',
+          date: props['Date']?.date?.start || '',
+          unit: props['Unit']?.rich_text?.[0]?.text?.content || '',
+          note: props['Note']?.rich_text?.[0]?.text?.content,
+          isMinimalDose: props['Is Minimal Dose']?.checkbox || false,
+          weekStart: props['Week Start ']?.date?.start || '', // Note: trailing space!
+          weekEnd: props['Week End']?.date?.start || ''
+        };
+      });
+    } catch (error) {
+      console.error('Error getting user challenge proofs:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Check if user already submitted proof for today
+   */
+  async hasUserSubmittedChallengeProofToday(
+    userId: string,
+    date: string,
+    weekStart: string,
+    challengeNumber: number
+  ): Promise<boolean> {
+    try {
+      const response = await this.client.databases.query({
+        database_id: this.databases.challengeProofs,
+        filter: {
+          and: [
+            {
+              property: 'User',
+              relation: {
+                contains: userId
+              }
+            },
+            {
+              property: 'Date',
+              date: {
+                equals: date
+              }
+            },
+            {
+              property: 'Week Start ',
+              date: {
+                equals: weekStart
+              }
+            },
+            {
+              property: 'Challenge Number',
+              number: {
+                equals: challengeNumber
+              }
+            }
+          ]
+        }
+      });
+
+      return response.results.length > 0;
+    } catch (error) {
+      console.error('Error checking if user submitted proof today:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Create challenge reward entry (uses existing Price Pool DB with negative value)
+   */
+  async createChallengeReward(userId: string, weekDate: string, amount: number): Promise<void> {
+    try {
+      // Get user's Discord ID for the Price Pool entry
+      const user = await this.getUserById(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Create entry with negative price (credit)
+      await this.createPricePoolEntry({
+        discordId: user.discordId,
+        userId: userId,
+        weekDate: weekDate,
+        message: `Challenge completion reward - earned €${amount}`,
+        price: -amount // Negative value = credit
+      });
+
+      console.log(`✅ Challenge reward created: €${amount} for user ${user.discordId}`);
+    } catch (error) {
+      console.error('Error creating challenge reward:', error);
+      throw error;
+    }
   }
 }

@@ -20,12 +20,14 @@ export class CommandHandler {
   private personalChannelManager: PersonalChannelManager;
   private logger: DiscordLogger;
   private firstModalDataCache: Map<string, FirstModalData> = new Map();
+  private personalAssistant?: any; // Optional - will be set if available
 
-  constructor(notion: NotionClient, channelHandlers: ChannelHandlers, personalChannelManager: PersonalChannelManager, logger: DiscordLogger) {
+  constructor(notion: NotionClient, channelHandlers: ChannelHandlers, personalChannelManager: PersonalChannelManager, logger: DiscordLogger, personalAssistant?: any) {
     this.notion = notion;
     this.channelHandlers = channelHandlers;
     this.personalChannelManager = personalChannelManager;
     this.logger = logger;
+    this.personalAssistant = personalAssistant;
     
     // Clean up stale data every 5 minutes
     setInterval(() => {
@@ -801,25 +803,9 @@ Others can help you find strategies to overcome this hurdle!`,
     try {
       console.log('🎯 Starting onboarding for user:', discordId);
 
-      // Check if user exists in database
-      const user = await this.notion.getUserByDiscordId(discordId);
-      if (!user) {
-        await interaction.reply({
-          content: '❌ **Du musst zuerst dem System beitreten! / You must join the system first!**\n\nVerwende `/join` um dich im Habit-Tracking System zu registrieren.\nUse `/join` to register in the habit tracking system.',
-          ephemeral: true
-        });
-        return;
-      }
-
-      // Check if profile already exists
-      const existingProfile = await this.notion.getUserProfileByDiscordId(discordId);
-      if (existingProfile) {
-        await interaction.reply({
-          content: '✅ **Du hast bereits ein Profil erstellt! / You already have a profile!**\n\nDu kannst dein Profil jederzeit mit `/profile-edit` bearbeiten.\nYou can edit your profile anytime with `/profile-edit`.',
-          ephemeral: true
-        });
-        return;
-      }
+      // IMPORTANT: Show modal immediately without any async operations
+      // This prevents Discord's 3-second interaction timeout
+      // Validation will be done in the modal submit handler instead
 
       // Create modal for onboarding
       const modal = new ModalBuilder()
@@ -919,7 +905,10 @@ Others can help you find strategies to overcome this hurdle!`,
 
       // Check which modal this is
       if (interaction.customId === 'onboard_modal') {
-        // First modal - validate user and check for existing profile before proceeding
+        // First modal - defer reply to prevent timeout, then validate user
+
+        // Defer the reply early to prevent timeout during database checks
+        await interaction.deferReply({ ephemeral: true });
 
         // Extract values from first modal first
         const personalityType = interaction.fields.getTextInputValue('personality_type') || undefined;
@@ -928,9 +917,23 @@ Others can help you find strategies to overcome this hurdle!`,
         const mainGoals = interaction.fields.getTextInputValue('main_goals').split('\n').map((g: string) => g.trim()).filter((g: string) => g.length > 0);
         const bigFiveTraits = interaction.fields.getTextInputValue('big_five') || undefined;
 
-        // CRITICAL: We need to show the second modal BEFORE doing database checks
-        // because Discord requires modal to be shown within 3 seconds of interaction
-        // We'll validate in the second modal submission instead
+        // Validate user exists in database BEFORE proceeding
+        const user = await this.notion.getUserByDiscordId(discordId);
+        if (!user) {
+          await interaction.editReply({
+            content: '❌ **Du musst zuerst dem System beitreten! / You must join the system first!**\n\nVerwende `/join` um dich im Habit-Tracking System zu registrieren.\nUse `/join` to register in the habit tracking system.'
+          });
+          return;
+        }
+
+        // Check if profile already exists
+        const existingProfile = await this.notion.getUserProfileByDiscordId(discordId);
+        if (existingProfile) {
+          await interaction.editReply({
+            content: '✅ **Du hast bereits ein Profil erstellt! / You already have a profile!**\n\nDu kannst dein Profil jederzeit mit `/profile-edit` bearbeiten.\nYou can edit your profile anytime with `/profile-edit`.'
+          });
+          return;
+        }
 
         // Store first modal data temporarily
         this.firstModalDataCache.set(discordId, {
@@ -959,10 +962,9 @@ Others can help you find strategies to overcome this hurdle!`,
 
         const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
 
-        await interaction.reply({
+        await interaction.editReply({
           content: '✅ **Erste Formular-Daten gespeichert!** Weiter zum nächsten Schritt:',
-          components: [row],
-          ephemeral: true
+          components: [row]
         });
         return;
       } else if (interaction.customId === 'onboard_modal_2') {
@@ -1301,6 +1303,15 @@ You can view your profile with \`/profile\` or edit it with \`/profile-edit\` an
         // Clear cached data after successful save
         this.firstModalDataCache.delete(discordId);
         console.log('✅ Profile created successfully, cleared cached data for user:', discordId);
+
+        // Regenerate AI profile after personality profile creation
+        if (this.personalAssistant) {
+          try {
+            await this.personalAssistant.regenerateProfile(discordId);
+          } catch (error) {
+            console.error('⚠️ Error regenerating AI profile after personality creation:', error);
+          }
+        }
       } catch (dbError) {
         console.error('❌ Database error during profile creation:', dbError);
         
@@ -1681,14 +1692,19 @@ ${mainGoals}
   ${desiredIdentity.substring(0, 300)}${desiredIdentity.length > 300 ? '...' : ''}
 
 **📝 Notizen / Notes:**
-${openSpace.substring(0, 200)}${openSpace.length > 200 ? '...' : ''}
+${openSpace.substring(0, 200)}${openSpace.length > 200 ? '...' : ''}`;
 
-**⚙️ Aktionen / Actions:**
-• \`/profile-edit\` - Profil bearbeiten / Edit profile
-• \`/onboard\` - Profil neu erstellen / Recreate profile`;
+      // Create edit button
+      const editButton = new ButtonBuilder()
+        .setCustomId('profile_edit_button')
+        .setLabel('✏️ Profil bearbeiten / Edit Profile')
+        .setStyle(ButtonStyle.Primary);
+
+      const buttonRow = new ActionRowBuilder<ButtonBuilder>().addComponents(editButton);
 
       await interaction.editReply({
-        content: profileMessage
+        content: profileMessage,
+        components: [buttonRow]
       });
 
       await this.logger.success(
@@ -1741,42 +1757,41 @@ There was an error loading your profile. Please try again.`,
     }
   }
 
-  async handleProfileEdit(interaction: ChatInputCommandInteraction) {
+  async handleProfileEdit(interaction: ChatInputCommandInteraction | ButtonInteraction) {
     const discordId = interaction.user.id;
 
     try {
       console.log('✏️ Starting profile edit for user:', discordId);
 
-      // Check if user exists in main Users DB
-      const user = await this.notion.getUserByDiscordId(discordId);
-      if (!user) {
-        await interaction.reply({
-          content: `❌ **Du bist noch nicht registriert / You are not registered yet**
+      // Try to load profile data quickly to pre-fill the modal
+      // If it fails or takes too long, show modal empty and handle in submit handler
+      let profile: UserProfile | null = null;
+      try {
+        // Use Promise.race with timeout to prevent Discord timeout (3 seconds)
+        const loadProfile = async (): Promise<UserProfile | null> => {
+          try {
+            return await this.notion.getUserProfileByDiscordId(discordId);
+          } catch (error) {
+            return null;
+          }
+        };
 
-Verwende \`/join\` um dich im Habit-Tracking System zu registrieren.
-Use \`/join\` to register in the habit tracking system.`,
-          ephemeral: true
+        const timeout = new Promise<UserProfile | null>((resolve) => {
+          setTimeout(() => resolve(null), 2000); // 2 second timeout
         });
-        return;
+
+        profile = await Promise.race([loadProfile(), timeout]);
+      } catch (error) {
+        console.warn('⚠️ Error loading profile for pre-fill (will continue with empty modal):', error);
+        profile = null;
       }
 
-      // Get current profile from Personality DB
-      const profile = await this.notion.getUserProfileByDiscordId(discordId);
-      if (!profile) {
-        await interaction.reply({
-          content: `❌ **Kein Profil gefunden / No Profile Found**
-
-Du hast noch kein Persönlichkeitsprofil erstellt.
-You haven't created a personality profile yet.
-
-Verwende \`/onboard\` um dein Profil zu erstellen.
-Use \`/onboard\` to create your profile.`,
-          ephemeral: true
-        });
-        return;
-      }
-
-      console.log('✅ Profile found, showing edit modal for user:', discordId);
+      // Helper function to truncate text to Discord's 4000 character limit
+      const truncateForModal = (text: string, maxLength: number = 4000): string => {
+        if (!text) return '';
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength - 3) + '...';
+      };
 
       // Create modal for editing (all fields in one modal)
       const modal = new ModalBuilder()
@@ -1789,34 +1804,34 @@ Use \`/onboard\` to create your profile.`,
         .setLabel('Persönlichkeitstyp / Personality Type')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('INTJ, ENFP, etc.')
-        .setValue(profile.personalityType || '')
+        .setValue(profile ? truncateForModal(profile.personalityType || '', 4000) : '')
         .setRequired(false);
 
       // Core Values
       const coreValuesInput = new TextInputBuilder()
         .setCustomId('core_values')
-        .setLabel('Kernwerte / Core Values (kommagetrennt / comma-separated)')
+        .setLabel('Kernwerte / Core Values')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('Freiheit, Gesundheit, Familie / Freedom, Health, Family')
-        .setValue(profile.coreValues?.join(', ') || '')
+        .setValue(profile ? truncateForModal(profile.coreValues?.join(', ') || '', 4000) : '')
         .setRequired(true);
 
       // Life Vision
       const lifeVisionInput = new TextInputBuilder()
         .setCustomId('life_vision')
-        .setLabel('Lebensvision (5 Jahre) / Life Vision (5 years)')
+        .setLabel('Lebensvision (5 Jahre)')
         .setStyle(TextInputStyle.Paragraph)
         .setPlaceholder('Was möchtest du erreichen? / What do you want to achieve?')
-        .setValue(profile.lifeVision || '')
+        .setValue(profile ? truncateForModal(profile.lifeVision || '', 4000) : '')
         .setRequired(true);
 
       // Main Goals
       const mainGoalsInput = new TextInputBuilder()
         .setCustomId('main_goals')
-        .setLabel('Hauptziele / Main Goals (1 pro Zeile / 1 per line)')
+        .setLabel('Hauptziele / Main Goals')
         .setStyle(TextInputStyle.Paragraph)
         .setPlaceholder('Ziel 1\nZiel 2\nZiel 3')
-        .setValue(profile.mainGoals?.join('\n') || '')
+        .setValue(profile ? truncateForModal(profile.mainGoals?.join('\n') || '', 4000) : '')
         .setRequired(true);
 
       // Big Five Traits
@@ -1825,7 +1840,7 @@ Use \`/onboard\` to create your profile.`,
         .setLabel('Big Five Traits')
         .setStyle(TextInputStyle.Short)
         .setPlaceholder('Offenheit:7, Gewissenhaftigkeit:8, etc.')
-        .setValue(profile.bigFiveTraits || '')
+        .setValue(profile ? truncateForModal(profile.bigFiveTraits || '', 4000) : '')
         .setRequired(false);
 
       // Add all inputs to modal (Discord limit: 5 inputs per modal)
@@ -1838,9 +1853,15 @@ Use \`/onboard\` to create your profile.`,
       modal.addComponents(firstRow, secondRow, thirdRow, fourthRow, fifthRow);
 
       await interaction.showModal(modal);
-      console.log('✅ Profile edit modal shown to user:', discordId);
+      console.log('✅ Profile edit modal shown to user:', discordId, profile ? '(pre-filled)' : '(empty - will load in submit)');
 
-    } catch (error) {
+    } catch (error: any) {
+      // Ignore "already acknowledged" errors - they happen when multiple bot instances process the same interaction
+      if (error.code === 40060) {
+        console.warn('⚠️ Interaction already acknowledged (likely by another bot instance or duplicate request)');
+        return; // Don't try to reply or log, interaction is already handled
+      }
+
       console.error('❌ Error showing profile edit modal:', error);
       await this.logger.logError(
         error as Error,
@@ -1855,14 +1876,23 @@ Use \`/onboard\` to create your profile.`,
         }
       );
 
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({
-          content: `❌ **Fehler beim Öffnen des Bearbeitungsformulars / Error opening edit form**
+      // Only reply if interaction hasn't been acknowledged yet
+      // showModal() acknowledges the interaction, so if it succeeded, we can't reply
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            content: `❌ **Fehler beim Öffnen des Bearbeitungsformulars / Error opening edit form**
 
 Es gab einen Fehler beim Öffnen des Bearbeitungsformulars. Bitte versuche es erneut.
 There was an error opening the edit form. Please try again.`,
-          ephemeral: true
-        });
+            ephemeral: true
+          });
+        }
+      } catch (replyError: any) {
+        // Ignore "already acknowledged" errors - they're expected if showModal() partially succeeded
+        if (replyError.code !== 40060) {
+          console.error('❌ Error sending error reply:', replyError);
+        }
       }
     }
   }
@@ -1874,8 +1904,31 @@ There was an error opening the edit form. Please try again.`,
       console.log('💾 Processing profile edit for user:', discordId);
 
       // Defer reply early to avoid Discord "Unknown interaction"
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.deferReply({ ephemeral: false });
+      // Handle "Unknown interaction" error (code 10062) - interaction expired (>15 min)
+      try {
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.deferReply({ ephemeral: false });
+        }
+      } catch (deferError: any) {
+        // If interaction expired, we can't respond - log and return
+        if (deferError.code === 10062) {
+          console.warn('⚠️ Modal interaction expired (>15 minutes) for user:', discordId);
+          return;
+        }
+        // Re-throw other errors
+        throw deferError;
+      }
+
+      // Validate user exists in main Users DB
+      const user = await this.notion.getUserByDiscordId(discordId);
+      if (!user) {
+        await interaction.editReply({
+          content: `❌ **Du bist noch nicht registriert / You are not registered yet**
+
+Verwende \`/join\` um dich im Habit-Tracking System zu registrieren.
+Use \`/join\` to register in the habit tracking system.`
+        });
+        return;
       }
 
       // Extract values from modal
@@ -1891,6 +1944,37 @@ There was an error opening the edit form. Please try again.`,
         .filter((g: string) => g.length > 0);
       const bigFiveTraits = interaction.fields.getTextInputValue('big_five') || undefined;
 
+      // Validate required fields
+      if (coreValues.length === 0) {
+        await interaction.editReply({
+          content: `❌ **Ungültige Eingabe / Invalid Input**
+
+Bitte gib mindestens einen Kernwert an.
+Please provide at least one core value.`
+        });
+        return;
+      }
+
+      if (!lifeVision || lifeVision.trim().length === 0) {
+        await interaction.editReply({
+          content: `❌ **Ungültige Eingabe / Invalid Input**
+
+Bitte gib deine Lebensvision an.
+Please provide your life vision.`
+        });
+        return;
+      }
+
+      if (mainGoals.length === 0) {
+        await interaction.editReply({
+          content: `❌ **Ungültige Eingabe / Invalid Input**
+
+Bitte gib mindestens ein Hauptziel an.
+Please provide at least one main goal.`
+        });
+        return;
+      }
+
       // Get existing profile
       const existingProfile = await this.notion.getUserProfileByDiscordId(discordId);
       if (!existingProfile) {
@@ -1904,18 +1988,37 @@ Your profile was not found. Please create it with \`/onboard\`.`
       }
 
       // Update profile with new data (keeping other fields unchanged)
-      const updatedProfile = await this.notion.updateUserProfile(existingProfile.id, {
-        personalityType,
-        coreValues,
-        lifeVision,
-        mainGoals,
-        bigFiveTraits,
-        // Keep existing values for fields not in this modal
-        lifeDomains: existingProfile.lifeDomains,
-        lifePhase: existingProfile.lifePhase,
-        desiredIdentity: existingProfile.desiredIdentity,
-        openSpace: existingProfile.openSpace
-      });
+      let updatedProfile: UserProfile | null = null;
+      try {
+        updatedProfile = await this.notion.updateUserProfile(discordId, {
+          personalityType,
+          coreValues,
+          lifeVision,
+          mainGoals,
+          bigFiveTraits,
+          // Keep existing values for fields not in this modal
+          lifeDomains: existingProfile.lifeDomains,
+          lifePhase: existingProfile.lifePhase,
+          desiredIdentity: existingProfile.desiredIdentity,
+          openSpace: existingProfile.openSpace
+        });
+      } catch (updateError: any) {
+        console.error('❌ Error in updateUserProfile call:', updateError);
+        const errorMessage = updateError?.message || 'Unknown error';
+        const errorCode = updateError?.code || 'unknown';
+        
+        await interaction.editReply({
+          content: `❌ **Fehler beim Aktualisieren des Profils / Error updating profile**
+
+Das Profil konnte nicht aktualisiert werden. Bitte versuche es erneut.
+The profile could not be updated. Please try again.
+
+**Fehlerdetails / Error details:**
+Code: ${errorCode}
+Message: ${errorMessage}`
+        });
+        return;
+      }
 
       if (!updatedProfile) {
         await interaction.editReply({
@@ -1928,6 +2031,15 @@ The profile could not be updated. Please try again.`
       }
 
       console.log('✅ Profile updated successfully:', updatedProfile.id);
+
+      // Regenerate AI profile after personality profile update
+      if (this.personalAssistant) {
+        try {
+          await this.personalAssistant.regenerateProfile(discordId);
+        } catch (error) {
+          console.error('⚠️ Error regenerating AI profile after personality update:', error);
+        }
+      }
 
       await interaction.editReply({
         content: `✅ **Profil erfolgreich aktualisiert! / Profile successfully updated!**

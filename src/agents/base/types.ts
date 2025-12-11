@@ -335,6 +335,11 @@ export interface HabitAnalysis {
   optimal_conditions: OptimalConditions;
   failure_patterns: FailurePattern[];
   success_patterns: SuccessPattern[];
+  // Adaptive Goals fields
+  target_frequency?: number;
+  actual_proofs?: number;
+  completion_rate?: number; // Percentage (0-100+)
+  missed_count?: number;
 }
 
 export interface OptimalConditions {

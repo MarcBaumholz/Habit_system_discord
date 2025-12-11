@@ -1,0 +1,45 @@
+# Cursor Rules for Discord Habit System
+
+## Agent OS Integration
+
+Before starting any coding task, you MUST:
+
+1. Read relevant Agent OS standards files:
+   - `.agent-os/standards/global/best-practices.md` - Core principles
+   - `.agent-os/standards/global/naming.md` - Naming conventions
+   - `.agent-os/product/tech-stack.md` - Technology stack
+   - `.agent-os/standards/backend/typescript.md` - TypeScript patterns
+   - `.agent-os/standards/backend/discord.md` - Discord.js patterns
+   - `.agent-os/standards/backend/notion.md` - Notion API patterns
+
+2. Confirm you've read the standards before coding
+
+3. Follow these core principles:
+   - KISS (Keep It Simple)
+   - Single Responsibility Principle
+   - Test-Driven Development
+   - **NO MOCK DATA** - Always handle errors properly
+   - Clean Code practices
+
+4. Reference standards files explicitly when making decisions
+
+## Project Context
+
+- **Type**: Discord Bot for Habit Tracking
+- **Stack**: Node.js, TypeScript, discord.js v14, Notion API, Perplexity Sonar
+- **Architecture**: Multi-agent system with Orchestrator pattern
+- **Deployment**: PM2 process manager
+
+## Coding Standards
+
+- Use camelCase for variables and functions
+- Use PascalCase for classes and types
+- Always use explicit error handling (no mocks!)
+- Write tests first (TDD)
+- Keep functions small and focused
+- Use TypeScript strictly (no `any` types)
+
+## When in Doubt
+
+Reference the Agent OS files in `.agent-os/standards/` for specific patterns and conventions.
+

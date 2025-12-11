@@ -2,12 +2,22 @@ import { Client, Message, TextChannel } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { DiscordLogger } from './discord-logger';
 import { PerplexityClient } from '../ai/perplexity-client';
+import { ProfileGenerator } from '../ai/profile-generator';
+import { ProfileStorage } from '../ai/profile-storage';
+import { QueryClassifier } from '../ai/query-classifier';
+import { DynamicContextBuilder } from '../ai/dynamic-context-builder';
+import { ContextCompressor } from '../ai/context-compressor';
 
 export class PersonalAssistant {
   private client: Client;
   private notion: NotionClient;
   private logger: DiscordLogger;
   private aiClient: PerplexityClient | null;
+  private profileGenerator: ProfileGenerator;
+  private profileStorage: ProfileStorage;
+  private queryClassifier: QueryClassifier;
+  private contextBuilder: DynamicContextBuilder;
+  private compressor: ContextCompressor;
 
   constructor(client: Client, notion: NotionClient, logger: DiscordLogger) {
     this.client = client;
@@ -22,6 +32,18 @@ export class PersonalAssistant {
       this.aiClient = null;
       console.log('⚠️ PERPLEXITY_API_KEY not found - AI features disabled');
     }
+
+    // Initialize profile system
+    this.profileGenerator = new ProfileGenerator(notion);
+    this.profileStorage = new ProfileStorage(this.profileGenerator);
+    this.queryClassifier = new QueryClassifier();
+    this.compressor = new ContextCompressor();
+    this.contextBuilder = new DynamicContextBuilder(
+      notion,
+      this.profileStorage,
+      this.queryClassifier,
+      this.compressor
+    );
   }
 
   async handlePersonalChannelMessage(message: Message): Promise<boolean> {
@@ -124,13 +146,19 @@ export class PersonalAssistant {
         return true;
       }
 
-      // Gather user context data
-      const userContext = await this.gatherUserContext(user.id);
-
-      // Generate AI response
-      const aiResponse = await this.aiClient.generateContextualResponse(
+      // Build dynamic context based on query intent
+      const dynamicContext = await this.contextBuilder.buildContext(
+        message.author.id,
         message.content,
-        userContext
+        user.id
+      );
+
+      console.log(`📊 Context built - Intent: ${dynamicContext.queryIntent}, Tokens: ${dynamicContext.tokensUsed}`);
+
+      // Generate AI response using dynamic context
+      const aiResponse = await this.aiClient.generateResponse(
+        message.content,
+        dynamicContext.context
       );
 
       // Send response with length checking
@@ -145,7 +173,8 @@ export class PersonalAssistant {
         {
           query: message.content,
           responseLength: aiResponse.length,
-          hasContext: userContext.habits.length > 0
+          queryIntent: dynamicContext.queryIntent,
+          tokensUsed: dynamicContext.tokensUsed
         },
         {
           channelId: message.channelId,
@@ -484,6 +513,107 @@ export class PersonalAssistant {
         guildId: message.guild?.id
       }
     );
+  }
+
+  /**
+   * Regenerate user profile (called when habits or personality data changes)
+   */
+  async regenerateProfile(discordId: string): Promise<void> {
+    try {
+      console.log(`🔄 Regenerating profile for ${discordId}...`);
+      await this.profileStorage.generateAndSave(discordId);
+      console.log(`✅ Profile regenerated for ${discordId}`);
+    } catch (error) {
+      console.error(`❌ Error regenerating profile for ${discordId}:`, error);
+      // Don't throw - profile regeneration failure shouldn't break the flow
+    }
+  }
+
+  /**
+   * Generate profiles for all users who have habits
+   * Called on startup or manually to create/update all profiles
+   */
+  async generateAllUserProfiles(forceRegenerate: boolean = false): Promise<{ success: number; failed: number; errors: string[] }> {
+    const results = {
+      success: 0,
+      failed: 0,
+      errors: [] as string[],
+    };
+
+    try {
+      console.log(`🔄 Starting batch profile generation for all users (force: ${forceRegenerate})...`);
+      
+      // Get all users
+      const users = await this.notion.getAllUsers();
+      console.log(`📊 Found ${users.length} users in database`);
+
+      for (const user of users) {
+        try {
+          // Check if user has habits
+          const habits = await this.notion.getHabitsByUserId(user.id);
+          
+          if (habits.length === 0) {
+            console.log(`⏭️  Skipping ${user.name} (${user.discordId}) - no habits`);
+            continue;
+          }
+
+          // Check if profile needs regeneration
+          if (!forceRegenerate && !(await this.profileStorage.needsRegeneration(user.discordId))) {
+            console.log(`⏭️  Skipping ${user.name} (${user.discordId}) - profile is fresh`);
+            continue;
+          }
+
+          console.log(`📝 Generating profile for ${user.name} (${user.discordId}) - ${habits.length} habits`);
+          await this.profileStorage.generateAndSave(user.discordId);
+          results.success++;
+          
+          // Small delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (error) {
+          results.failed++;
+          const errorMsg = `Failed for ${user.name} (${user.discordId}): ${error instanceof Error ? error.message : String(error)}`;
+          results.errors.push(errorMsg);
+          console.error(`❌ ${errorMsg}`);
+        }
+      }
+
+      console.log(`✅ Batch profile generation complete: ${results.success} success, ${results.failed} failed`);
+      return results;
+    } catch (error) {
+      console.error('❌ Error in batch profile generation:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Start periodic profile update checker
+   * Checks every hour if profiles need to be updated based on database changes
+   */
+  startPeriodicProfileUpdate(): void {
+    // Check every hour for profile updates
+    const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+    
+    console.log('🔄 Starting periodic profile update checker (every hour)...');
+    
+    setInterval(async () => {
+      try {
+        console.log('🔄 Running periodic profile update check...');
+        const results = await this.generateAllUserProfiles(false); // Don't force, only update if needed
+        console.log(`✅ Periodic check complete: ${results.success} updated, ${results.failed} failed`);
+      } catch (error) {
+        console.error('❌ Error in periodic profile update:', error);
+      }
+    }, CHECK_INTERVAL_MS);
+    
+    // Also run immediately after a short delay to catch any missed updates
+    setTimeout(async () => {
+      try {
+        console.log('🔄 Running initial profile update check...');
+        await this.generateAllUserProfiles(false);
+      } catch (error) {
+        console.error('❌ Error in initial profile update check:', error);
+      }
+    }, 5 * 60 * 1000); // 5 minutes after startup
   }
 
   // Method to send proactive recommendations

@@ -21,10 +21,12 @@ async function main() {
     'NOTION_DATABASE_GROUPS',
     'NOTION_DATABASE_PERSONALITY',
     'NOTION_DATABASE_PRICE_POOL',
+    'NOTION_DATABASE_CHALLENGE_PROOFS',
     'DISCORD_PERSONAL_CHANNEL',
     'DISCORD_ACCOUNTABILITY_GROUP',
     'DISCORD_TOOLS',
     'DISCORD_INFO_CHANNEL',
+    'DISCORD_WEEKLY_CHALLENGES',
     'PERPLEXITY_API_KEY'
   ];
 
@@ -45,7 +47,8 @@ async function main() {
     weeks: process.env.NOTION_DATABASE_WEEKS!,
     groups: process.env.NOTION_DATABASE_GROUPS!,
     personality: process.env.NOTION_DATABASE_PERSONALITY!,
-    pricePool: process.env.NOTION_DATABASE_PRICE_POOL!
+    pricePool: process.env.NOTION_DATABASE_PRICE_POOL!,
+    challengeProofs: process.env.NOTION_DATABASE_CHALLENGE_PROOFS!
   });
 
   // Initialize and start bot

@@ -101,19 +101,33 @@ export class WeeklyAgentScheduler {
         throw new Error(`User not found for Discord ID: ${this.marcDiscordId}`);
       }
 
+      // Debug: Log user status
+      console.log('🔍 User status check:', {
+        userId: user.id,
+        userName: user.name,
+        status: user.status,
+        statusType: typeof user.status,
+        statusValue: JSON.stringify(user.status)
+      });
+
       // Check if user is paused - skip analysis if paused
-      if (user.status === 'pause') {
+      // Only skip if status is explicitly 'pause', not if it's undefined/null/empty
+      if (user.status && user.status === 'pause') {
         await this.logger.info(
           'WEEKLY_SCHEDULER',
           'User Paused - Skipping Analysis',
           `User ${user.name} is paused, skipping weekly analysis`,
           {
             userId: user.id,
-            pauseReason: user.pauseReason || 'not specified'
+            pauseReason: user.pauseReason || 'not specified',
+            status: user.status
           }
         );
         throw new Error(`User ${user.name} is paused - skipping weekly analysis`);
       }
+
+      // If status is not 'pause', continue with analysis (even if status is undefined/null)
+      console.log('✅ User is active, proceeding with analysis');
 
       // Get current habits
       const habits = await this.notion.getHabitsByUserId(user.id);

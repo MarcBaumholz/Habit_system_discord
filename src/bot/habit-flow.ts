@@ -17,18 +17,30 @@ import { Habit, User } from '../types';
 type SendableChannel = TextBasedChannel & { send: TextChannel['send'] };
 
 interface HabitModalCache {
+  // Day selector data
+  selectedDays: string[];
+
   // Modal 1 data
   name: string;
   domains: string;
-  frequency: string;
   context: string;
   difficulty: string;
 
-  // Modal 2 data (added after second modal)
+  // Modal 2 data
   smartGoal?: string;
   why?: string;
   minimalDose?: string;
   habitLoop?: string;
+  consequences?: string;
+
+  // Modal 3 data
+  curiosityPassionPurpose?: string;
+  autonomy?: string;
+  hurdles?: string;
+  reminderType?: string;
+
+  // Modal 4 data
+  commitmentSignature?: string;
 
   // User data
   userId: string;
@@ -39,9 +51,11 @@ export class HabitFlowManager {
   private notion: NotionClient;
   private modalCache: Map<string, HabitModalCache> = new Map();
   private readonly CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+  private personalAssistant?: any; // Optional - will be set if available
 
-  constructor(notion: NotionClient) {
+  constructor(notion: NotionClient, personalAssistant?: any) {
     this.notion = notion;
+    this.personalAssistant = personalAssistant;
 
     // Cleanup stale cache entries every 5 minutes
     setInterval(() => {
@@ -120,23 +134,23 @@ export class HabitFlowManager {
       return;
     }
 
-    // Show Modal 1 immediately
-    await this.showModal1(message, user);
-  }
-
-  private async showModal1(message: Message, user: User) {
-    const textChannel = message.channel as TextChannel;
-
-    // Store user ID in cache for later
+    // Initialize cache
     this.modalCache.set(message.author.id, {
+      selectedDays: [],
       name: '',
       domains: '',
-      frequency: '',
       context: '',
       difficulty: '',
       userId: user.id,
       timestamp: Date.now()
     });
+
+    // Show Modal 1 first (Basics)
+    await this.showModal1(message, user);
+  }
+
+  private async showModal1(message: Message, user: User) {
+    const textChannel = message.channel as TextChannel;
 
     // Create button to trigger the modal
     const button = new ButtonBuilder()
@@ -156,6 +170,87 @@ export class HabitFlowManager {
     }
   }
 
+  private async showDaySelector(messageOrInteraction: Message | ButtonInteraction, user: User) {
+    const isMessage = 'channel' in messageOrInteraction && 'author' in messageOrInteraction;
+    const textChannel = (isMessage 
+      ? (messageOrInteraction as Message).channel 
+      : (messageOrInteraction as ButtonInteraction).channel) as TextChannel;
+    const discordId = isMessage 
+      ? (messageOrInteraction as Message).author.id 
+      : (messageOrInteraction as ButtonInteraction).user.id;
+    const cachedData = this.modalCache.get(discordId);
+
+    if (!cachedData) {
+      if (isMessage) {
+        await textChannel.send('❌ Session expired. Please type "keystone habit" again.');
+      } else {
+        await (messageOrInteraction as ButtonInteraction).reply({
+          content: '❌ Session expired. Please type "keystone habit" again.',
+          ephemeral: true
+        });
+      }
+      return;
+    }
+
+    const selectedDays = cachedData.selectedDays || [];
+    const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayEmojis = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    // Create day buttons
+    const dayButtons = dayLabels.map((day, index) => {
+      const isSelected = selectedDays.includes(day);
+      const button = new ButtonBuilder()
+        .setCustomId(`day_${day.toLowerCase()}`)
+        .setLabel(`${isSelected ? '✅' : '⭕'} ${dayEmojis[index]}`)
+        .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
+      return button;
+    });
+
+    // Create action rows (max 5 buttons per row)
+    const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(dayButtons.slice(0, 4));
+    const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(dayButtons.slice(4, 7));
+
+    // Continue button
+    const continueButton = new ButtonBuilder()
+      .setCustomId('day_selector_continue')
+      .setLabel('Step 1/4: Continue to Basics')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(selectedDays.length === 0);
+
+    const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(continueButton);
+
+    const selectedText = selectedDays.length > 0 
+      ? `**Selected:** ${selectedDays.join(', ')} (${selectedDays.length} days/week)`
+      : '**Select at least one day**';
+
+    const content = `📅 **Select Days for Your Habit**\n\nClick the circles to select which days you want to do this habit:\n\n${selectedText}\n\n*You can change your selection anytime before continuing.*`;
+
+    try {
+      if (isMessage) {
+        await textChannel.send({
+          content,
+          components: [row1, row2, row3]
+        });
+      } else {
+        const buttonInteraction = messageOrInteraction as ButtonInteraction;
+        if (buttonInteraction.replied || buttonInteraction.deferred) {
+          await buttonInteraction.followUp({
+            content,
+            components: [row1, row2, row3]
+          });
+        } else {
+          await buttonInteraction.reply({
+            content,
+            components: [row1, row2, row3],
+            ephemeral: false
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to send day selector:', error);
+    }
+  }
+
   async handleButtonInteraction(interaction: ButtonInteraction): Promise<void> {
     const discordId = interaction.user.id;
     const cachedData = this.modalCache.get(discordId);
@@ -168,13 +263,110 @@ export class HabitFlowManager {
       return;
     }
 
+    // Handle day selector buttons
+    if (interaction.customId.startsWith('day_')) {
+      if (interaction.customId === 'day_selector_continue') {
+        if (cachedData.selectedDays.length === 0) {
+          await interaction.reply({
+            content: '❌ Please select at least one day before continuing.',
+            ephemeral: true
+          });
+          return;
+        }
+        // After day selection, show button to continue to Modal 2
+        const button = new ButtonBuilder()
+          .setCustomId('keystone_modal_2_trigger')
+          .setLabel('Step 2/4: Goals & Motivation')
+          .setStyle(ButtonStyle.Primary);
+
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+
+        await interaction.update({
+          content: `✅ **Days selected!** Continue to the next step:`,
+          components: [row]
+        });
+        return;
+      }
+
+      // Toggle day selection
+      const dayMap: { [key: string]: string } = {
+        'day_mon': 'Mon',
+        'day_tue': 'Tue',
+        'day_wed': 'Wed',
+        'day_thu': 'Thu',
+        'day_fri': 'Fri',
+        'day_sat': 'Sat',
+        'day_sun': 'Sun'
+      };
+
+      const selectedDay = dayMap[interaction.customId];
+      if (selectedDay) {
+        const index = cachedData.selectedDays.indexOf(selectedDay);
+        if (index > -1) {
+          cachedData.selectedDays.splice(index, 1);
+        } else {
+          cachedData.selectedDays.push(selectedDay);
+        }
+        cachedData.timestamp = Date.now();
+        this.modalCache.set(discordId, cachedData);
+
+        // Update the message with new selection
+        await this.updateDaySelectorMessage(interaction, cachedData);
+      }
+      return;
+    }
+
     // Handle different button triggers
     if (interaction.customId === 'keystone_habit_start') {
+      // Start flow - show Modal 1
       await this.showModal1FromButton(interaction);
     } else if (interaction.customId === 'keystone_modal_2_trigger') {
       await this.showModal2(interaction);
     } else if (interaction.customId === 'keystone_modal_3_trigger') {
       await this.showModal3(interaction);
+    } else if (interaction.customId === 'keystone_modal_4_trigger') {
+      await this.showModal4(interaction);
+    } else if (interaction.customId === 'keystone_summary_confirm') {
+      await this.showModal4(interaction);
+    }
+  }
+
+  private async updateDaySelectorMessage(interaction: ButtonInteraction, cachedData: HabitModalCache) {
+    const selectedDays = cachedData.selectedDays || [];
+    const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayEmojis = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    const dayButtons = dayLabels.map((day, index) => {
+      const isSelected = selectedDays.includes(day);
+      const button = new ButtonBuilder()
+        .setCustomId(`day_${day.toLowerCase()}`)
+        .setLabel(`${isSelected ? '✅' : '⭕'} ${dayEmojis[index]}`)
+        .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
+      return button;
+    });
+
+    const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(dayButtons.slice(0, 4));
+    const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(dayButtons.slice(4, 7));
+
+    const continueButton = new ButtonBuilder()
+      .setCustomId('day_selector_continue')
+      .setLabel('Step 2/4: Continue to Goals & Motivation')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(selectedDays.length === 0);
+
+    const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(continueButton);
+
+    const selectedText = selectedDays.length > 0 
+      ? `**Selected:** ${selectedDays.join(', ')} (${selectedDays.length} days/week)`
+      : '**Select at least one day**';
+
+    try {
+      await interaction.update({
+        content: `✅ **Basics saved!**\n\n📅 **Now select which days you want to do this habit:**\n\n${selectedText}\n\n*You can change your selection anytime before continuing.*`,
+        components: [row1, row2, row3]
+      });
+    } catch (error) {
+      console.error('Failed to update day selector:', error);
     }
   }
 
@@ -182,14 +374,14 @@ export class HabitFlowManager {
     // Build Modal 1
     const modal = new ModalBuilder()
       .setCustomId('keystone_modal_1')
-      .setTitle('🔥 Keystone Habit - Basics');
+      .setTitle('Step 1/4: Basics');
 
     // Field 1: Name
     const nameInput = new TextInputBuilder()
       .setCustomId('name')
       .setLabel('What do you want to call this habit?')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('z.B. Morgen-Meditation, Fitness Training, Lesen')
+      .setPlaceholder('e.g. Morning Meditation, Fitness Training')
       .setRequired(true);
 
     // Field 2: Domains
@@ -197,41 +389,32 @@ export class HabitFlowManager {
       .setCustomId('domains')
       .setLabel('Which life categories? (comma-separated)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('z.B. mental health, productivity, fitness')
+      .setPlaceholder('e.g. mental health, productivity, fitness')
       .setRequired(true);
 
-    // Field 3: Frequency
-    const frequencyInput = new TextInputBuilder()
-      .setCustomId('frequency')
-      .setLabel('How many days per week? (1-7)')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('z.B. 7 (täglich), 5 (werktags), 3 (3x pro Woche)')
-      .setRequired(true);
-
-    // Field 4: Context
+    // Field 3: Context
     const contextInput = new TextInputBuilder()
       .setCustomId('context')
       .setLabel('When and where will you do it?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('z.B. Morgens um 7 Uhr in meinem Zimmer, nach dem Aufwachen')
+      .setPlaceholder('e.g. Morning at 7am in my bedroom, after waking up')
       .setRequired(true);
 
-    // Field 5: Difficulty
+    // Field 4: Difficulty
     const difficultyInput = new TextInputBuilder()
       .setCustomId('difficulty')
       .setLabel('Difficulty level? (easy/medium/hard)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('easy, medium oder hard')
+      .setPlaceholder('easy, medium, or hard')
       .setRequired(true);
 
     // Create action rows (max 5 per modal)
     const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(nameInput);
     const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(domainsInput);
-    const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(frequencyInput);
-    const row4 = new ActionRowBuilder<TextInputBuilder>().addComponents(contextInput);
-    const row5 = new ActionRowBuilder<TextInputBuilder>().addComponents(difficultyInput);
+    const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(contextInput);
+    const row4 = new ActionRowBuilder<TextInputBuilder>().addComponents(difficultyInput);
 
-    modal.addComponents(row1, row2, row3, row4, row5);
+    modal.addComponents(row1, row2, row3, row4);
 
     try {
       await interaction.showModal(modal);
@@ -254,6 +437,8 @@ export class HabitFlowManager {
         await this.handleModal2Submit(interaction, discordId);
       } else if (interaction.customId === 'keystone_modal_3') {
         await this.handleModal3Submit(interaction, discordId);
+      } else if (interaction.customId === 'keystone_modal_4') {
+        await this.handleModal4Submit(interaction, discordId);
       }
     } catch (error) {
       console.error('Error handling modal submit:', error);
@@ -264,101 +449,80 @@ export class HabitFlowManager {
     }
   }
 
-  private async handleModal1Submit(interaction: ModalSubmitInteraction, discordId: string) {
-    // Extract values from Modal 1
-    const name = interaction.fields.getTextInputValue('name');
-    const domains = interaction.fields.getTextInputValue('domains');
-    const frequency = interaction.fields.getTextInputValue('frequency');
-    const context = interaction.fields.getTextInputValue('context');
-    const difficulty = interaction.fields.getTextInputValue('difficulty');
+  private async showSummary(interaction: ModalSubmitInteraction, cachedData: HabitModalCache) {
+    const selectedDaysText = cachedData.selectedDays.length > 0 
+      ? cachedData.selectedDays.join(', ') 
+      : 'Not selected';
+    const frequency = cachedData.selectedDays.length;
 
-    // Get cached data
-    const cachedData = this.modalCache.get(discordId);
-    if (!cachedData) {
-      await interaction.reply({
-        content: '❌ Session abgelaufen. Bitte starte den Flow neu mit "keystone habit".',
-        ephemeral: true
-      });
-      return;
-    }
+    const summary = `📋 **Step 4/4: Review Your Habit Contract**
 
-    // Update cache with Modal 1 data
-    cachedData.name = name;
-    cachedData.domains = domains;
-    cachedData.frequency = frequency;
-    cachedData.context = context;
-    cachedData.difficulty = difficulty;
-    cachedData.timestamp = Date.now();
-    this.modalCache.set(discordId, cachedData);
+**Basics:**
+• **Name:** ${cachedData.name}
+• **Domains:** ${cachedData.domains}
+• **Days:** ${selectedDaysText} (${frequency}x/week)
+• **Context:** ${cachedData.context}
+• **Difficulty:** ${cachedData.difficulty}
 
-    // Send button for Modal 2
-    const button = new ButtonBuilder()
-      .setCustomId('keystone_modal_2_trigger')
-      .setLabel('📝 Continue to Goals & Motivation')
-      .setStyle(ButtonStyle.Primary);
+**Goals & Motivation:**
+• **SMART Goal:** ${cachedData.smartGoal}
+• **Epic Meaning:** ${cachedData.why}
+• **Minimal Dose:** ${cachedData.minimalDose}
+• **Habit Loop:** ${cachedData.habitLoop}
+• **Consequences:** ${cachedData.consequences}
 
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+**Reflection & Planning:**
+• **Curiosity/Passion/Purpose:** ${cachedData.curiosityPassionPurpose}
+• **Autonomy:** ${cachedData.autonomy}
+• **Hurdles:** ${cachedData.hurdles}
+• **Reminder:** ${cachedData.reminderType}
+
+**Ready to commit to 66 days?**`;
+
+    const confirmButton = new ButtonBuilder()
+      .setCustomId('keystone_summary_confirm')
+      .setLabel('Step 4/4: Sign 66-Day Commitment')
+      .setStyle(ButtonStyle.Success);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(confirmButton);
 
     await interaction.reply({
-      content: '✅ **Basics gespeichert!** Weiter zum nächsten Schritt:',
+      content: summary,
       components: [row],
-      ephemeral: true
+      ephemeral: false
     });
   }
 
-  private async showModal2(interaction: ButtonInteraction) {
+  private async showModal4(interaction: ButtonInteraction) {
     const modal = new ModalBuilder()
-      .setCustomId('keystone_modal_2')
-      .setTitle('🎯 Keystone Habit - Goals & Motivation');
+      .setCustomId('keystone_modal_4')
+      .setTitle('Step 4/4: 66-Day Commitment');
 
-    // Field 1: SMART Goal
-    const smartGoalInput = new TextInputBuilder()
-      .setCustomId('smartGoal')
-      .setLabel('What is the SMART goal for this habit?')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('z.B. 10 Minuten täglich meditieren für besseren Fokus in 66 Tagen')
-      .setRequired(true);
-
-    // Field 2: Why
-    const whyInput = new TextInputBuilder()
-      .setCustomId('why')
-      .setLabel('Why is this habit important for you?')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('z.B. Ich will meine Konzentration verbessern und weniger gestresst sein')
-      .setRequired(true);
-
-    // Field 3: Minimal Dose
-    const minimalDoseInput = new TextInputBuilder()
-      .setCustomId('minimalDose')
-      .setLabel('Minimal dose on tough days?')
+    const commitmentInput = new TextInputBuilder()
+      .setCustomId('commitmentSignature')
+      .setLabel('Type "I commit" to sign contract')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('z.B. 2 Minuten, 5 Liegestütze, 1 Seite lesen')
+      .setPlaceholder('I commit')
       .setRequired(true);
 
-    // Field 4: Habit Loop
-    const habitLoopInput = new TextInputBuilder()
-      .setCustomId('habitLoop')
-      .setLabel('Habit loop (cue → routine → reward)')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('z.B. Cue: Wecker → Routine: 10 Min Meditation → Reward: Kaffee trinken')
-      .setRequired(true);
+    const row = new ActionRowBuilder<TextInputBuilder>().addComponents(commitmentInput);
 
-    const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(smartGoalInput);
-    const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(whyInput);
-    const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(minimalDoseInput);
-    const row4 = new ActionRowBuilder<TextInputBuilder>().addComponents(habitLoopInput);
-
-    modal.addComponents(row1, row2, row3, row4);
+    modal.addComponents(row);
 
     await interaction.showModal(modal);
   }
 
-  private async handleModal2Submit(interaction: ModalSubmitInteraction, discordId: string) {
-    // Extract values from Modal 2
-    const smartGoal = interaction.fields.getTextInputValue('smartGoal');
-    const why = interaction.fields.getTextInputValue('why');
-    const minimalDose = interaction.fields.getTextInputValue('minimalDose');
-    const habitLoop = interaction.fields.getTextInputValue('habitLoop');
+  private async handleModal4Submit(interaction: ModalSubmitInteraction, discordId: string) {
+    const commitmentSignature = interaction.fields.getTextInputValue('commitmentSignature');
+
+    // Validate commitment signature
+    if (commitmentSignature.trim().toLowerCase() !== 'i commit') {
+      await interaction.reply({
+        content: '❌ Please type exactly "I commit" (case-insensitive) to confirm your 66-day commitment.',
+        ephemeral: true
+      });
+      return;
+    }
 
     // Get cached data
     const cachedData = this.modalCache.get(discordId);
@@ -370,100 +534,13 @@ export class HabitFlowManager {
       return;
     }
 
-    // Update cache with Modal 2 data
-    cachedData.smartGoal = smartGoal;
-    cachedData.why = why;
-    cachedData.minimalDose = minimalDose;
-    cachedData.habitLoop = habitLoop;
+    // Update cache with commitment
+    cachedData.commitmentSignature = commitmentSignature;
     cachedData.timestamp = Date.now();
     this.modalCache.set(discordId, cachedData);
-
-    // Send button for Modal 3
-    const button = new ButtonBuilder()
-      .setCustomId('keystone_modal_3_trigger')
-      .setLabel('📋 Continue to Planning & Support')
-      .setStyle(ButtonStyle.Primary);
-
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
-
-    await interaction.reply({
-      content: '✅ **Goals & Motivation gespeichert!** Letzter Schritt:',
-      components: [row],
-      ephemeral: true
-    });
-  }
-
-  private async showModal3(interaction: ButtonInteraction) {
-    const modal = new ModalBuilder()
-      .setCustomId('keystone_modal_3')
-      .setTitle('📋 Keystone Habit - Planning & Support');
-
-    // Field 1: Implementation Intentions
-    const implementationIntentionsInput = new TextInputBuilder()
-      .setCustomId('implementationIntentions')
-      .setLabel('Implementation intentions (If-then plans)')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('z.B. Wenn Wecker klingelt, dann Meditation starten. Wenn ich müde bin, dann minimal dose machen.')
-      .setRequired(true);
-
-    // Field 2: Hurdles
-    const hurdlesInput = new TextInputBuilder()
-      .setCustomId('hurdles')
-      .setLabel('What hurdles might get in the way?')
-      .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('z.B. Zu müde morgens, Zeitdruck, Vergesslichkeit, Familie stört')
-      .setRequired(true);
-
-    // Field 3: Reminder Type
-    const reminderTypeInput = new TextInputBuilder()
-      .setCustomId('reminderType')
-      .setLabel('How do you want to be reminded?')
-      .setStyle(TextInputStyle.Short)
-      .setPlaceholder('z.B. Discord DM, Personal Channel, Keine Reminder')
-      .setRequired(true);
-
-    const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(implementationIntentionsInput);
-    const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(hurdlesInput);
-    const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(reminderTypeInput);
-
-    modal.addComponents(row1, row2, row3);
-
-    await interaction.showModal(modal);
-  }
-
-  private async handleModal3Submit(interaction: ModalSubmitInteraction, discordId: string) {
-    // Extract values from Modal 3
-    const implementationIntentions = interaction.fields.getTextInputValue('implementationIntentions');
-    const hurdles = interaction.fields.getTextInputValue('hurdles');
-    const reminderType = interaction.fields.getTextInputValue('reminderType');
-
-    // Get cached data
-    const cachedData = this.modalCache.get(discordId);
-    if (!cachedData) {
-      await interaction.reply({
-        content: '❌ Session abgelaufen. Bitte starte den Flow neu mit "keystone habit".',
-        ephemeral: true
-      });
-      return;
-    }
-
-    // Validate all data is present
-    if (!cachedData.smartGoal || !cachedData.why || !cachedData.minimalDose || !cachedData.habitLoop) {
-      await interaction.reply({
-        content: '❌ Daten fehlen. Bitte starte den Flow neu mit "keystone habit".',
-        ephemeral: true
-      });
-      this.modalCache.delete(discordId);
-      return;
-    }
 
     // Build complete habit payload
-    const habitPayload = this.buildHabitPayloadFromCache(
-      cachedData,
-      implementationIntentions,
-      hurdles,
-      reminderType
-    );
+    const habitPayload = this.buildHabitPayloadFromCache(cachedData);
 
     try {
       // Save to Notion
@@ -471,9 +548,22 @@ export class HabitFlowManager {
 
       console.log('✅ Keystone habit created via modal flow:', habit.id);
 
+      // Regenerate AI profile after habit creation
+      if (this.personalAssistant) {
+        try {
+          await this.personalAssistant.regenerateProfile(discordId);
+        } catch (error) {
+          console.error('⚠️ Error regenerating AI profile after habit creation:', error);
+        }
+      }
+
       // Send success message
+      const selectedDaysText = cachedData.selectedDays.length > 0 
+        ? cachedData.selectedDays.join(', ') 
+        : 'Not selected';
+
       await interaction.reply({
-        content: `🎉 **Keystone Habit erstellt!**\n\n**${habit.name}** wurde erfolgreich gespeichert!\n\n✨ Domains: ${habit.domains.join(', ')}\n📅 Frequency: ${habit.frequency}x pro Woche\n💪 Minimal Dose: ${habit.minimalDose}\n\nNutze jetzt \`/proof\` um deine täglichen Beweise zu tracken!`,
+        content: `🎉 **Keystone Habit Created!**\n\n**${habit.name}** has been successfully saved!\n\n✨ **Domains:** ${habit.domains.join(', ')}\n📅 **Days:** ${selectedDaysText} (${habit.frequency}x/week)\n💪 **Minimal Dose:** ${habit.minimalDose}\n✅ **66-Day Commitment:** Signed\n\nUse \`/proof\` to track your daily proofs!`,
         ephemeral: false
       });
 
@@ -491,36 +581,296 @@ export class HabitFlowManager {
     }
   }
 
-  private buildHabitPayloadFromCache(
-    cache: HabitModalCache,
-    implementationIntentions: string,
-    hurdles: string,
-    reminderType: string
-  ): Omit<Habit, 'id'> {
+  private async handleModal1Submit(interaction: ModalSubmitInteraction, discordId: string) {
+    // Extract values from Modal 1
+    const name = interaction.fields.getTextInputValue('name');
+    const domains = interaction.fields.getTextInputValue('domains');
+    const context = interaction.fields.getTextInputValue('context');
+    const difficulty = interaction.fields.getTextInputValue('difficulty');
+
+    // Get cached data
+    const cachedData = this.modalCache.get(discordId);
+    if (!cachedData) {
+      await interaction.reply({
+        content: '❌ Session abgelaufen. Bitte starte den Flow neu mit "keystone habit".',
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Update cache with Modal 1 data
+    cachedData.name = name;
+    cachedData.domains = domains;
+    cachedData.context = context;
+    cachedData.difficulty = difficulty;
+    cachedData.timestamp = Date.now();
+    this.modalCache.set(discordId, cachedData);
+
+    // After Modal 1, show day selector (mid-level step)
+    await this.showDaySelectorAfterModal1(interaction, cachedData);
+  }
+
+  private async showDaySelectorAfterModal1(interaction: ModalSubmitInteraction, cachedData: HabitModalCache) {
+    const selectedDays = cachedData.selectedDays || [];
+    const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayEmojis = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    // Create day buttons
+    const dayButtons = dayLabels.map((day, index) => {
+      const isSelected = selectedDays.includes(day);
+      const button = new ButtonBuilder()
+        .setCustomId(`day_${day.toLowerCase()}`)
+        .setLabel(`${isSelected ? '✅' : '⭕'} ${dayEmojis[index]}`)
+        .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
+      return button;
+    });
+
+    // Create action rows (max 5 buttons per row)
+    const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(dayButtons.slice(0, 4));
+    const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(dayButtons.slice(4, 7));
+
+    // Continue button
+    const continueButton = new ButtonBuilder()
+      .setCustomId('day_selector_continue')
+      .setLabel('Step 2/4: Continue to Goals & Motivation')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(selectedDays.length === 0);
+
+    const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(continueButton);
+
+    const selectedText = selectedDays.length > 0 
+      ? `**Selected:** ${selectedDays.join(', ')} (${selectedDays.length} days/week)`
+      : '**Select at least one day**';
+
+    const content = `✅ **Basics saved!**\n\n📅 **Now select which days you want to do this habit:**\n\n${selectedText}\n\n*You can change your selection anytime before continuing.*`;
+
+    try {
+      await interaction.reply({
+        content,
+        components: [row1, row2, row3],
+        ephemeral: false
+      });
+    } catch (error) {
+      console.error('Failed to send day selector:', error);
+      await interaction.reply({
+        content: '✅ **Basics saved!** Please type "keystone habit" again to continue.',
+        ephemeral: true
+      });
+    }
+  }
+
+  private async showModal2(interaction: ButtonInteraction) {
+    const modal = new ModalBuilder()
+      .setCustomId('keystone_modal_2')
+      .setTitle('Step 2/4: Goals & Motivation');
+
+    // Field 1: SMART Goal
+    const smartGoalInput = new TextInputBuilder()
+      .setCustomId('smartGoal')
+      .setLabel('Enter a clear SMART goal')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Balance challenge & skill. e.g. Meditate 10 min daily for better focus in 66 days')
+      .setRequired(true);
+
+    // Field 2: Epic Meaning / Big Why
+    const whyInput = new TextInputBuilder()
+      .setCustomId('why')
+      .setLabel('What is your epic meaning?')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Define your big why - why this truly matters to you')
+      .setRequired(true);
+
+    // Field 3: Minimal Dose
+    const minimalDoseInput = new TextInputBuilder()
+      .setCustomId('minimalDose')
+      .setLabel('Minimal dose (0.8 rule)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('e.g. 2 min meditation, 5 push-ups, 1 page read')
+      .setRequired(true);
+
+    // Field 4: Habit Loop
+    const habitLoopInput = new TextInputBuilder()
+      .setCustomId('habitLoop')
+      .setLabel('Habit loop (cue → routine → reward)')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('e.g. Cue: Alarm → Routine: 10min meditation → Reward: Coffee')
+      .setRequired(true);
+
+    // Field 5: Consequences
+    const consequencesInput = new TextInputBuilder()
+      .setCustomId('consequences')
+      .setLabel('Consequences of not committing?')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('What happens if you don\'t do this habit? What are the costs?')
+      .setRequired(true);
+
+    const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(smartGoalInput);
+    const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(whyInput);
+    const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(minimalDoseInput);
+    const row4 = new ActionRowBuilder<TextInputBuilder>().addComponents(habitLoopInput);
+    const row5 = new ActionRowBuilder<TextInputBuilder>().addComponents(consequencesInput);
+
+    modal.addComponents(row1, row2, row3, row4, row5);
+
+    await interaction.showModal(modal);
+  }
+
+  private async handleModal2Submit(interaction: ModalSubmitInteraction, discordId: string) {
+    // Extract values from Modal 2
+    const smartGoal = interaction.fields.getTextInputValue('smartGoal');
+    const why = interaction.fields.getTextInputValue('why');
+    const minimalDose = interaction.fields.getTextInputValue('minimalDose');
+    const habitLoop = interaction.fields.getTextInputValue('habitLoop');
+    const consequences = interaction.fields.getTextInputValue('consequences');
+
+    // Get cached data
+    const cachedData = this.modalCache.get(discordId);
+    if (!cachedData) {
+      await interaction.reply({
+        content: '❌ Session abgelaufen. Bitte starte den Flow neu mit "keystone habit".',
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Update cache with Modal 2 data
+    cachedData.smartGoal = smartGoal;
+    cachedData.why = why;
+    cachedData.minimalDose = minimalDose;
+    cachedData.habitLoop = habitLoop;
+    cachedData.consequences = consequences;
+    cachedData.timestamp = Date.now();
+    this.modalCache.set(discordId, cachedData);
+
+    // Send button for Modal 3
+    const button = new ButtonBuilder()
+      .setCustomId('keystone_modal_3_trigger')
+      .setLabel('Step 3/4: Reflection & Planning')
+      .setStyle(ButtonStyle.Primary);
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+
+    await interaction.reply({
+      content: '✅ **Goals & Motivation saved!** Continue to the next step:',
+      components: [row],
+      ephemeral: true
+    });
+  }
+
+  private async showModal3(interaction: ButtonInteraction) {
+    const modal = new ModalBuilder()
+      .setCustomId('keystone_modal_3')
+      .setTitle('Step 3/4: Reflection & Planning');
+
+    // Field 1: Curiosity/Passion/Purpose
+    const curiosityPassionPurposeInput = new TextInputBuilder()
+      .setCustomId('curiosityPassionPurpose')
+      .setLabel('Curiosity, passion & purpose?')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('What makes you curious? Which passion? What higher purpose?')
+      .setRequired(true);
+
+    // Field 2: Autonomy
+    const autonomyInput = new TextInputBuilder()
+      .setCustomId('autonomy')
+      .setLabel('How does this give you control?')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Describe your perfect vision of this habit autonomously integrated')
+      .setRequired(true);
+
+    // Field 3: Hurdles
+    const hurdlesInput = new TextInputBuilder()
+      .setCustomId('hurdles')
+      .setLabel('What hurdles might get in the way?')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('e.g. Too tired mornings, time pressure, forgetfulness, family interruptions')
+      .setRequired(true);
+
+    // Field 4: Reminder Type
+    const reminderTypeInput = new TextInputBuilder()
+      .setCustomId('reminderType')
+      .setLabel('How to be reminded?')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('e.g. Discord DM, Calendar, Phone Alarm')
+      .setRequired(true);
+
+    const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(curiosityPassionPurposeInput);
+    const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(autonomyInput);
+    const row3 = new ActionRowBuilder<TextInputBuilder>().addComponents(hurdlesInput);
+    const row4 = new ActionRowBuilder<TextInputBuilder>().addComponents(reminderTypeInput);
+
+    modal.addComponents(row1, row2, row3, row4);
+
+    await interaction.showModal(modal);
+  }
+
+  private async handleModal3Submit(interaction: ModalSubmitInteraction, discordId: string) {
+    // Extract values from Modal 3
+    const curiosityPassionPurpose = interaction.fields.getTextInputValue('curiosityPassionPurpose');
+    const autonomy = interaction.fields.getTextInputValue('autonomy');
+    const hurdles = interaction.fields.getTextInputValue('hurdles');
+    const reminderType = interaction.fields.getTextInputValue('reminderType');
+
+    // Get cached data
+    const cachedData = this.modalCache.get(discordId);
+    if (!cachedData) {
+      await interaction.reply({
+        content: '❌ Session abgelaufen. Bitte starte den Flow neu mit "keystone habit".',
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Update cache with Modal 3 data
+    cachedData.curiosityPassionPurpose = curiosityPassionPurpose;
+    cachedData.autonomy = autonomy;
+    cachedData.hurdles = hurdles;
+    cachedData.reminderType = reminderType;
+    cachedData.timestamp = Date.now();
+    this.modalCache.set(discordId, cachedData);
+
+    // Validate all required data is present
+    if (!cachedData.smartGoal || !cachedData.why || !cachedData.minimalDose || !cachedData.habitLoop) {
+      await interaction.reply({
+        content: '❌ Daten fehlen. Bitte starte den Flow neu mit "keystone habit".',
+        ephemeral: true
+      });
+      this.modalCache.delete(discordId);
+      return;
+    }
+
+    // Show summary before final submission
+    await this.showSummary(interaction, cachedData);
+  }
+
+  private buildHabitPayloadFromCache(cache: HabitModalCache): Omit<Habit, 'id'> {
     // Transform domains (split by comma)
     const domainsArray = cache.domains
       .split(',')
       .map(d => d.trim())
       .filter(Boolean);
 
-    // Transform frequency (parse and clamp 1-7)
-    const frequencyNum = parseInt(cache.frequency.replace(/[^0-9]/g, ''), 10);
-    const frequencyClamped = Math.max(1, Math.min(7, isNaN(frequencyNum) ? 1 : frequencyNum));
+    // Calculate frequency from selected days
+    const frequency = Math.max(1, Math.min(7, cache.selectedDays?.length || 1));
 
     return {
       userId: cache.userId,
       name: cache.name,
       domains: domainsArray,
-      frequency: frequencyClamped,
+      frequency: frequency,
+      selectedDays: cache.selectedDays || [],
       context: cache.context,
       difficulty: cache.difficulty,
       smartGoal: cache.smartGoal!,
       why: cache.why!,
       minimalDose: cache.minimalDose!,
       habitLoop: cache.habitLoop!,
-      implementationIntentions,
-      hurdles,
-      reminderType
+      hurdles: cache.hurdles!,
+      reminderType: cache.reminderType!,
+      autonomy: cache.autonomy,
+      curiosityPassionPurpose: cache.curiosityPassionPurpose,
+      consequences: cache.consequences,
+      commitmentSignature: cache.commitmentSignature
     };
   }
 

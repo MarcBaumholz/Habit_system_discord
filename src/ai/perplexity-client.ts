@@ -56,14 +56,14 @@ export class PerplexityClient {
           messages: [
             {
               role: 'system',
-              content: `You are a helpful AI assistant for a habit tracking system. You have access to the user's personal data including their habits, progress, and goals. Provide helpful, encouraging, and actionable advice based on their data. Be concise but informative.`
+              content: `You are a helpful AI assistant for a habit tracking system. You have access to the user's personal data including their habits, progress, goals, and personality profile. Provide helpful, encouraging, and actionable advice based on their data. Consider their personality type and core values when giving recommendations. Be concise but informative, and personalize your responses to match their communication style and preferences.`
             },
             {
               role: 'user',
               content: fullPrompt
             }
           ],
-          max_tokens: 500,
+          max_tokens: 2000,
           temperature: 0.7,
           top_p: 0.9
         };
@@ -95,6 +95,11 @@ export class PerplexityClient {
 
         const data: PerplexityResponse = await response.json();
         console.log('📥 Response data:', JSON.stringify(data, null, 2));
+        
+        // Log token usage
+        if (data.usage) {
+          console.log(`📊 Token usage - Prompt: ${data.usage.prompt_tokens}, Completion: ${data.usage.completion_tokens}, Total: ${data.usage.total_tokens}`);
+        }
         
         if (data.choices && data.choices.length > 0) {
           const content = data.choices[0].message.content;

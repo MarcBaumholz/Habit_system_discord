@@ -102,6 +102,10 @@ notion-backup/
 *.sqlite
 *.sqlite3
 
+# User profile files (generated Markdown profiles)
+data/profiles/
+data/profile-metadata.json
+
 # Certificate files
 *.pem
 *.crt

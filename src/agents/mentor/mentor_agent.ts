@@ -74,7 +74,7 @@ export class MentorAgent extends BaseAgent {
 
       switch (requestType) {
         case 'weekly_analysis':
-          response = await this.performWeeklyAnalysis(userContext);
+          response = await this.performWeeklyAnalysis(userContext, metadata);
           break;
         case 'habit_feedback':
           response = await this.provideHabitFeedback(userContext, request);
@@ -141,7 +141,7 @@ export class MentorAgent extends BaseAgent {
   // CORE MENTOR FUNCTIONS
   // ============================================================================
 
-  private async performWeeklyAnalysis(userContext: UserContext): Promise<MentorResponse> {
+  private async performWeeklyAnalysis(userContext: UserContext, metadata?: Record<string, any>): Promise<MentorResponse> {
     this.log('info', 'Performing weekly analysis', { user_id: userContext.user.id });
 
     // Get recent proofs for analysis
@@ -151,8 +151,17 @@ export class MentorAgent extends BaseAgent {
       return proofDate >= weekAgo;
     });
 
+    // Get buddy progress if provided
+    const buddyProgress = metadata?.buddyProgress as any;
+
     // Analyze habit patterns
     const habitAnalysis = await this.analyzeHabitsForWeek(userContext.current_habits, recentProofs);
+    
+    // Generate adaptive goals recommendations
+    const adaptiveGoalsRecommendations = this.generateAdaptiveGoalsRecommendations(
+      habitAnalysis,
+      userContext.current_habits
+    );
     
     // Generate insights
     const patternInsights = await this.extractPatternInsights(userContext, recentProofs);
@@ -162,6 +171,21 @@ export class MentorAgent extends BaseAgent {
     
     // Assess progress
     const progressAssessment = await this.assessProgress(userContext, recentProofs);
+
+    // Build buddy context section if buddy progress is available
+    let buddyContextSection = '';
+    if (buddyProgress) {
+      buddyContextSection = `
+
+=== YOUR BUDDY'S PROGRESS ===
+👥 **Buddy:** ${buddyProgress.nickname}
+- Completion Rate: ${buddyProgress.completionRate}%
+- Current Streak: ${buddyProgress.currentStreak} days
+- Habits Tracked: ${buddyProgress.habits.length}
+- Proofs Submitted This Week: ${buddyProgress.proofs.length}
+${buddyProgress.habitsWithIssues.length > 0 ? `\n⚠️ **Habits Needing Attention:**\n${buddyProgress.habitsWithIssues.map((issue: any) => `- ${issue.habitName}: ${issue.actualFrequency}/${issue.targetFrequency} (Goal: ${issue.goal})`).join('\n')}` : '\n✅ All habits on track!'}
+`;
+    }
 
     const prompt = this.generateContextualPrompt(
       `ROLE: Senior habit formation mentor with expertise in behavioral psychology (BJ Fogg, James Clear), data-driven coaching, and pattern recognition.
@@ -178,16 +202,19 @@ COMPREHENSIVE WEEKLY DATA:
 - Best Streak This Week: ${recentProofs.length > 0 ? recentProofs.filter(p => p.completed).length : 0} days
 
 === HABIT BREAKDOWN ===
-${userContext.current_habits.map(habit => {
-  const habitProofs = recentProofs.filter(p => p.habit_id === habit.id);
-  const habitRate = habitProofs.length > 0 ? Math.round((habitProofs.filter(p => p.completed).length / habitProofs.length) * 100) : 0;
-  return `- ${habit.name}: ${habitRate}% completion (${habitProofs.filter(p => p.completed).length}/${habitProofs.length})`;
+${habitAnalysis.map(analysis => {
+  const habit = userContext.current_habits.find(h => h.id === analysis.habit_id);
+  const habitName = habit?.name || analysis.habit_id;
+  const targetFrequency = analysis.target_frequency ?? 0;
+  const actualProofs = analysis.actual_proofs ?? 0;
+  const completionRate = analysis.completion_rate ?? 0;
+  return `- ${habitName}: ${actualProofs}/${targetFrequency} completed (${Math.round(completionRate)}% of target)`;
 }).join('\n')}
 
 === TEMPORAL PATTERNS ===
 - Morning Completions: ${recentProofs.filter(p => p.completion_time && p.completion_time < 12).length}
 - Afternoon Completions: ${recentProofs.filter(p => p.completion_time && p.completion_time >= 12 && p.completion_time < 18).length}
-- Evening Completions: ${recentProofs.filter(p => p.completion_time && p.completion_time >= 18).length}
+- Evening Completions: ${recentProofs.filter(p => p.completion_time && p.completion_time >= 18).length}${buddyContextSection}
 
 ANALYSIS FRAMEWORK (Follow each step):
 
@@ -227,6 +254,29 @@ STEP 6 - Next Week Planning:
 - Quick Win: <easy change for immediate success>
 - Experiment: <one thing to try>
 
+STEP 7 - Adaptive Goals:
+For each habit, evaluate completion rate against target frequency:
+
+If completion rate >= 100%:
+- Acknowledge excellent performance
+- Suggest: "Consider improving challenge/skill balance - maybe raise your goal a little bit about reaching your habit or make it a little bit more complex"
+- Focus on: Skill-challenge balance, progressive difficulty
+
+If completion rate < 80%:
+- Identify the gap: Use the actual/target numbers from ADAPTIVE GOALS DATA below (e.g., "You completed X/Y - that's Z% of your goal")
+- Ask: "Why couldn't you achieve it? What were the hurdles?"
+- Suggest: "Maybe adjust your goal to make it more achievable" or "just your habit to make it more easy for you to achieve"
+- Focus on: Reducing barriers, simplifying, understanding obstacles
+
+If completion rate is 80-100%:
+- Acknowledge: "You're performing well within the optimal range"
+- No changes needed, maintain current goals
+
+ADAPTIVE GOALS DATA:
+${adaptiveGoalsRecommendations.map(rec => {
+  return `- ${rec.habit_name}: ${rec.completion_rate.toFixed(1)}% completion (${rec.threshold_category})`;
+}).join('\n')}
+
 EXAMPLE INSIGHTS:
 "Your morning habits show 90% success rate, while evening habits only 40%. This suggests energy management is key. Consider moving challenging habits to morning when willpower is highest."
 
@@ -238,6 +288,7 @@ Provide structured analysis covering:
 4. **Root Cause** (primary issue with supporting data)
 5. **Next Week Strategy** (3 actionable items)
 6. **Encouragement** (personal, specific, genuine)
+7. **Adaptive Goals** (per-habit recommendations based on completion rate thresholds)
 
 CRITICAL REQUIREMENTS:
 ✓ Every insight must cite specific data
@@ -245,16 +296,17 @@ CRITICAL REQUIREMENTS:
 ✓ Consider personality type in advice
 ✓ Match communication style to user
 ✓ Focus on patterns, not isolated events
-✓ Provide hope and forward momentum`,
+✓ Provide hope and forward momentum
+${buddyProgress ? `✓ Include a section about your buddy ${buddyProgress.nickname}'s progress and how you can support each other` : ''}`,
       userContext,
-      { analysis_type: 'weekly', recent_proofs: recentProofs.length }
+      { analysis_type: 'weekly', recent_proofs: recentProofs.length, buddyProgress: buddyProgress ? true : false }
     );
 
     const aiResponse = await this.perplexityClient.generateResponse(prompt);
     
     return {
       success: true,
-      message: this.formatWeeklyAnalysis(aiResponse, habitAnalysis),
+      message: this.formatWeeklyAnalysis(aiResponse, habitAnalysis, adaptiveGoalsRecommendations),
       confidence: this.calculateConfidence(0.8, 0.7, 0.6),
       habit_analysis: habitAnalysis,
       pattern_insights: patternInsights,
@@ -274,7 +326,8 @@ CRITICAL REQUIREMENTS:
       metadata: {
         analysis_type: 'weekly',
         habits_analyzed: userContext.current_habits.length,
-        proofs_analyzed: recentProofs.length
+        proofs_analyzed: recentProofs.length,
+        adaptive_goals: adaptiveGoalsRecommendations
       },
       timestamp: new Date()
     };
@@ -444,6 +497,38 @@ Provide helpful, encouraging, and practical guidance. Be specific about what the
   // ANALYSIS HELPERS
   // ============================================================================
 
+  /**
+   * Calculate completion rate for a habit against its target frequency
+   * Returns target frequency, actual proofs count, completion rate percentage, and missed count
+   */
+  private calculateHabitCompletionRate(habit: any, proofs: any[]): {
+    targetFrequency: number;
+    actualProofs: number;
+    completionRate: number;
+    missedCount: number;
+  } {
+    const targetFrequency = habit.frequency || 0;
+    
+    // Filter proofs for this habit and count completed ones only
+    const habitProofs = proofs.filter(p => p.habit_id === habit.id);
+    const actualProofs = habitProofs.filter(p => p.completed).length;
+    
+    // Calculate completion rate as percentage
+    const completionRate = targetFrequency > 0 
+      ? (actualProofs / targetFrequency) * 100 
+      : actualProofs > 0 ? 100 : 0;
+    
+    // Calculate missed count (can't be negative)
+    const missedCount = Math.max(0, targetFrequency - actualProofs);
+    
+    return {
+      targetFrequency,
+      actualProofs,
+      completionRate,
+      missedCount
+    };
+  }
+
   private async analyzeHabitsForWeek(habits: any[], proofs: any[]): Promise<HabitAnalysis[]> {
     const analyses: HabitAnalysis[] = [];
 
@@ -454,6 +539,9 @@ Provide helpful, encouraging, and practical guidance. Be specific about what the
       const successRate = habitProofs.length > 0 ? completedProofs.length / habitProofs.length : 0;
       const currentStreak = this.calculateCurrentStreak(habitProofs);
       const bestStreak = habit.best_streak || 0;
+
+      // Calculate completion rate vs target frequency
+      const completionData = this.calculateHabitCompletionRate(habit, proofs);
 
       const optimalConditions = await this.analyzeOptimalConditions(completedProofs);
       const successPatterns = await this.identifySuccessPatterns(completedProofs);
@@ -466,7 +554,11 @@ Provide helpful, encouraging, and practical guidance. Be specific about what the
         best_streak: bestStreak,
         optimal_conditions: optimalConditions,
         failure_patterns: failurePatterns,
-        success_patterns: successPatterns
+        success_patterns: successPatterns,
+        target_frequency: completionData.targetFrequency,
+        actual_proofs: completionData.actualProofs,
+        completion_rate: completionData.completionRate,
+        missed_count: completionData.missedCount
       });
     }
 
@@ -502,6 +594,72 @@ Provide helpful, encouraging, and practical guidance. Be specific about what the
         recommendations: contextPatterns.recommendations
       }
     ];
+  }
+
+  /**
+   * Generate adaptive goals recommendations based on completion rate thresholds
+   * >= 100%: Suggest improving challenge/skill balance, raising goals, or making habits more complex
+   * < 80%: Suggest adjusting goals to be easier, ask about hurdles
+   * 80-100%: Acknowledge good performance, no changes needed
+   */
+  private generateAdaptiveGoalsRecommendations(
+    habitAnalysis: HabitAnalysis[],
+    habits: any[]
+  ): Array<{
+    habit_id: string;
+    habit_name: string;
+    completion_rate: number;
+    recommendation: string;
+    threshold_category: 'high_performer' | 'struggling' | 'optimal_range';
+  }> {
+    const recommendations: Array<{
+      habit_id: string;
+      habit_name: string;
+      completion_rate: number;
+      recommendation: string;
+      threshold_category: 'high_performer' | 'struggling' | 'optimal_range';
+    }> = [];
+
+    for (const analysis of habitAnalysis) {
+      const habit = habits.find(h => h.id === analysis.habit_id);
+      if (!habit) continue;
+
+      const completionRate = analysis.completion_rate ?? 0;
+      const targetFrequency = analysis.target_frequency ?? 0;
+      const actualProofs = analysis.actual_proofs ?? 0;
+      const habitName = habit.name || analysis.habit_id;
+
+      let recommendation: string;
+      let thresholdCategory: 'high_performer' | 'struggling' | 'optimal_range';
+
+      if (targetFrequency === 0) {
+        // Edge case: no target frequency set
+        recommendation = `No target frequency set for ${habitName}. Consider setting a weekly goal.`;
+        thresholdCategory = 'optimal_range';
+      } else if (completionRate >= 100) {
+        // High performer: >= 100% completion
+        thresholdCategory = 'high_performer';
+        recommendation = `Excellent! You completed ${actualProofs}/${targetFrequency} (${Math.round(completionRate)}% of target). Consider improving your challenge/skill balance - maybe raise your goal a little bit about reaching your habit or make it a little bit more complex to maintain engagement and growth.`;
+      } else if (completionRate < 80) {
+        // Struggling: < 80% completion
+        thresholdCategory = 'struggling';
+        recommendation = `You completed ${actualProofs}/${targetFrequency} - that's ${Math.round(completionRate)}% of your goal. Why couldn't you achieve it? What were the hurdles? Maybe adjust your goal to make it more achievable, or just your habit to make it more easy for you to achieve.`;
+      } else {
+        // Optimal range: 80-100% completion
+        thresholdCategory = 'optimal_range';
+        recommendation = `You're performing well within the optimal range (${actualProofs}/${targetFrequency} = ${Math.round(completionRate)}% of target). Keep maintaining your current goals - you're in the sweet spot!`;
+      }
+
+      recommendations.push({
+        habit_id: analysis.habit_id,
+        habit_name: habitName,
+        completion_rate: completionRate,
+        recommendation,
+        threshold_category: thresholdCategory
+      });
+    }
+
+    return recommendations;
   }
 
   private async generateCoachingAdvice(userContext: UserContext, habitAnalysis: HabitAnalysis[]): Promise<CoachingAdvice[]> {
@@ -560,13 +718,40 @@ Provide helpful, encouraging, and practical guidance. Be specific about what the
   // UTILITY METHODS
   // ============================================================================
 
-  private formatWeeklyAnalysis(aiResponse: string, habitAnalysis: HabitAnalysis[]): string {
+  private formatWeeklyAnalysis(
+    aiResponse: string, 
+    habitAnalysis: HabitAnalysis[],
+    adaptiveGoalsRecommendations: Array<{
+      habit_id: string;
+      habit_name: string;
+      completion_rate: number;
+      recommendation: string;
+      threshold_category: 'high_performer' | 'struggling' | 'optimal_range';
+    }>
+  ): string {
     let formatted = `## 📊 Weekly Habit Analysis\n\n${aiResponse}\n\n`;
     
     if (habitAnalysis.length > 0) {
       formatted += `### 📈 Habit Performance Summary:\n`;
       habitAnalysis.forEach(analysis => {
-        formatted += `- **${analysis.habit_id}**: ${Math.round(analysis.success_rate * 100)}% success rate, ${analysis.current_streak} day streak\n`;
+        const targetFrequency = analysis.target_frequency ?? 0;
+        const actualProofs = analysis.actual_proofs ?? 0;
+        const completionRate = analysis.completion_rate ?? 0;
+        // Find habit name from adaptive goals recommendations if available
+        const habitName = adaptiveGoalsRecommendations.find(r => r.habit_id === analysis.habit_id)?.habit_name || analysis.habit_id;
+        formatted += `- **${habitName}**: ${actualProofs}/${targetFrequency} completed (${Math.round(completionRate)}% of target), ${analysis.current_streak} day streak\n`;
+      });
+    }
+
+    // Add Adaptive Goals section
+    if (adaptiveGoalsRecommendations.length > 0) {
+      formatted += `\n### 🎯 Adaptive Goals Recommendations:\n\n`;
+      adaptiveGoalsRecommendations.forEach(rec => {
+        const emoji = rec.threshold_category === 'high_performer' ? '🚀' 
+          : rec.threshold_category === 'struggling' ? '💪' 
+          : '✅';
+        formatted += `${emoji} **${rec.habit_name}** (${Math.round(rec.completion_rate)}% completion):\n`;
+        formatted += `${rec.recommendation}\n\n`;
       });
     }
 

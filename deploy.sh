@@ -50,9 +50,9 @@ print_status "Docker is running ✓"
 
 # Stop existing container if running
 print_status "Stopping existing container..."
-if docker ps -q -f name=discord-habit-system | grep -q .; then
-    docker stop discord-habit-system
-    docker rm discord-habit-system
+if docker ps -q -f name=habit-discord-bot | grep -q .; then
+    docker stop habit-discord-bot
+    docker rm habit-discord-bot
     print_success "Existing container stopped and removed"
 else
     print_status "No existing container found"
@@ -60,7 +60,7 @@ fi
 
 # Build new image
 print_status "Building new Docker image..."
-docker build -t discord-habit-system:latest .
+docker build -t habit-discord-bot:optimized .
 
 if [ $? -eq 0 ]; then
     print_success "Docker image built successfully"
@@ -85,23 +85,23 @@ sleep 5
 
 # Check container status
 print_status "Checking container status..."
-if docker ps -q -f name=discord-habit-system | grep -q .; then
+if docker ps -q -f name=habit-discord-bot | grep -q .; then
     print_success "Container is running"
-    
+
     # Show container logs
     print_status "Container logs (last 20 lines):"
     echo "----------------------------------------"
-    docker logs --tail 20 discord-habit-system
+    docker logs --tail 20 habit-discord-bot
     echo "----------------------------------------"
-    
-    print_status "To view live logs: docker logs -f discord-habit-system"
+
+    print_status "To view live logs: docker logs -f habit-discord-bot"
     print_status "To stop container: docker-compose down"
     print_status "To restart: docker-compose restart"
-    
+
 else
     print_error "Container failed to start"
     print_status "Checking logs for errors:"
-    docker logs discord-habit-system
+    docker logs habit-discord-bot
     exit 1
 fi
 

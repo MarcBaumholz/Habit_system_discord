@@ -124,7 +124,13 @@ export class ProofProcessor {
       return;
     }
 
-    const habit = this.matchHabit(habits, classification.habitName);
+    // Try to match habit using classification first, then fallback to direct content matching
+    let habit = this.matchHabit(habits, classification.habitName);
+    if (!habit) {
+      console.log('🔍 PROOF_PROCESSOR: AI classification match failed, trying direct content matching...');
+      habit = this.matchHabitDirectly(habits, message.content);
+    }
+
     if (!habit) {
       await message.reply('I could not match this proof to one of your habits. Please double-check the name or use `/proof` manually.');
       return;
@@ -180,9 +186,9 @@ export class ProofProcessor {
     const normalized = habitName.trim().toLowerCase();
     console.log(`🔍 MATCH_HABIT: Looking for "${habitName}" (normalized: "${normalized}")`);
     console.log(`🔍 MATCH_HABIT: Available habits: ${habits.map(h => `"${h.name}"`).join(', ')}`);
-    
+
     // Strategy 1: Exact match (highest priority)
-    const exactMatch = habits.find(habit => 
+    const exactMatch = habits.find(habit =>
       habit.name.trim().toLowerCase() === normalized
     );
     if (exactMatch) {
@@ -204,7 +210,7 @@ export class ProofProcessor {
     const classifiedWords = normalized.split(/\s+/).filter(w => w.length > 2);
     const wordMatch = habits.find(habit => {
       const habitWords = habit.name.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-      return classifiedWords.some(word => 
+      return classifiedWords.some(word =>
         habitWords.some(hw => hw.includes(word) || word.includes(hw))
       );
     });
@@ -214,6 +220,75 @@ export class ProofProcessor {
     }
 
     console.log(`❌ MATCH_HABIT: No match found for "${habitName}" among habits: ${habits.map(h => `"${h.name}"`).join(', ')}`);
+    return null;
+  }
+
+  /**
+   * Match habit directly from message content
+   * This is a fallback when AI classification fails
+   * Searches for any keyword from habit names in the message content
+   */
+  private matchHabitDirectly(habits: Habit[], messageContent: string): Habit | null {
+    const normalizedContent = messageContent.trim().toLowerCase();
+    console.log(`🔍 MATCH_HABIT_DIRECTLY: Analyzing message: "${normalizedContent}"`);
+    console.log(`🔍 MATCH_HABIT_DIRECTLY: Available habits: ${habits.map(h => `"${h.name}"`).join(', ')}`);
+
+    // Common words to exclude from matching (stopwords)
+    const stopwords = new Set(['pro', 'tag', 'per', 'day', 'und', 'and', 'the', 'for', 'with', 'von', 'der', 'die', 'das']);
+
+    // Score each habit based on keyword matches
+    const habitScores = habits.map(habit => {
+      let score = 0;
+      const habitName = habit.name.toLowerCase();
+
+      // Extract all meaningful words from habit name (including comma-separated parts)
+      // e.g., "Lesen 10min pro Tag, Reading" -> ["lesen", "10min", "tag", "reading"]
+      const habitWords = habitName
+        .split(/[,\s]+/)
+        .map(w => w.trim())
+        .filter(w => w.length > 2 && !stopwords.has(w)); // Filter out stopwords
+
+      console.log(`🔍 Checking habit: "${habit.name}" with keywords: ${habitWords.join(', ')}`);
+
+      // Check each habit word
+      habitWords.forEach(word => {
+        if (normalizedContent.includes(word)) {
+          score += 10;
+          console.log(`✅ Found keyword "${word}" in message: +10 points`);
+        }
+      });
+
+      // Also check SMART goal for additional keywords
+      if (habit.smartGoal) {
+        const goalWords = habit.smartGoal.toLowerCase()
+          .split(/[,\s]+/)
+          .map(w => w.trim())
+          .filter(w => w.length > 3 && !stopwords.has(w));
+
+        goalWords.forEach(word => {
+          if (normalizedContent.includes(word)) {
+            score += 5;
+            console.log(`✅ Found goal keyword "${word}" in message: +5 points`);
+          }
+        });
+      }
+
+      console.log(`📊 Final score for "${habit.name}": ${score}`);
+      return { habit, score };
+    });
+
+    // Sort by score (highest first)
+    habitScores.sort((a, b) => b.score - a.score);
+
+    const bestMatch = habitScores[0];
+
+    // Only return a match if score is above threshold
+    if (bestMatch && bestMatch.score >= 10) {
+      console.log(`🎯 MATCH_HABIT_DIRECTLY: Best match found: "${bestMatch.habit.name}" (score: ${bestMatch.score})`);
+      return bestMatch.habit;
+    }
+
+    console.log('❌ MATCH_HABIT_DIRECTLY: No match found with sufficient score');
     return null;
   }
 

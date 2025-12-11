@@ -1,0 +1,23 @@
+# Agent OS Configuration for Discord Habit System
+# This configuration enables Agent OS to work with both Cursor and Cloud
+
+# Profile settings
+profile: default
+
+# Claude Code integration
+claude_code_commands: true
+standards_as_claude_code_skills: true
+
+# Project-specific settings
+project_name: "Discord Habit System"
+project_type: "discord-bot"
+
+# Standards injection
+inject_standards: true
+
+# Product context
+product_context_enabled: true
+
+# Specs management
+specs_enabled: true
+

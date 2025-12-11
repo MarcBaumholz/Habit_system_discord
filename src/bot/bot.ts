@@ -10,6 +10,8 @@ import { ToolsAssistant } from './tools-assistant';
 import { DailyMessageScheduler } from './daily-message-scheduler';
 import { WeeklyAgentScheduler } from './weekly-agent-scheduler';
 import { AccountabilityScheduler } from './accountability-scheduler';
+import { BuddyRotationScheduler } from './buddy-rotation-scheduler';
+import { AllUsersWeeklyScheduler } from './all-users-weekly-scheduler';
 import { PersonalChannelManager } from './personal-channel-manager';
 import { DiscordLogger } from './discord-logger';
 import { PersonalAssistant } from './personal-assistant';
@@ -17,6 +19,11 @@ import { AIIncentiveManager } from './ai-incentive-manager';
 import { AgentSystem } from '../agents';
 import { PerplexityClient } from '../ai/perplexity-client';
 import { WebhookPoller } from './webhook-poller';
+import { ChallengeManager } from './challenge-manager';
+import { ChallengeStateManager } from './challenge-state';
+import { ChallengeScheduler } from './challenge-scheduler';
+import { ChallengeProofProcessor } from './challenge-proof-processor';
+import { MidWeekScheduler } from './midweek-scheduler';
 
 export class HabitBot {
   private client: Client;
@@ -31,6 +38,8 @@ export class HabitBot {
   private dailyMessageScheduler: DailyMessageScheduler;
   private weeklyAgentScheduler: WeeklyAgentScheduler;
   private accountabilityScheduler: AccountabilityScheduler;
+  private buddyRotationScheduler: BuddyRotationScheduler;
+  private allUsersWeeklyScheduler: AllUsersWeeklyScheduler;
   private personalChannelManager: PersonalChannelManager;
   private personalAssistant: PersonalAssistant;
   private aiIncentiveManager: AIIncentiveManager;
@@ -38,8 +47,14 @@ export class HabitBot {
   private agentSystem: AgentSystem;
   private perplexityClient: PerplexityClient;
   private webhookPoller?: WebhookPoller;
+  private challengeManager: ChallengeManager;
+  private challengeStateManager: ChallengeStateManager;
+  private challengeScheduler?: ChallengeScheduler;
+  private challengeProofProcessor: ChallengeProofProcessor;
+  private midWeekScheduler?: MidWeekScheduler;
 
   constructor(notion: NotionClient) {
+    console.log('🔍 DEBUG: HabitBot constructor called');
     this.client = new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -51,18 +66,29 @@ export class HabitBot {
 
     this.commands = new Collection();
     this.notion = notion;
+    console.log('🔍 DEBUG: Basic initialization done');
     this.logger = new DiscordLogger(this.client);
     this.channelHandlers = new ChannelHandlers(this.client, notion);
     this.personalChannelManager = new PersonalChannelManager(this.client, notion);
-    this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager, this.logger);
-    this.habitFlow = new HabitFlowManager(notion);
+    this.personalAssistant = new PersonalAssistant(this.client, this.notion, this.logger);
+    this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager, this.logger, this.personalAssistant);
+    this.habitFlow = new HabitFlowManager(notion, this.personalAssistant);
     this.proofProcessor = new ProofProcessor(notion);
     this.messageAnalyzer = new MessageAnalyzer(notion, this.client, this.logger);
     this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
     this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion, this.logger);
     this.weeklyAgentScheduler = new WeeklyAgentScheduler(this.client, notion, this.logger);
     this.accountabilityScheduler = new AccountabilityScheduler(this.client, notion, this.logger);
-    this.personalAssistant = new PersonalAssistant(this.client, this.notion, this.logger);
+    this.buddyRotationScheduler = new BuddyRotationScheduler(this.client, notion, this.logger);
+    this.allUsersWeeklyScheduler = new AllUsersWeeklyScheduler(this.client, notion, this.logger);
+    
+    // Generate profiles for all users on startup (async, don't block)
+    this.personalAssistant.generateAllUserProfiles(true).catch(error => {
+      console.error('⚠️ Error generating profiles on startup:', error);
+    });
+    
+    // Start periodic profile update checker (reacts to database changes)
+    this.personalAssistant.startPeriodicProfileUpdate();
     this.aiIncentiveManager = new AIIncentiveManager(this.client, this.notion, this.logger);
     
     // Initialize Multi-Agent System
@@ -80,7 +106,49 @@ export class HabitBot {
         10000 // Poll every 10 seconds
       );
     }
-    
+
+    // Initialize Weekly Challenge System
+    console.log('🔍 DEBUG: Starting Weekly Challenge System initialization...');
+
+    try {
+      console.log('🔍 DEBUG: Creating ChallengeManager...');
+      this.challengeManager = new ChallengeManager();
+      console.log('✅ DEBUG: ChallengeManager created successfully');
+
+      console.log('🔍 DEBUG: Creating ChallengeStateManager...');
+      this.challengeStateManager = new ChallengeStateManager();
+      console.log('✅ DEBUG: ChallengeStateManager created successfully');
+
+      console.log('🔍 DEBUG: Creating ChallengeProofProcessor...');
+      this.challengeProofProcessor = new ChallengeProofProcessor(
+        notion,
+        this.challengeManager,
+        this.challengeStateManager
+      );
+      console.log('✅ DEBUG: ChallengeProofProcessor created successfully');
+
+      // Initialize Challenge Scheduler (will be started after bot is ready)
+      const weeklyChallengesChannelId = process.env.DISCORD_WEEKLY_CHALLENGES;
+      console.log('🔍 DEBUG: Weekly Challenges Channel ID:', weeklyChallengesChannelId);
+
+      if (weeklyChallengesChannelId) {
+        console.log('🔍 DEBUG: Creating ChallengeScheduler...');
+        this.challengeScheduler = new ChallengeScheduler(
+          notion,
+          this.challengeManager,
+          this.challengeStateManager,
+          weeklyChallengesChannelId,
+          this.client
+        );
+        console.log('✅ DEBUG: ChallengeScheduler created successfully');
+      } else {
+        console.warn('⚠️ DEBUG: No Weekly Challenges Channel ID found - scheduler not initialized');
+      }
+    } catch (error) {
+      console.error('❌ DEBUG: Error during challenge system initialization:', error);
+      throw error;
+    }
+
     this.setupCommands();
     this.setupEventHandlers();
   }
@@ -366,6 +434,37 @@ export class HabitBot {
           await this.dailyMessageScheduler.testSendDailyMessage();
         }, 5000);
       }, 3000);
+
+      // Initialize mid-week scheduler
+      const accountabilityChannelId = process.env.DISCORD_ACCOUNTABILITY_GROUP;
+      if (accountabilityChannelId) {
+        try {
+          const accountabilityChannel = await this.client.channels.fetch(accountabilityChannelId);
+          if (accountabilityChannel?.isTextBased()) {
+            this.midWeekScheduler = new MidWeekScheduler(accountabilityChannel as any, this.logger);
+            this.midWeekScheduler.start();
+            console.log('📊 Mid-week scheduler initialized and started (Wednesday 8pm)');
+
+            await this.logger.success(
+              'MIDWEEK_SCHEDULER',
+              'Mid-Week Scheduler Started',
+              'CrewAI mid-week analysis scheduler initialized successfully',
+              {
+                schedule: 'Every Wednesday at 20:00',
+                timezone: process.env.TIMEZONE || 'Europe/Berlin',
+                accountabilityChannel: accountabilityChannelId
+              }
+            );
+          }
+        } catch (error) {
+          console.error('❌ Failed to initialize mid-week scheduler:', error);
+          await this.logger.logError(
+            error as Error,
+            'Mid-Week Scheduler Initialization',
+            { component: 'MidWeekScheduler' }
+          );
+        }
+      }
     });
 
     // Unified message listener for all message processing
@@ -444,6 +543,26 @@ export class HabitBot {
           return; // Exit early if personal assistant handled the message
         }
 
+        // Weekly Challenges channel: process challenge proofs
+        if (process.env.DISCORD_WEEKLY_CHALLENGES && message.channelId === process.env.DISCORD_WEEKLY_CHALLENGES) {
+          await this.logger.info(
+            'CHALLENGE_PROOF',
+            'Challenge Proof Submission',
+            `Processing challenge proof from ${message.author.username}`,
+            {
+              contentLength: message.content.length,
+              isChallengesChannel: true
+            },
+            {
+              channelId: message.channelId,
+              userId: message.author.id,
+              guildId: message.guild?.id
+            }
+          );
+          await this.challengeProofProcessor.processMessage(message);
+          return; // Exit early if challenge proof processor handled the message
+        }
+
         // Tools channel: respond with toolbox suggestions
         if (process.env.DISCORD_TOOLS && message.channelId === process.env.DISCORD_TOOLS) {
           await this.logger.info(
@@ -510,13 +629,23 @@ export class HabitBot {
 
         // Handle Button Interactions
         if (interaction.isButton()) {
+          // Challenge join button
+          if (interaction.customId === 'join_challenge') {
+            await this.handleChallengeJoin(interaction);
+            return;
+          }
+          // Profile edit button
+          if (interaction.customId === 'profile_edit_button') {
+            await this.commandHandler.handleProfileEdit(interaction);
+            return;
+          }
           // Onboarding flow buttons
           if (interaction.customId === 'onboard_modal_2_trigger') {
             await this.commandHandler.handleSecondOnboardModal(interaction);
             return;
           }
-          // Keystone habit buttons
-          if (interaction.customId.startsWith('keystone_')) {
+          // Keystone habit buttons (including day selector)
+          if (interaction.customId.startsWith('keystone_') || interaction.customId.startsWith('day_')) {
             await this.habitFlow.handleButtonInteraction(interaction);
             return;
           }
@@ -786,6 +915,15 @@ export class HabitBot {
       console.log('🤖 Initializing Weekly Agent Scheduler...');
       await this.weeklyAgentScheduler.initialize();
       this.weeklyAgentScheduler.startScheduler();
+
+      // Initialize and start buddy rotation scheduler
+      await this.buddyRotationScheduler.startScheduler();
+      console.log('✅ Buddy Rotation Scheduler started successfully (Every other Sunday 8 AM)');
+
+      // Initialize and start all-users weekly scheduler
+      await this.allUsersWeeklyScheduler.initialize();
+      await this.allUsersWeeklyScheduler.startScheduler();
+      console.log('✅ All-Users Weekly Scheduler started successfully (Wednesday 9 AM)');
       console.log('✅ Weekly Agent Scheduler started successfully');
     } catch (error) {
       console.error('❌ Failed to initialize Weekly Agent Scheduler:', error);
@@ -809,6 +947,29 @@ export class HabitBot {
         'Accountability Scheduler Initialization',
         { component: 'AccountabilityScheduler' }
       );
+    }
+
+    // Initialize and start challenge scheduler
+    console.log('🔍 DEBUG: Checking challenge scheduler...', {
+      exists: !!this.challengeScheduler,
+      channelId: process.env.DISCORD_WEEKLY_CHALLENGES
+    });
+
+    if (this.challengeScheduler) {
+      try {
+        console.log('🏆 Initializing Weekly Challenge Scheduler...');
+        this.challengeScheduler.start();
+        console.log('✅ Challenge Scheduler started successfully (Sun 9 AM evaluation, Sun 3 PM deploy, Wed 12 PM reminder)');
+      } catch (error) {
+        console.error('❌ Failed to initialize Challenge Scheduler:', error);
+        await this.logger.logError(
+          error as Error,
+          'Challenge Scheduler Initialization',
+          { component: 'ChallengeScheduler' }
+        );
+      }
+    } else {
+      console.warn('⚠️ Challenge Scheduler not initialized - check DISCORD_WEEKLY_CHALLENGES env var');
     }
   }
 
@@ -1124,6 +1285,124 @@ export class HabitBot {
     } catch (error) {
       console.error('Error handling learning command:', error);
       await interaction.editReply('❌ Sorry, I encountered an error while processing your request. Please try again later.');
+    }
+  }
+
+  /**
+   * Handle challenge join button click
+   */
+  private async handleChallengeJoin(interaction: any): Promise<void> {
+    try {
+      await interaction.deferReply({ ephemeral: true });
+
+      const userId = interaction.user.id;
+
+      // Check if user is active in Notion
+      const user = await this.notion.getUserByDiscordId(userId);
+      if (!user) {
+        await interaction.editReply('❌ You need to join the habit system first! Use `/join` command.');
+        return;
+      }
+
+      if (user.status !== 'active') {
+        await interaction.editReply('❌ You need to be active in the habit system to join challenges. Use `/activate` to resume participation.');
+        return;
+      }
+
+      // Check if user already joined
+      if (this.challengeStateManager.hasUserJoined(userId)) {
+        await interaction.editReply('⚠️ You have already joined this week\'s challenge! Submit proofs in this channel.');
+        return;
+      }
+
+      // Get current challenge info
+      const currentIndex = this.challengeStateManager.getCurrentChallengeIndex();
+      const challenge = this.challengeManager.getChallengeByIndex(currentIndex);
+      const { weekStart, weekEnd } = this.challengeStateManager.getCurrentWeek();
+
+      if (!challenge || !weekStart) {
+        await interaction.editReply('❌ No active challenge right now. Wait for Sunday at 3 PM!');
+        return;
+      }
+
+      // Add user to joined list
+      this.challengeStateManager.addJoinedUser(userId);
+
+      // Send confirmation
+      await interaction.editReply(
+        `✅ **You joined the challenge!**\n\n` +
+        `🏆 **Challenge:** ${challenge.name}\n` +
+        `📅 **Period:** ${weekStart} → ${weekEnd}\n` +
+        `🎯 **Goal:** Complete ${challenge.daysRequired} days\n` +
+        `💰 **Reward:** €1 credit if you complete it!\n\n` +
+        `Submit your daily proof in this channel. Type your achievement (e.g., "${challenge.dailyRequirement}"). Maximum 1 proof per day!\n\n` +
+        `Good luck! 🚀`
+      );
+
+      // Log success
+      await this.logger.success(
+        'CHALLENGE',
+        'User Joined Challenge',
+        `${user.name} joined Challenge #${challenge.id}: ${challenge.name}`,
+        {
+          challengeId: challenge.id,
+          challengeName: challenge.name,
+          userName: user.name,
+          weekStart,
+          weekEnd
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
+
+      // Update challenge message with new participant count
+      const participantCount = this.challengeStateManager.getParticipantCount();
+      const messageId = this.challengeStateManager.getChallengeMessageId();
+
+      if (messageId) {
+        try {
+          const channel = await this.client.channels.fetch(process.env.DISCORD_WEEKLY_CHALLENGES!) as any;
+          const message = await channel.messages.fetch(messageId);
+
+          // Update the embed to show participant count
+          const updatedEmbed = message.embeds[0];
+          if (updatedEmbed) {
+            updatedEmbed.fields = updatedEmbed.fields.filter((f: any) => f.name !== '👥 Participants');
+            updatedEmbed.fields.push({
+              name: '👥 Participants',
+              value: `${participantCount} joined`,
+              inline: true
+            });
+
+            await message.edit({ embeds: [updatedEmbed], components: message.components });
+          }
+        } catch (error) {
+          console.error('Error updating challenge message:', error);
+        }
+      }
+    } catch (error) {
+      console.error('[Bot] Error handling challenge join:', error);
+      await this.logger.logError(
+        error as Error,
+        'Challenge Join Error',
+        {
+          userId: interaction.user.id
+        },
+        {
+          channelId: interaction.channelId,
+          userId: interaction.user.id,
+          guildId: interaction.guild?.id
+        }
+      );
+
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ There was an error joining the challenge. Please try again.', ephemeral: true });
+      } else {
+        await interaction.editReply('❌ There was an error joining the challenge. Please try again.');
+      }
     }
   }
 

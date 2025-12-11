@@ -2,6 +2,7 @@ export interface User {
   id: string;
   discordId: string;
   name: string;
+  nickname?: string; // User's nickname (from nickname field in Notion)
   timezone: string;
   bestTime: string;
   trustCount: number;
@@ -9,6 +10,8 @@ export interface User {
   status?: 'active' | 'pause';
   pauseReason?: string;
   pauseDuration?: string;
+  buddy?: string; // Nickname of buddy (select field stores nickname)
+  buddyStart?: string; // Date when buddy pairing started (YYYY-MM-DD)
 }
 
 export interface Habit {
@@ -17,15 +20,20 @@ export interface Habit {
   name: string;
   domains: string[];
   frequency: number; // Days per week (1-7)
+  selectedDays?: string[]; // Array of selected days (Mon, Tue, Wed, etc.)
   context: string;
   difficulty: string;
   smartGoal: string;
   why: string;
   minimalDose: string;
   habitLoop: string;
-  implementationIntentions: string;
+  implementationIntentions?: string; // Made optional (removed from form)
   hurdles: string;
   reminderType: string;
+  autonomy?: string; // Autonomy reflection
+  curiosityPassionPurpose?: string; // Triangle of curiosity, passion, purpose
+  consequences?: string; // Consequences of not committing
+  commitmentSignature?: string; // 66-day commitment confirmation
 }
 
 export interface Proof {
@@ -213,4 +221,94 @@ export interface LeaderboardEntry {
   completedHabits: number;
   currentStreak: number;
   badge?: string; // e.g., "🏆", "🥇", "🔥"
+}
+
+// ============================================
+// WEEKLY CHALLENGE SYSTEM
+// ============================================
+
+// Challenge Definition (from MD file)
+export interface Challenge {
+  id: number; // 1-20
+  name: string;
+  description: string;
+  dailyRequirement: string;
+  minimalDose: string;
+  daysRequired: number; // 5-7
+  category: 'CEO' | 'Biohacking' | 'Life Improvement' | 'Productivity' | 'Health';
+  source: string; // Attribution (CEO name, researcher, etc.)
+  link: string; // External resource link
+}
+
+// Challenge Proof (Notion Database Entry)
+export interface ChallengeProof {
+  id: string;
+  challengeNumber: number; // 1-20
+  challengeName: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  unit: string;
+  note?: string;
+  isMinimalDose: boolean;
+  weekStart: string; // Sunday when challenge started (YYYY-MM-DD)
+  weekEnd: string; // Following Sunday (YYYY-MM-DD)
+}
+
+// Challenge State (in-memory & persisted to JSON)
+export interface ChallengeState {
+  currentChallengeIndex: number; // 0-19 (maps to challenge 1-20)
+  currentWeekStart: string; // Sunday date (YYYY-MM-DD)
+  currentWeekEnd: string; // Following Sunday (YYYY-MM-DD)
+  challengeMessageId?: string; // Discord message ID for the challenge post
+  joinedUserIds: string[]; // User IDs who joined this week's challenge
+  lastEvaluationDate?: string; // Last time evaluation ran
+  lastUpdated: string; // Timestamp of last state update
+  pollMessageId?: string; // Discord poll message ID (Saturday)
+  pollChallengeGroup: number; // 0-3 (which group of 5 challenges was offered)
+  votedChallengeIndex?: number; // Winning challenge index from poll
+}
+
+// Challenge Participant Progress (calculated from proofs)
+export interface ChallengeParticipantProgress {
+  userId: string;
+  discordId: string;
+  name: string;
+  proofsSubmitted: number;
+  daysRequired: number;
+  completed: boolean;
+  proofDates: string[]; // Array of dates when proofs were submitted
+  minimalDoseCount: number; // How many were minimal dose
+  fullProofCount: number; // How many were full proofs
+}
+
+// Challenge Evaluation Results
+export interface ChallengeEvaluationResult {
+  challengeNumber: number;
+  challengeName: string;
+  weekStart: string;
+  weekEnd: string;
+  totalParticipants: number;
+  winners: ChallengeParticipantProgress[];
+  participants: ChallengeParticipantProgress[];
+  totalRewardsAwarded: number; // Total €1 rewards given
+  evaluatedAt: string;
+}
+
+// ============================================
+// BUDDY SYSTEM
+// ============================================
+
+// Buddy Progress Data
+export interface BuddyProgressData {
+  nickname: string;
+  habits: Habit[];
+  proofs: Proof[];
+  completionRate: number;
+  currentStreak: number;
+  habitsWithIssues: Array<{
+    habitName: string;
+    targetFrequency: number;
+    actualFrequency: number;
+    goal: string;
+  }>;
 }

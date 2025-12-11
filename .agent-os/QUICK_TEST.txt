@@ -1,0 +1,8 @@
+QUICK TEST: Copy this prompt and paste it into Cursor or Claude:
+
+"Please read .agent-os/standards/global/best-practices.md and tell me:
+1. What are the three core principles mentioned?
+2. What is the rule about mock data?
+3. How should errors be handled?
+
+Then confirm you've read the file and will follow these standards."
