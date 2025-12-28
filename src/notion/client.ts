@@ -45,6 +45,13 @@ export class NotionClient {
         properties['Personal Channel ID'] = { rich_text: [{ text: { content: user.personalChannelId } }] };
       }
 
+      // Add batch if provided
+      if (user.batch && user.batch.length > 0) {
+        properties['batch'] = {
+          multi_select: user.batch.map(b => ({ name: b }))
+        };
+      }
+
       const response = await this.client.pages.create({
         parent: { database_id: this.databases.users },
         properties
@@ -187,6 +194,11 @@ export class NotionClient {
         'Is Minimal Dose ': { checkbox: proof.isMinimalDose },
         'Is Cheat Day': { checkbox: proof.isCheatDay }
       };
+
+      // Add batch if present
+      if (proof.batch) {
+        properties['batch'] = { rich_text: [{ text: { content: proof.batch } }] };
+      }
 
       // Add file attachment if provided
       if (attachmentUrl) {
@@ -856,7 +868,8 @@ export class NotionClient {
           note: properties['Note']?.rich_text?.[0]?.text?.content || '',
           attachmentUrl: properties['Attachment URL']?.url || undefined,
           isMinimalDose: properties['Is Minimal Dose ']?.checkbox || false,
-          isCheatDay: properties['Is Cheat Day']?.checkbox || false
+          isCheatDay: properties['Is Cheat Day']?.checkbox || false,
+          batch: properties['batch']?.rich_text?.[0]?.text?.content || undefined
         };
       });
     } catch (error) {
@@ -1750,7 +1763,8 @@ export class NotionClient {
           note: props['Note']?.rich_text?.[0]?.text?.content,
           attachmentUrl: props['Attachment URL']?.url,
           isMinimalDose: props['Is Minimal Dose']?.checkbox || false,
-          isCheatDay: props['Is Cheat Day']?.checkbox || false
+          isCheatDay: props['Is Cheat Day']?.checkbox || false,
+          batch: props['batch']?.rich_text?.[0]?.text?.content || undefined
         };
       });
     } catch (error) {
@@ -2092,6 +2106,52 @@ export class NotionClient {
       return enrolledCount;
     } catch (error) {
       console.error('❌ Error adding batch to users:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add a batch to a single user
+   * @param userId - User page ID in Notion
+   * @param batchName - Batch name to add
+   * @returns True if batch was added, false if already present
+   */
+  async addUserToBatch(userId: string, batchName: string): Promise<boolean> {
+    try {
+      console.log(`👤 Adding batch "${batchName}" to user ${userId}`);
+
+      // Get current user to retrieve existing batches
+      const user = await this.getUserById(userId);
+      if (!user) {
+        throw new Error(`User ${userId} not found`);
+      }
+
+      // Get existing batch labels
+      const existingBatches = user.batch || [];
+
+      // Check if batch is already present
+      if (existingBatches.includes(batchName)) {
+        console.log(`  ℹ️ User ${user.name} already has batch "${batchName}"`);
+        return false;
+      }
+
+      // Add new batch
+      existingBatches.push(batchName);
+
+      // Update user with new batch label
+      await this.client.pages.update({
+        page_id: userId,
+        properties: {
+          'batch': {
+            multi_select: existingBatches.map(b => ({ name: b }))
+          }
+        }
+      });
+
+      console.log(`  ✅ Added batch "${batchName}" to user ${user.name}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error adding batch to user ${userId}:`, error);
       throw error;
     }
   }

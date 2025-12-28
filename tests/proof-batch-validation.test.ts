@@ -29,7 +29,10 @@ test.test('should only return habits from current batch', async () => {
   const currentBatchName = 'january 2026';
   saveCurrentBatch({
     name: currentBatchName,
-    startDate: '2026-01-01'
+    createdDate: '2026-01-01',
+    startDate: '2026-01-01',
+    endDate: '2026-03-07', // 66 days after start
+    status: 'active' as const
   });
 
   // Create mock habits from different batches
@@ -192,7 +195,10 @@ test.test('should handle empty habits array gracefully', async () => {
   // Arrange
   saveCurrentBatch({
     name: 'test batch',
-    startDate: '2026-01-01'
+    createdDate: '2026-01-01',
+    startDate: '2026-01-01',
+    endDate: '2026-03-07', // 66 days after start
+    status: 'active' as const
   });
 
   const emptyHabits: Habit[] = [];

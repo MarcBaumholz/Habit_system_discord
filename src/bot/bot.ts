@@ -73,10 +73,10 @@ export class HabitBot {
     this.channelHandlers = new ChannelHandlers(this.client, notion);
     this.personalChannelManager = new PersonalChannelManager(this.client, notion);
     this.personalAssistant = new PersonalAssistant(this.client, this.notion, this.logger);
-    this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion, this.logger);
+    this.buddyRotationScheduler = new BuddyRotationScheduler(this.client, notion, this.logger);
+    this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion, this.logger, this.buddyRotationScheduler);
     this.weeklyAgentScheduler = new WeeklyAgentScheduler(this.client, notion, this.logger);
     this.accountabilityScheduler = new AccountabilityScheduler(this.client, notion, this.logger);
-    this.buddyRotationScheduler = new BuddyRotationScheduler(this.client, notion, this.logger);
     this.allUsersWeeklyScheduler = new AllUsersWeeklyScheduler(this.client, notion, this.logger);
     this.adminCommandHandler = new AdminCommandHandler(notion, this.buddyRotationScheduler);
     this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager, this.logger, this.personalAssistant);

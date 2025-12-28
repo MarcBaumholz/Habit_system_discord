@@ -48,6 +48,7 @@ export interface Proof {
   attachmentUrl?: string;
   isMinimalDose: boolean;
   isCheatDay: boolean;
+  batch?: string; // Batch the proof belongs to (inherited from habit at creation time)
 }
 
 export interface Learning {
@@ -86,9 +87,14 @@ export interface Group {
   donationPool: number;
 }
 
+export type BatchStatus = 'pre-phase' | 'active' | 'completed';
+
 export interface BatchMetadata {
   name: string; // e.g., "january 2026"
-  startDate: string; // ISO date string (YYYY-MM-DD)
+  createdDate: string; // ISO date string (YYYY-MM-DD) - when batch was created
+  startDate: string; // ISO date string (YYYY-MM-DD) - when batch officially starts (Day 1)
+  endDate: string; // ISO date string (YYYY-MM-DD) - when batch ends (Day 66)
+  status: BatchStatus; // Current batch status
 }
 
 // User Profile für Personality DB

@@ -2,8 +2,9 @@ import { Client, TextChannel } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { DiscordLogger } from './discord-logger';
 import { AIIncentiveManager } from './ai-incentive-manager';
+import { BuddyRotationScheduler } from './buddy-rotation-scheduler';
 import * as cron from 'node-cron';
-import { getCurrentBatch, getCurrentBatchDay } from '../utils/batch-manager';
+import { getCurrentBatch, getCurrentBatchDay, shouldBatchStart, updateBatchStatus } from '../utils/batch-manager';
 
 export class DailyMessageScheduler {
   private client: Client;
@@ -12,13 +13,15 @@ export class DailyMessageScheduler {
   private accountabilityChannelId: string;
   private motivationalQuotes: string[];
   private aiIncentiveManager: AIIncentiveManager;
+  private buddyScheduler: BuddyRotationScheduler | null;
 
-  constructor(client: Client, notion: NotionClient, logger: DiscordLogger) {
+  constructor(client: Client, notion: NotionClient, logger: DiscordLogger, buddyScheduler?: BuddyRotationScheduler) {
     this.client = client;
     this.notion = notion;
     this.logger = logger;
     this.accountabilityChannelId = process.env.DISCORD_ACCOUNTABILITY_GROUP || '';
     this.aiIncentiveManager = new AIIncentiveManager(client, notion, logger);
+    this.buddyScheduler = buddyScheduler || null;
 
     // Collection of motivational quotes for 66 days (batch day is calculated from batch-manager)
     this.motivationalQuotes = [
@@ -173,10 +176,92 @@ export class DailyMessageScheduler {
   }
 
   /**
+   * Check if batch should start and activate it
+   * Called at the beginning of daily message scheduler
+   */
+  private async checkAndActivateBatch(): Promise<void> {
+    try {
+      // Check if batch should transition from pre-phase to active
+      if (shouldBatchStart()) {
+        const batch = getCurrentBatch();
+        if (!batch) return;
+
+        console.log(`🎯 Batch "${batch.name}" start date has arrived! Activating batch...`);
+
+        // Update batch status to active
+        updateBatchStatus('active');
+
+        await this.logger.success(
+          'BATCH_ACTIVATION',
+          'Batch Activated',
+          `Batch "${batch.name}" has been activated - Day 1 begins!`,
+          {
+            batchName: batch.name,
+            startDate: batch.startDate
+          }
+        );
+
+        // Get users who already joined during pre-phase
+        const batchUsers = await this.notion.getUsersInBatch(batch.name);
+        const enrolledCount = batchUsers.length;
+        console.log(`👥 Batch "${batch.name}" has ${enrolledCount} users who joined during pre-phase`);
+
+        // Assign buddies for the batch
+        if (this.buddyScheduler) {
+          try {
+            const buddyPairsCount = await this.buddyScheduler.assignBuddiesForBatch(batch.name);
+            console.log(`👥 Created ${buddyPairsCount} buddy pairs for batch "${batch.name}"`);
+
+            await this.logger.success(
+              'BUDDY_ASSIGNMENT',
+              'Buddies Assigned on Day 1',
+              `Assigned ${buddyPairsCount} buddy pairs for batch "${batch.name}"`,
+              {
+                batchName: batch.name,
+                pairsCreated: buddyPairsCount,
+                enrolledUsers: enrolledCount
+              }
+            );
+          } catch (error) {
+            console.error('❌ Error assigning buddies on batch activation:', error);
+            await this.logger.logError(
+              error as Error,
+              'Buddy Assignment on Batch Activation Failed',
+              { batchName: batch.name }
+            );
+          }
+        }
+
+        // Send announcement to accountability channel
+        const channel = this.client.channels.cache.get(this.accountabilityChannelId) as TextChannel;
+        if (channel) {
+          await channel.send(
+            `🎉 **Day 1 of 66 - Let's Go!**\n\n` +
+            `📦 **Batch:** ${batch.name}\n` +
+            `👥 **Enrolled:** ${enrolledCount} active participants\n` +
+            `📅 **End Date:** ${batch.endDate}\n\n` +
+            `💪 Your 66-day journey begins today! Check your personal channel for your buddy assignment and daily message.`
+          );
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error checking/activating batch:', error);
+      await this.logger.logError(
+        error as Error,
+        'Batch Activation Check Failed',
+        { component: 'DailyMessageScheduler' }
+      );
+    }
+  }
+
+  /**
    * Send daily motivational message to accountability channel
    */
   async sendDailyMessage(): Promise<void> {
     try {
+      // First, check if batch should be activated (pre-phase → active transition)
+      await this.checkAndActivateBatch();
+
       // Check if there's an active batch
       const batch = getCurrentBatch();
       if (!batch) {

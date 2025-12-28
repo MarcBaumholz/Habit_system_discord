@@ -4,6 +4,13 @@ import { ChannelHandlers } from './channel-handlers';
 import { PersonalChannelManager } from './personal-channel-manager';
 import { DiscordLogger } from './discord-logger';
 import { User, Habit, Proof, UserProfile } from '../types';
+import {
+  filterHabitsByCurrentBatch,
+  getCurrentBatch,
+  isBatchInPrePhase,
+  isBatchActive,
+  getDaysUntilBatchStart
+} from '../utils/batch-manager';
 
 interface FirstModalData {
   personalityType?: string;
@@ -77,7 +84,29 @@ export class CommandHandler {
           hasPersonalChannel: !!existingUser.personalChannelId,
           currentStatus: existingUser.status || 'active'
         });
-        
+
+        // Check if there's a batch in pre-phase
+        const currentBatch = getCurrentBatch();
+        let batchEnrolled = false;
+        let batchMessage = '';
+
+        if (currentBatch && isBatchInPrePhase()) {
+          // Check if user is already in this batch
+          const userBatches = existingUser.batch || [];
+          if (!userBatches.includes(currentBatch.name)) {
+            // Enroll user in the batch
+            await this.notion.addUserToBatch(existingUser.id, currentBatch.name);
+            batchEnrolled = true;
+
+            const daysUntilStart = getDaysUntilBatchStart() || 0;
+            batchMessage = `\n🎯 **Batch Enrollment:** Joined "${currentBatch.name}" (starts in ${daysUntilStart} days)\n`;
+
+            console.log(`✅ Enrolled existing user ${existingUser.name} in batch "${currentBatch.name}"`);
+          } else {
+            batchMessage = `\n📊 **Batch:** Already enrolled in "${currentBatch.name}"\n`;
+          }
+        }
+
         // If user is paused, activate them when they join
         let statusChanged = false;
         if (existingUser.status === 'pause') {
@@ -88,35 +117,38 @@ export class CommandHandler {
           statusChanged = true;
           console.log('✅ User status updated from pause to active');
         }
-        
+
         // Build status message
         const statusMessage = statusChanged
           ? `🔄 **Status Updated:** Your account has been reactivated!\n`
           : `✅ **Status:** ${existingUser.status || 'active'}\n`;
-        
+
         // User exists, provide helpful message
         await interaction.editReply({
           content: `🎉 **Welcome back, ${existingUser.name}!**\n\n` +
                    statusMessage +
+                   batchMessage +
                    `🏠 **Personal Channel:** ${existingUser.personalChannelId ? 'Available' : 'Creating...'}\n` +
                    `📊 **Profile:** Ready for your habits!\n\n` +
                    `💡 **Tip:** Use \`/summary\` to see your progress or \`/habit add\` to add new habits.`
         });
-        
+
         await this.logger.success(
           'COMMANDS',
           'User Already Exists',
-          `Existing user ${existingUser.name} accessed join command${statusChanged ? ' and was reactivated' : ''}`,
+          `Existing user ${existingUser.name} accessed join command${statusChanged ? ' and was reactivated' : ''}${batchEnrolled ? ' and joined batch' : ''}`,
           {
             userId: existingUser.id,
             discordId: discordId,
             hasPersonalChannel: !!existingUser.personalChannelId,
             statusChanged: statusChanged,
+            batchEnrolled: batchEnrolled,
+            batchName: currentBatch?.name,
             previousStatus: existingUser.status,
             newStatus: statusChanged ? 'active' : existingUser.status
           }
         );
-        
+
         return;
       }
       
@@ -194,8 +226,26 @@ export class CommandHandler {
       });
 
       console.log('🔍 Step 4/4: Creating user in Notion database...');
-      
-      // Create new user with personal channel ID and explicit active status
+
+      // Check if there's a current batch to enroll in
+      const currentBatch = getCurrentBatch();
+      const userBatches: string[] = [];
+      let batchInfo = '';
+
+      if (currentBatch && (isBatchInPrePhase() || isBatchActive())) {
+        userBatches.push(currentBatch.name);
+
+        if (isBatchInPrePhase()) {
+          const daysUntilStart = getDaysUntilBatchStart() || 0;
+          batchInfo = `🎯 **Batch:** Enrolled in "${currentBatch.name}" (starts in ${daysUntilStart} days)\n`;
+        } else {
+          batchInfo = `🎯 **Batch:** Enrolled in "${currentBatch.name}" (active)\n`;
+        }
+
+        console.log(`✅ Enrolling new user in batch "${currentBatch.name}"`);
+      }
+
+      // Create new user with personal channel ID, batch, and explicit active status
       const user = await this.notion.createUser({
         discordId,
         name: interaction.user.username,
@@ -203,7 +253,8 @@ export class CommandHandler {
         bestTime: '09:00', // Default
         trustCount: 0,
         personalChannelId,
-        status: 'active' // Explicitly set to active for new users
+        status: 'active', // Explicitly set to active for new users
+        batch: userBatches.length > 0 ? userBatches : undefined
       });
       
       console.log('✅ User created successfully:', {
@@ -245,6 +296,7 @@ export class CommandHandler {
                             `✅ **Registration Complete!**\n` +
                             `🏠 **Personal Channel:** Created and ready\n` +
                             `📝 **Profile:** Saved in Notion\n` +
+                            (batchInfo ? batchInfo : '') +
                             `🚀 **Next Steps:**\n` +
                             `• Use \`/habit add\` to create your first keystone habit\n` +
                             `• Use \`/proof\` to submit daily evidence\n` +
@@ -747,8 +799,9 @@ Every insight helps the community grow stronger!`,
       const type = interaction.options.getString('type') || '';
       const description = interaction.options.getString('description') || '';
 
-      // Get user's first habit as default (in a real implementation, you'd let them choose)
-      const habits = await this.notion.getHabitsByUserId(user.id);
+      // Get user's habits from current batch (in a real implementation, you'd let them choose)
+      const allHabits = await this.notion.getHabitsByUserId(user.id);
+      const habits = filterHabitsByCurrentBatch(allHabits);
       const habitId = habits.length > 0 ? habits[0].id : undefined;
 
       // Create hurdle in Notion

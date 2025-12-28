@@ -49,7 +49,10 @@ test.test('should include current batch when creating habit', async () => {
   // Arrange: Set up test batch
   const testBatch = {
     name: 'test batch january 2026',
-    startDate: '2026-01-01'
+    createdDate: '2026-01-01',
+    startDate: '2026-01-01',
+    endDate: '2026-03-07', // 66 days after start
+    status: 'active' as const
   };
 
   // Save test batch as current active batch
@@ -151,9 +154,16 @@ test.test('should get current batch day correctly', async () => {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const startDate = sevenDaysAgo.toISOString().split('T')[0]; // YYYY-MM-DD
 
+  const endDate = new Date(sevenDaysAgo);
+  endDate.setDate(endDate.getDate() + 65); // 66 days total
+  const endDateStr = endDate.toISOString().split('T')[0];
+
   saveCurrentBatch({
     name: 'test batch',
-    startDate: startDate
+    createdDate: startDate,
+    startDate: startDate,
+    endDate: endDateStr,
+    status: 'active' as const
   });
 
   // Act: Get current batch day (should be day 8)

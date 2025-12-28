@@ -7,7 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { BatchMetadata } from '../types';
+import { BatchMetadata, BatchStatus } from '../types';
 
 const BATCH_FILE_PATH = path.join(process.cwd(), 'data', 'current-batch.json');
 
@@ -82,11 +82,16 @@ export function hasActiveBatch(): boolean {
 
 /**
  * Get current batch day (1-66)
- * Returns null if no batch is active or batch is completed
+ * Returns null if no batch is active, batch is in pre-phase, or batch is completed
  */
 export function getCurrentBatchDay(): number | null {
   const batch = getCurrentBatch();
   if (!batch) {
+    return null;
+  }
+
+  // If batch is in pre-phase, no day count yet
+  if (batch.status === 'pre-phase') {
     return null;
   }
 
@@ -95,6 +100,11 @@ export function getCurrentBatchDay(): number | null {
 
   const startDate = new Date(batch.startDate);
   startDate.setHours(0, 0, 0, 0);
+
+  // If today is before start date, return null (shouldn't happen if status is correct)
+  if (today < startDate) {
+    return null;
+  }
 
   const diffMs = today.getTime() - startDate.getTime();
   const daysDiff = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
@@ -150,4 +160,83 @@ export function filterHabitsByCurrentBatch<T extends { batch?: string }>(habits:
 
   // Filter to only include habits that match the current batch
   return habits.filter(habit => habit.batch === currentBatch.name);
+}
+
+/**
+ * Get current batch status
+ * Returns null if no batch exists
+ */
+export function getBatchStatus(): BatchStatus | null {
+  const batch = getCurrentBatch();
+  return batch ? batch.status : null;
+}
+
+/**
+ * Check if current batch is in pre-phase
+ */
+export function isBatchInPrePhase(): boolean {
+  const batch = getCurrentBatch();
+  return batch?.status === 'pre-phase';
+}
+
+/**
+ * Check if current batch is active (started)
+ */
+export function isBatchActive(): boolean {
+  const batch = getCurrentBatch();
+  return batch?.status === 'active';
+}
+
+/**
+ * Update batch status
+ */
+export function updateBatchStatus(status: BatchStatus): void {
+  const batch = getCurrentBatch();
+  if (!batch) {
+    throw new Error('No batch to update');
+  }
+
+  batch.status = status;
+  saveCurrentBatch(batch);
+  console.log(`✅ Batch status updated to: ${status}`);
+}
+
+/**
+ * Get days until batch starts (for pre-phase batches)
+ * Returns null if batch is not in pre-phase or no batch exists
+ */
+export function getDaysUntilBatchStart(): number | null {
+  const batch = getCurrentBatch();
+  if (!batch || batch.status !== 'pre-phase') {
+    return null;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const startDate = new Date(batch.startDate);
+  startDate.setHours(0, 0, 0, 0);
+
+  const diffMs = startDate.getTime() - today.getTime();
+  const daysDiff = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  return daysDiff;
+}
+
+/**
+ * Check if batch start date has arrived (should transition to active)
+ */
+export function shouldBatchStart(): boolean {
+  const batch = getCurrentBatch();
+  if (!batch || batch.status !== 'pre-phase') {
+    return false;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const startDate = new Date(batch.startDate);
+  startDate.setHours(0, 0, 0, 0);
+
+  return today >= startDate;
 }

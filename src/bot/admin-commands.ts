@@ -4,19 +4,29 @@
  * Commands only available in admin channel (DISCORD_ADMIN env var)
  */
 
-import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder, TextChannel } from 'discord.js';
 import { NotionClient } from '../notion/client';
-import { getCurrentBatch, saveCurrentBatch, getCurrentBatchDay, getBatchEndDate } from '../utils/batch-manager';
+import {
+  getCurrentBatch,
+  saveCurrentBatch,
+  getCurrentBatchDay,
+  getBatchEndDate,
+  getDaysUntilBatchStart,
+  isBatchInPrePhase,
+  isBatchActive
+} from '../utils/batch-manager';
 import { BuddyRotationScheduler } from './buddy-rotation-scheduler';
 
 export class AdminCommandHandler {
   private notionClient: NotionClient;
   private adminChannelId: string;
+  private accountabilityChannelId: string;
   private buddyScheduler: BuddyRotationScheduler | null;
 
   constructor(notionClient: NotionClient, buddyScheduler?: BuddyRotationScheduler) {
     this.notionClient = notionClient;
     this.adminChannelId = process.env.DISCORD_ADMIN || '';
+    this.accountabilityChannelId = process.env.DISCORD_ACCOUNTABILITY_GROUP || '';
     this.buddyScheduler = buddyScheduler || null;
   }
 
@@ -43,7 +53,12 @@ export class AdminCommandHandler {
               option
                 .setName('name')
                 .setDescription('Batch name (e.g., "january 2026")')
-                .setRequired(true)))
+                .setRequired(true))
+            .addStringOption(option =>
+              option
+                .setName('start-date')
+                .setDescription('Start date (YYYY-MM-DD, e.g., 2026-01-05). If not provided, starts today.')
+                .setRequired(false)))
         .addSubcommand(subcommand =>
           subcommand
             .setName('info')
@@ -82,6 +97,7 @@ export class AdminCommandHandler {
     try {
       // Get batch name from command
       const batchName = interaction.options.getString('name', true);
+      const startDateInput = interaction.options.getString('start-date');
 
       // Normalize to lowercase
       const normalizedName = batchName.toLowerCase().trim();
@@ -97,48 +113,116 @@ export class AdminCommandHandler {
         return;
       }
 
-      // Create batch metadata
+      // Determine start date
       const today = new Date();
-      const startDate = today.toISOString().split('T')[0]; // YYYY-MM-DD
-      const endDate = getBatchEndDate(startDate);
+      today.setHours(0, 0, 0, 0);
 
-      // Save batch metadata to JSON file
-      saveCurrentBatch({
-        name: normalizedName,
-        startDate: startDate
-      });
-
-      console.log(`📦 Batch metadata saved: ${normalizedName}`);
-
-      // Add batch label to all active users
-      const enrolledCount = await this.notionClient.addBatchToAllActiveUsers(normalizedName);
-
-      console.log(`👥 Enrolled ${enrolledCount} users in batch`);
-
-      // Assign buddies for the batch
-      let buddyPairsCount = 0;
-      if (this.buddyScheduler) {
-        try {
-          buddyPairsCount = await this.buddyScheduler.assignBuddiesForBatch(normalizedName);
-          console.log(`👥 Created ${buddyPairsCount} buddy pairs for batch`);
-        } catch (error) {
-          console.error('❌ Error assigning buddies:', error);
-          // Continue even if buddy assignment fails
+      let startDate: Date;
+      if (startDateInput) {
+        // Validate date format (YYYY-MM-DD)
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(startDateInput)) {
+          await interaction.editReply({
+            content: '❌ Invalid date format. Please use YYYY-MM-DD (e.g., 2026-01-05)'
+          });
+          return;
         }
+
+        startDate = new Date(startDateInput);
+        startDate.setHours(0, 0, 0, 0);
+
+        // Validate date is not in the past
+        if (startDate < today) {
+          await interaction.editReply({
+            content: '❌ Start date cannot be in the past. Please choose today or a future date.'
+          });
+          return;
+        }
+      } else {
+        // No start date provided - start today
+        startDate = today;
       }
 
-      // Send success message to admin channel
-      await interaction.editReply({
-        content: `✅ **Batch "${normalizedName}" started!**\n\n` +
-          `📅 **Start Date:** ${startDate}\n` +
-          `📅 **End Date:** ${endDate} (Day 66)\n` +
-          `👥 **Enrolled Users:** ${enrolledCount} active users\n` +
-          `👥 **Buddy Pairs Created:** ${buddyPairsCount}\n\n` +
-          `🎯 Day 1 of 66 begins now for everyone!`
+      // Determine batch status
+      const isPrePhase = startDate > today;
+      const status: 'pre-phase' | 'active' = isPrePhase ? 'pre-phase' : 'active';
+
+      const startDateStr = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
+      const createdDateStr = today.toISOString().split('T')[0];
+      const endDate = getBatchEndDate(startDateStr);
+
+      // Create batch metadata
+      saveCurrentBatch({
+        name: normalizedName,
+        createdDate: createdDateStr,
+        startDate: startDateStr,
+        endDate: endDate,
+        status: status
       });
 
-      // Send welcome message to all enrolled users
-      await this.sendBatchWelcomeMessages(normalizedName, startDate, endDate, enrolledCount);
+      console.log(`📦 Batch metadata saved: ${normalizedName} (Status: ${status})`);
+
+      if (isPrePhase) {
+        // PRE-PHASE: Batch created but not started yet
+        const daysUntilStart = Math.floor((startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+        await interaction.editReply({
+          content: `✅ **Batch "${normalizedName}" created!**\n\n` +
+            `📅 **Created:** ${createdDateStr}\n` +
+            `📅 **Start Date:** ${startDateStr} (in ${daysUntilStart} days)\n` +
+            `📅 **End Date:** ${endDate} (Day 66)\n` +
+            `⏳ **Status:** Pre-phase\n\n` +
+            `👥 Users can now join the batch using \`/join\` command.\n` +
+            `🎯 The batch will automatically start on ${startDateStr}!`
+        });
+
+        // Post announcement to accountability channel (if available)
+        if (this.accountabilityChannelId) {
+          const channel = interaction.client.channels.cache.get(this.accountabilityChannelId) as TextChannel;
+          if (channel) {
+            await channel.send(
+              `🎉 **New Batch Available!**\n\n` +
+              `📦 **Batch Name:** ${normalizedName}\n` +
+              `📅 **Start Date:** ${startDateStr} (in ${daysUntilStart} days)\n` +
+              `📅 **End Date:** ${endDate}\n\n` +
+              `👉 Join now using \`/join\` command!\n` +
+              `⏰ Batch starts on ${startDateStr}.`
+            );
+          }
+        }
+
+      } else {
+        // ACTIVE: Batch starts immediately
+
+        // Add batch label to all active users
+        const enrolledCount = await this.notionClient.addBatchToAllActiveUsers(normalizedName);
+        console.log(`👥 Enrolled ${enrolledCount} users in batch`);
+
+        // Assign buddies for the batch
+        let buddyPairsCount = 0;
+        if (this.buddyScheduler) {
+          try {
+            buddyPairsCount = await this.buddyScheduler.assignBuddiesForBatch(normalizedName);
+            console.log(`👥 Created ${buddyPairsCount} buddy pairs for batch`);
+          } catch (error) {
+            console.error('❌ Error assigning buddies:', error);
+            // Continue even if buddy assignment fails
+          }
+        }
+
+        // Send success message to admin channel
+        await interaction.editReply({
+          content: `✅ **Batch "${normalizedName}" started!**\n\n` +
+            `📅 **Start Date:** ${startDateStr}\n` +
+            `📅 **End Date:** ${endDate} (Day 66)\n` +
+            `👥 **Enrolled Users:** ${enrolledCount} active users\n` +
+            `👥 **Buddy Pairs Created:** ${buddyPairsCount}\n\n` +
+            `🎯 Day 1 of 66 begins now for everyone!`
+        });
+
+        // Send welcome message to all enrolled users
+        await this.sendBatchWelcomeMessages(normalizedName, startDateStr, endDate, enrolledCount);
+      }
 
     } catch (error) {
       console.error('❌ Error starting batch:', error);
@@ -159,27 +243,57 @@ export class AdminCommandHandler {
 
       if (!batch) {
         await interaction.editReply({
-          content: '📋 **No Active Batch**\n\nUse `/batch start <name>` to start a new 66-day batch.'
+          content: '📋 **No Active Batch**\n\nUse `/batch start <name> [start-date]` to create a new 66-day batch.'
         });
         return;
       }
 
-      const currentDay = getCurrentBatchDay();
-      const endDate = getBatchEndDate(batch.startDate);
-      const daysRemaining = Math.max(0, 66 - (currentDay || 0));
-
       // Get users in batch
       const batchUsers = await this.notionClient.getUsersInBatch(batch.name);
 
-      await interaction.editReply({
-        content: `📊 **Current Batch: ${batch.name}**\n\n` +
-          `📅 **Day:** ${currentDay} of 66\n` +
-          `⏳ **Days Remaining:** ${daysRemaining}\n` +
-          `📅 **Start Date:** ${batch.startDate}\n` +
-          `📅 **End Date:** ${endDate}\n` +
-          `👥 **Enrolled Users:** ${batchUsers.length}\n\n` +
-          `Status: ${currentDay && currentDay >= 66 ? '✅ Completed!' : '🟢 Active'}`
-      });
+      if (batch.status === 'pre-phase') {
+        // PRE-PHASE: Show countdown and enrollment info
+        const daysUntilStart = getDaysUntilBatchStart() || 0;
+
+        await interaction.editReply({
+          content: `📊 **Batch: ${batch.name}**\n\n` +
+            `⏳ **Status:** Pre-phase\n` +
+            `📅 **Created:** ${batch.createdDate}\n` +
+            `📅 **Start Date:** ${batch.startDate} (in ${daysUntilStart} days)\n` +
+            `📅 **End Date:** ${batch.endDate} (Day 66)\n` +
+            `👥 **Enrolled Users:** ${batchUsers.length}\n\n` +
+            `🎯 Users can join using \`/join\` command.\n` +
+            `⏰ Batch will automatically start on ${batch.startDate}.`
+        });
+
+      } else if (batch.status === 'active') {
+        // ACTIVE: Show current day and progress
+        const currentDay = getCurrentBatchDay();
+        const daysRemaining = Math.max(0, 66 - (currentDay || 0));
+
+        await interaction.editReply({
+          content: `📊 **Current Batch: ${batch.name}**\n\n` +
+            `🟢 **Status:** Active\n` +
+            `📅 **Day:** ${currentDay} of 66\n` +
+            `⏳ **Days Remaining:** ${daysRemaining}\n` +
+            `📅 **Start Date:** ${batch.startDate}\n` +
+            `📅 **End Date:** ${batch.endDate}\n` +
+            `👥 **Enrolled Users:** ${batchUsers.length}\n\n` +
+            `${currentDay && currentDay >= 66 ? '✅ Batch completed!' : '💪 Keep going!'}`
+        });
+
+      } else if (batch.status === 'completed') {
+        // COMPLETED: Show completion info
+        await interaction.editReply({
+          content: `📊 **Batch: ${batch.name}**\n\n` +
+            `✅ **Status:** Completed\n` +
+            `📅 **Start Date:** ${batch.startDate}\n` +
+            `📅 **End Date:** ${batch.endDate}\n` +
+            `👥 **Participants:** ${batchUsers.length}\n\n` +
+            `🎉 All 66 days completed!\n` +
+            `Use \`/batch start <name>\` to create a new batch.`
+        });
+      }
 
     } catch (error) {
       console.error('❌ Error getting batch info:', error);

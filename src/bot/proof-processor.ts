@@ -152,7 +152,8 @@ export class ProofProcessor {
       note,
       attachmentUrl: undefined, // We'll pass this separately
       isMinimalDose: classification.isMinimalDose,
-      isCheatDay: classification.isCheatDay
+      isCheatDay: classification.isCheatDay,
+      batch: habit.batch // Inherit batch from habit
     }, attachmentUrl);
 
     console.log(`✅ Proof created via ProofProcessor: ${proof.id} for user ${user.name}`);

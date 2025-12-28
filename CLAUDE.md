@@ -90,7 +90,7 @@ npm run docker:update
 - `personal-channel-manager.ts` - Creates and manages per-user private channels
 - `personal-assistant.ts` - Personal AI assistant for user questions
 - `tools-assistant.ts` - Matches user requests to available tools
-- `daily-message-scheduler.ts` - Sends scheduled messages using node-cron
+- `daily-message-scheduler.ts` - Sends scheduled messages using node-cron, handles batch activation from pre-phase to active
 - `weekly-agent-scheduler.ts` - Triggers weekly summaries via multi-agent system
 - `all-users-weekly-scheduler.ts` - Coordinates weekly evaluations for all active users
 - `ai-incentive-manager.ts` - Gamification, incentive tracking, and weekly evaluation messages with trend graphs
@@ -142,7 +142,9 @@ The system uses a Pydantic AI-inspired architecture with specialized agents:
    - Manual: `/proof` command → proof-processor validates minimal dose → saves to Notion
    - Automatic: Message in accountability channel → webhook-poller → message-analyzer classifies → proof-processor saves
 4. **Weekly Summary**: Cron job (Sunday 8 AM) → all-users-weekly-scheduler → ai-incentive-manager analyzes each user → generates trend graphs → posts evaluation message with graphs to user channels
-5. **Buddy Assignment**: `/batch start` command → admin-commands → buddy-rotation-scheduler.assignBuddiesForBatch() → pairs active users in batch → sends notifications
+5. **Buddy Assignment**:
+   - Pre-phase batches: Daily scheduler checks if batch start date arrived → activates batch → enrolls users → assigns buddies
+   - Immediate start batches: `/batch start` → admin-commands → enrolls users → assigns buddies immediately
 6. **Mid-Week Check**: Python agent (Wednesday) → analyzes team dynamics and habit progress → posts to relevant channels
 7. **Agent Coordination**: Personal channel message → orchestrator → routes to appropriate agent(s) → aggregates responses
 
@@ -169,7 +171,9 @@ The system uses a Pydantic AI-inspired architecture with specialized agents:
 - Automatic proof detection from accountability channel messages
 
 **Buddy System:**
-- One-time buddy assignment when batch starts (via `/batch start` command)
+- One-time buddy assignment when batch officially starts (Day 1)
+- For pre-phase batches: Daily scheduler activates batch and assigns buddies on start date
+- For immediate-start batches: Buddies assigned when `/batch start` is run
 - Only active users in the current batch are paired
 - Buddies stay together for the entire 66-day batch (no rotation)
 - All users get buddies simultaneously when batch begins
@@ -271,11 +275,20 @@ The project follows a structured development workflow:
 - Python agents run separately via Flask API (port configuration in python-agents/.env)
 
 **Buddy System:**
-- Buddy assignment happens once per batch (triggered by `/batch start` command)
+- Buddy assignment happens once per batch on Day 1 (batch start date)
+- Pre-phase batches: Daily scheduler checks `shouldBatchStart()` and activates batch + assigns buddies
+- Immediate-start batches: `/batch start` assigns buddies right away
 - Only active users (Status = "active") in the current batch are paired
 - Buddies stay together for full 66-day batch (no rotation)
 - Odd number of users handled gracefully (one user may not get paired)
 - `Buddy` field stores nickname (not a relation), `BuddyStart` stores assignment date
+
+**Batch System:**
+- Batches can have pre-phase period (created with future start date)
+- Daily scheduler checks if pre-phase batch should activate and handles transition
+- Batch status transitions: pre-phase → active → completed
+- User enrollment happens when batch activates (not when created)
+- Buddy assignment happens when batch activates (Day 1)
 
 **Trend Graphs:**
 - Only generated if habit has at least 4 weeks of data
