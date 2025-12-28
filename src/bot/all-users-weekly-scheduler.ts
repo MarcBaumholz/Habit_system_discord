@@ -12,6 +12,7 @@ import { MentorAgent } from '../agents/mentor/mentor_agent';
 import { UserContext, AgentResponse } from '../agents/base/types';
 import { User, BuddyProgressData } from '../types';
 import * as cron from 'node-cron';
+import { getCurrentBatch, isBatchActive } from '../utils/batch-manager';
 
 export class AllUsersWeeklyScheduler {
   private client: Client;
@@ -301,34 +302,52 @@ ${mentorResponse.next_steps && mentorResponse.next_steps.length > 0 ? `\n**Next 
   }
 
   /**
-   * Run weekly analysis for all active users
+   * Run weekly analysis for all active users in current batch
    */
   async runWeeklyAnalysisForAllUsers(): Promise<void> {
     try {
+      // Check if batch is active
+      if (!isBatchActive()) {
+        console.log('⏸️ No active batch - skipping weekly analysis');
+        await this.logger.info(
+          'ALL_USERS_WEEKLY_SCHEDULER',
+          'Analysis Skipped',
+          'No active batch - weekly analysis skipped'
+        );
+        return;
+      }
+
+      const batch = getCurrentBatch();
+      if (!batch) return;
+
       await this.logger.info(
         'ALL_USERS_WEEKLY_SCHEDULER',
         'Weekly Analysis Started',
-        'Starting weekly analysis for all active users',
+        `Starting weekly analysis for active users in batch "${batch.name}"`,
         {
+          batchName: batch.name,
           day: new Date().toLocaleDateString('en-US', { weekday: 'long' }),
           time: new Date().toLocaleTimeString()
         }
       );
 
-      // Get all active users
-      const activeUsers = await this.notion.getActiveUsers();
-      
+      // Get users in current batch
+      const batchUsers = await this.notion.getUsersInBatch(batch.name);
+
+      // Filter for active users only (exclude paused users)
+      const activeUsers = batchUsers.filter(user => user.status === 'active');
+
       if (activeUsers.length === 0) {
         await this.logger.info(
           'ALL_USERS_WEEKLY_SCHEDULER',
           'No Active Users',
-          'No active users found for weekly analysis'
+          `No active users found in batch "${batch.name}" for weekly analysis`
         );
-        console.log('⚠️ No active users found');
+        console.log(`⚠️ No active users found in batch "${batch.name}"`);
         return;
       }
 
-      console.log(`📊 Running weekly analysis for ${activeUsers.length} active users`);
+      console.log(`📊 Running weekly analysis for ${activeUsers.length} active users in batch "${batch.name}" (${batchUsers.length} total in batch)`);
 
       // Run analysis for each user sequentially (to avoid rate limits)
       for (const user of activeUsers) {
@@ -340,13 +359,15 @@ ${mentorResponse.next_steps && mentorResponse.next_steps.length > 0 ? `\n**Next 
       await this.logger.success(
         'ALL_USERS_WEEKLY_SCHEDULER',
         'Weekly Analysis Completed',
-        'Successfully completed weekly analysis for all active users',
+        `Successfully completed weekly analysis for batch "${batch.name}"`,
         {
-          usersProcessed: activeUsers.length
+          batchName: batch.name,
+          usersProcessed: activeUsers.length,
+          totalInBatch: batchUsers.length
         }
       );
 
-      console.log(`✅ Weekly analysis completed for ${activeUsers.length} users`);
+      console.log(`✅ Weekly analysis completed for ${activeUsers.length} users in batch "${batch.name}"`);
 
     } catch (error) {
       await this.logger.logError(

@@ -3,6 +3,7 @@ import { NotionClient } from '../notion/client';
 import { User, Habit, Proof } from '../types';
 import { DiscordLogger } from './discord-logger';
 import { generateTrendGraph } from '../utils/trend-graph-generator';
+import { getCurrentBatch, isBatchActive } from '../utils/batch-manager';
 
 // Enhanced habit analysis type for Notion-style weekly report
 interface EnhancedHabitAnalysis {
@@ -64,10 +65,26 @@ export class AIIncentiveManager {
   async runWeeklyAIIncentiveAnalysis(): Promise<void> {
     try {
       console.log('🧠 Starting weekly AI incentive analysis...');
-      
-      // Get all users from Notion
+
+      // Check if batch is active
+      if (!isBatchActive()) {
+        console.log('⏸️ No active batch - skipping AI incentive analysis');
+        await this.logger.info(
+          'AI_INCENTIVE',
+          'Analysis Skipped',
+          'No active batch - AI incentive analysis skipped'
+        );
+        return;
+      }
+
+      const batch = getCurrentBatch();
+      if (!batch) return;
+
+      console.log(`📊 Running AI incentive analysis for batch: ${batch.name}`);
+
+      // Get users in current batch
       const users = await this.getAllUsers();
-      console.log(`📊 Found ${users.length} users for AI analysis`);
+      console.log(`📊 Found ${users.length} active users in batch "${batch.name}" for AI analysis`);
 
       for (const user of users) {
         try {
@@ -80,13 +97,14 @@ export class AIIncentiveManager {
             `Failed to analyze user ${user.name}`,
             {
               userId: user.id,
+              batchName: batch.name,
               error: (error as Error).message
             }
           );
         }
       }
 
-      console.log('✅ Weekly AI incentive analysis completed');
+      console.log(`✅ Weekly AI incentive analysis completed for batch "${batch.name}"`);
     } catch (error) {
       console.error('❌ Error in weekly AI incentive analysis:', error);
       await this.logger.error(
@@ -427,16 +445,28 @@ export class AIIncentiveManager {
   }
 
   /**
-   * Get active users from Notion (excludes paused users)
+   * Get active users in current batch (excludes paused users and users not in batch)
    */
   private async getAllUsers(): Promise<User[]> {
     try {
-      console.log('🔍 Fetching active users from Notion for AI incentive analysis...');
-      const users = await this.notion.getActiveUsers();
-      console.log(`📊 Found ${users.length} active users for AI analysis`);
-      return users;
+      const batch = getCurrentBatch();
+      if (!batch) {
+        console.log('⚠️ No current batch found');
+        return [];
+      }
+
+      console.log(`🔍 Fetching active users in batch "${batch.name}" for AI incentive analysis...`);
+
+      // Get users in current batch
+      const batchUsers = await this.notion.getUsersInBatch(batch.name);
+
+      // Filter for active users only (exclude paused users)
+      const activeUsers = batchUsers.filter(user => user.status === 'active');
+
+      console.log(`📊 Found ${activeUsers.length} active users in batch "${batch.name}" (${batchUsers.length} total in batch)`);
+      return activeUsers;
     } catch (error) {
-      console.error('❌ Error getting active users:', error);
+      console.error('❌ Error getting active batch users:', error);
       return [];
     }
   }

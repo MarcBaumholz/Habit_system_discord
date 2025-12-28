@@ -184,6 +184,7 @@ export interface PricePoolEntry {
   weekDate: string; // Monday of the week (YYYY-MM-DD)
   message: string; // Description of the charge
   price: number; // Charge amount in euros
+  batch?: string; // Batch the charge belongs to (e.g., "january 2026")
 }
 
 // Habit Compliance Tracking

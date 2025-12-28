@@ -296,7 +296,8 @@ class NotionTools:
         week_date: date,
         user_relation_id: str,
         message: str,
-        price: float
+        price: float,
+        batch: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Create a new entry in the Price Pool database.
@@ -307,6 +308,7 @@ class NotionTools:
             user_relation_id: Notion ID for user relation
             message: Description of the charge
             price: Charge amount
+            batch: Optional batch name (e.g., "january 2026")
 
         Returns:
             Created page data or None if failed.
@@ -348,8 +350,20 @@ class NotionTools:
                 }
             }
 
+            # Add batch field if provided
+            if batch:
+                properties["Batch"] = {
+                    "rich_text": [
+                        {
+                            "text": {
+                                "content": batch
+                            }
+                        }
+                    ]
+                }
+
             if settings.DRY_RUN:
-                logger.info(f"[DRY RUN] Would create price pool entry: {discord_id} - {message} - €{price}")
+                logger.info(f"[DRY RUN] Would create price pool entry: {discord_id} - {message} - €{price} (batch: {batch})")
                 return {"id": "dry-run-id", "properties": properties}
 
             response = await self._retry_request(
@@ -358,24 +372,40 @@ class NotionTools:
                 properties=properties
             )
 
-            logger.info(f"Created price pool entry for {discord_id}: €{price}")
+            logger.info(f"Created price pool entry for {discord_id}: €{price} (batch: {batch})")
             return response
 
         except Exception as e:
             logger.error(f"Error creating price pool entry: {e}")
             return None
 
-    async def get_total_price_pool(self) -> float:
+    async def get_total_price_pool(self, batch: Optional[str] = None) -> float:
         """
         Get the total accumulated balance in the Price Pool.
+
+        Args:
+            batch: Optional batch name to filter by (e.g., "january 2026")
 
         Returns:
             Total balance in euros.
         """
         try:
+            query_params = {
+                "database_id": settings.NOTION_DATABASE_PRICE_POOL
+            }
+
+            # Add batch filter if provided
+            if batch:
+                query_params["filter"] = {
+                    "property": "Batch",
+                    "rich_text": {
+                        "equals": batch
+                    }
+                }
+
             response = await self._retry_request(
                 self.client.databases.query,
-                database_id=settings.NOTION_DATABASE_PRICE_POOL
+                **query_params
             )
 
             total = 0.0
@@ -386,30 +416,46 @@ class NotionTools:
                 if price:
                     total += price
 
-            logger.info(f"Total price pool balance: €{total:.2f}")
+            logger.info(f"Total price pool balance: €{total:.2f} (batch: {batch or 'all'})")
             return total
 
         except Exception as e:
             logger.error(f"Error calculating total price pool: {e}")
             return 0.0
 
-    async def get_weekly_price_pool_entries(self, week_start: date) -> List[PricePoolEntry]:
+    async def get_weekly_price_pool_entries(self, week_start: date, batch: Optional[str] = None) -> List[PricePoolEntry]:
         """
         Get all Price Pool entries for a specific week.
 
         Args:
             week_start: Start date of the week (Monday)
+            batch: Optional batch name to filter by (e.g., "january 2026")
 
         Returns:
             List of PricePoolEntry objects.
         """
         try:
-            filter_config = {
-                "property": "Week date",
-                "date": {
-                    "equals": week_start.isoformat()
+            # Build filters
+            filters = [
+                {
+                    "property": "Week date",
+                    "date": {
+                        "equals": week_start.isoformat()
+                    }
                 }
-            }
+            ]
+
+            # Add batch filter if provided
+            if batch:
+                filters.append({
+                    "property": "Batch",
+                    "rich_text": {
+                        "equals": batch
+                    }
+                })
+
+            # Use AND filter if multiple filters
+            filter_config = {"and": filters} if len(filters) > 1 else filters[0]
 
             response = await self._retry_request(
                 self.client.databases.query,
@@ -423,7 +469,7 @@ class NotionTools:
                 if entry:
                     entries.append(entry)
 
-            logger.info(f"Found {len(entries)} price pool entries for week {week_start}")
+            logger.info(f"Found {len(entries)} price pool entries for week {week_start} (batch: {batch or 'all'})")
             return entries
 
         except Exception as e:
@@ -459,6 +505,11 @@ class NotionTools:
             price_prop = properties.get("Price", {})
             price = price_prop.get("number", 0.0)
 
+            # Extract Batch (optional)
+            batch_prop = properties.get("Batch", {})
+            batch_array = batch_prop.get("rich_text", [])
+            batch = batch_array[0].get("text", {}).get("content", "") if batch_array else None
+
             if not discord_id or not week_date or not price:
                 return None
 
@@ -468,7 +519,8 @@ class NotionTools:
                 week_date=week_date,
                 user_relation_id=user_relation_id,
                 message=message,
-                price=price
+                price=price,
+                batch=batch
             )
 
         except Exception as e:

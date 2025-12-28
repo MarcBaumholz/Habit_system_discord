@@ -1639,6 +1639,11 @@ export class NotionClient {
         properties['User'] = { relation: [{ id: entry.userId }] };
       }
 
+      // Add batch field if provided
+      if (entry.batch) {
+        properties['Batch'] = { rich_text: [{ text: { content: entry.batch } }] };
+      }
+
       const response = await this.client.pages.create({
         parent: { database_id: this.databases.pricePool },
         properties
@@ -1650,7 +1655,8 @@ export class NotionClient {
         userId: entry.userId,
         weekDate: entry.weekDate,
         message: entry.message,
-        price: entry.price
+        price: entry.price,
+        batch: entry.batch
       };
     } catch (error) {
       console.error('Error creating Price Pool entry:', error);
@@ -1660,12 +1666,25 @@ export class NotionClient {
 
   /**
    * Get total price pool balance (sum of all charges)
+   * @param batch - Optional batch name to filter by (e.g., "january 2026")
    */
-  async getTotalPricePool(): Promise<number> {
+  async getTotalPricePool(batch?: string): Promise<number> {
     try {
-      const response = await this.client.databases.query({
+      const query: any = {
         database_id: this.databases.pricePool
-      });
+      };
+
+      // Add batch filter if provided
+      if (batch) {
+        query.filter = {
+          property: 'Batch',
+          rich_text: {
+            equals: batch
+          }
+        };
+      }
+
+      const response = await this.client.databases.query(query);
 
       let total = 0;
       for (const page of response.results) {
@@ -1683,18 +1702,36 @@ export class NotionClient {
 
   /**
    * Get Price Pool entries for a specific week
+   * @param weekDate - Week start date (YYYY-MM-DD)
+   * @param batch - Optional batch name to filter by (e.g., "january 2026")
    */
-  async getPricePoolEntriesByWeek(weekDate: string): Promise<PricePoolEntry[]> {
+  async getPricePoolEntriesByWeek(weekDate: string, batch?: string): Promise<PricePoolEntry[]> {
     try {
-      const response = await this.client.databases.query({
-        database_id: this.databases.pricePool,
-        filter: {
+      const filters: any[] = [
+        {
           property: 'Week date',
           date: {
             equals: weekDate
           }
         }
-      });
+      ];
+
+      // Add batch filter if provided
+      if (batch) {
+        filters.push({
+          property: 'Batch',
+          rich_text: {
+            equals: batch
+          }
+        });
+      }
+
+      const query: any = {
+        database_id: this.databases.pricePool,
+        filter: filters.length > 1 ? { and: filters } : filters[0]
+      };
+
+      const response = await this.client.databases.query(query);
 
       return response.results.map((page: any) => {
         const props = page.properties;
@@ -1704,7 +1741,8 @@ export class NotionClient {
           userId: props['User']?.relation?.[0]?.id,
           weekDate: props['Week date']?.date?.start || '',
           message: props['Message']?.rich_text?.[0]?.text?.content || '',
-          price: props['Price']?.number || 0
+          price: props['Price']?.number || 0,
+          batch: props['Batch']?.rich_text?.[0]?.text?.content
         };
       });
     } catch (error) {
@@ -2034,7 +2072,7 @@ export class NotionClient {
   /**
    * Create challenge reward entry (uses existing Price Pool DB with negative value)
    */
-  async createChallengeReward(userId: string, weekDate: string, amount: number): Promise<void> {
+  async createChallengeReward(userId: string, weekDate: string, amount: number, batch?: string): Promise<void> {
     try {
       // Get user's Discord ID for the Price Pool entry
       const user = await this.getUserById(userId);
@@ -2048,7 +2086,8 @@ export class NotionClient {
         userId: userId,
         weekDate: weekDate,
         message: `Challenge completion reward - earned €${amount}`,
-        price: -amount // Negative value = credit
+        price: -amount, // Negative value = credit
+        batch: batch
       });
 
       console.log(`✅ Challenge reward created: €${amount} for user ${user.discordId}`);

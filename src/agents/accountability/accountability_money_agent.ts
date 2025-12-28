@@ -24,6 +24,7 @@ import {
   LeaderboardEntry,
   Group
 } from '../../types';
+import { getCurrentBatch, filterHabitsByCurrentBatch, isBatchActive } from '../../utils/batch-manager';
 
 export class AccountabilityMoneyAgent extends BaseAgent {
   private perplexityClient: PerplexityClient;
@@ -72,7 +73,14 @@ export class AccountabilityMoneyAgent extends BaseAgent {
       }
 
       // Otherwise, handle individual analysis requests
-      const allUsers = await this.notionClient.getActiveUsers();
+      // Get active users in current batch
+      const batch = getCurrentBatch();
+      let allUsers: User[] = [];
+      if (batch && isBatchActive()) {
+        const batchUsers = await this.notionClient.getUsersInBatch(batch.name);
+        allUsers = batchUsers.filter(user => user.status === 'active');
+      }
+
       const groups = await this.notionClient.getAllGroups();
 
       const groupAnalysis = await this.analyzeGroupDynamics(userContext, allUsers as any, groups as any);
@@ -105,12 +113,26 @@ export class AccountabilityMoneyAgent extends BaseAgent {
   async generateWeeklyReport(): Promise<WeeklyAccountabilityReport> {
     this.log('info', 'Generating weekly accountability report');
 
+    // Check if batch is active
+    if (!isBatchActive()) {
+      this.log('info', 'No active batch - returning empty report');
+      return this.createEmptyReport();
+    }
+
+    const batch = getCurrentBatch();
+    if (!batch) {
+      return this.createEmptyReport();
+    }
+
+    this.log('info', `Generating report for batch: ${batch.name}`);
+
     const { weekStart, weekEnd } = this.getCurrentWeekRange();
     this.log('info', `Week range: ${weekStart} to ${weekEnd}`);
 
-    // Step 1: Get all active users
-    const allUsers = await this.notionClient.getActiveUsers();
-    this.log('info', `Found ${allUsers.length} active users`);
+    // Step 1: Get active users in current batch
+    const batchUsers = await this.notionClient.getUsersInBatch(batch.name);
+    const allUsers = batchUsers.filter(user => user.status === 'active');
+    this.log('info', `Found ${allUsers.length} active users in batch "${batch.name}" (${batchUsers.length} total in batch)`);
 
     // Step 2: Calculate compliance for each user
     const userCompliance: UserCompliance[] = [];
@@ -134,8 +156,9 @@ export class AccountabilityMoneyAgent extends BaseAgent {
     // Step 4: Save charges to Price Pool
     await this.saveChargesToPricePool(userCompliance, weekStart);
 
-    // Step 5: Get total pool balance
-    const totalPoolBalance = await this.notionClient.getTotalPricePool();
+    // Step 5: Get total pool balance for current batch
+    const currentBatch = getCurrentBatch();
+    const totalPoolBalance = await this.notionClient.getTotalPricePool(currentBatch?.name);
 
     // Step 6: Get social insights
     const socialInsights = await this.generateSocialInsights(allUsers as any);
@@ -164,6 +187,24 @@ export class AccountabilityMoneyAgent extends BaseAgent {
   }
 
   /**
+   * Create empty report when no batch is active
+   */
+  private createEmptyReport(): WeeklyAccountabilityReport {
+    const { weekStart, weekEnd } = this.getCurrentWeekRange();
+
+    return {
+      weekStart,
+      weekEnd,
+      userCompliance: [],
+      leaderboard: [],
+      totalWeeklyCharges: 0,
+      totalPoolBalance: 0,
+      socialInsights: 'No active batch - accountability tracking paused',
+      generatedAt: new Date().toISOString()
+    };
+  }
+
+  /**
    * Calculate habit compliance for a single user
    */
   private async calculateUserCompliance(
@@ -172,11 +213,12 @@ export class AccountabilityMoneyAgent extends BaseAgent {
     weekEnd: string
   ): Promise<UserCompliance | null> {
     try {
-      // Get user's habits
-      const habits = await this.notionClient.getHabitsByUserId(user.id);
+      // Get user's habits and filter by current batch
+      const allHabits = await this.notionClient.getHabitsByUserId(user.id);
+      const habits = filterHabitsByCurrentBatch(allHabits);
 
       if (!habits || habits.length === 0) {
-        this.log('info', `User ${user.name} has no habits, skipping`);
+        this.log('info', `User ${user.name} has no habits in current batch, skipping`);
         return null;
       }
 
@@ -312,6 +354,10 @@ export class AccountabilityMoneyAgent extends BaseAgent {
   ): Promise<void> {
     this.log('info', 'Saving charges to Price Pool database');
 
+    // Get current batch for all entries
+    const currentBatch = getCurrentBatch();
+    const batchName = currentBatch?.name;
+
     let savedCount = 0;
     let errorCount = 0;
 
@@ -326,7 +372,8 @@ export class AccountabilityMoneyAgent extends BaseAgent {
               userId: user.userId,
               weekDate,
               message,
-              price: habit.charge
+              price: habit.charge,
+              batch: batchName
             });
 
             savedCount++;

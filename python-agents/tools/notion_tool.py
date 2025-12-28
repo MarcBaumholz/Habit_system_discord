@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from notion_client import Client
 from crewai_tools import BaseTool
 import os
+import json
 
 
 class NotionHabitTool(BaseTool):
@@ -75,15 +76,65 @@ class NotionHabitTool(BaseTool):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
+    def _get_current_batch(self) -> Optional[Dict[str, Any]]:
+        """
+        Get current batch metadata from file
+        Returns None if no batch is active
+        """
+        try:
+            batch_file_path = os.path.join(os.getcwd(), 'data', 'current-batch.json')
+            if not os.path.exists(batch_file_path):
+                return None
+
+            with open(batch_file_path, 'r') as f:
+                batch = json.load(f)
+                return batch
+        except Exception as e:
+            print(f"❌ Error reading batch file: {e}")
+            return None
+
+    def _is_batch_active(self) -> bool:
+        """
+        Check if current batch is active (status = 'active')
+        Returns False if no batch exists or batch is in pre-phase
+        """
+        batch = self._get_current_batch()
+        return batch is not None and batch.get('status') == 'active'
+
     def _get_active_users(self) -> List[Dict[str, Any]]:
-        """Get all active users from Notion"""
+        """
+        Get all active users in the current batch from Notion
+        Returns users with Status = 'active' AND in current batch
+        """
+        # Get current batch
+        batch = self._get_current_batch()
+        if not batch:
+            print('⚠️ No current batch found - returning empty user list')
+            return []
+
+        batch_name = batch.get('name')
+        if not batch_name:
+            print('⚠️ Batch has no name - returning empty user list')
+            return []
+
+        # Query users with compound filter: Status = 'active' AND Batch contains batch_name
         response = self.notion.databases.query(
             database_id=self.databases['users'],
             filter={
-                'property': 'Status',
-                'select': {
-                    'equals': 'active'
-                }
+                'and': [
+                    {
+                        'property': 'Status',
+                        'select': {
+                            'equals': 'active'
+                        }
+                    },
+                    {
+                        'property': 'Batch',
+                        'multi_select': {
+                            'contains': batch_name
+                        }
+                    }
+                ]
             }
         )
 
@@ -99,6 +150,7 @@ class NotionHabitTool(BaseTool):
                 'status': 'active'
             })
 
+        print(f'📊 Found {len(users)} active users in batch "{batch_name}"')
         return users
 
     def _get_user_habits(self, user_id: str) -> List[Dict[str, Any]]:
@@ -180,7 +232,24 @@ class NotionHabitTool(BaseTool):
         """
         Get all data needed for mid-week analysis
         Returns active users with their habits and this week's proofs
+        Only processes users if batch is active
         """
+        # Check if batch is active
+        if not self._is_batch_active():
+            print('⏸️ No active batch - skipping midweek analysis')
+            return {
+                'analysis_date': datetime.now().strftime('%Y-%m-%d'),
+                'week_start': '',
+                'week_end': '',
+                'total_active_users': 0,
+                'users_data': [],
+                'message': 'No active batch - midweek analysis skipped'
+            }
+
+        batch = self._get_current_batch()
+        batch_name = batch.get('name', 'Unknown') if batch else 'Unknown'
+        print(f'📊 Running midweek analysis for batch: {batch_name}')
+
         # Calculate week range (Monday to Sunday)
         today = datetime.now()
         monday = today - timedelta(days=today.weekday())
@@ -189,7 +258,7 @@ class NotionHabitTool(BaseTool):
         start_date = monday.strftime('%Y-%m-%d')
         end_date = sunday.strftime('%Y-%m-%d')
 
-        # Get active users
+        # Get active users in current batch
         users = self._get_active_users()
 
         # For each user, get habits and proofs

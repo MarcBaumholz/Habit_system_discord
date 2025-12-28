@@ -16,6 +16,7 @@ class PricePoolEntry(BaseModel):
     user_relation_id: str = Field(..., description="Notion ID for user relation")
     message: str = Field(..., description="Description of the charge")
     price: float = Field(..., gt=0.0, description="Charge amount in euros")
+    batch: Optional[str] = Field(None, description="Batch name (e.g., 'january 2026')")
 
     class Config:
         json_schema_extra = {
@@ -24,7 +25,8 @@ class PricePoolEntry(BaseModel):
                 "week_date": "2025-10-21",
                 "user_relation_id": "278d42a1-faf5-80ce-a57f-f646855a4130",
                 "message": "Meditation: 2 missed (3/5 completed)",
-                "price": 1.00
+                "price": 1.00,
+                "batch": "january 2026"
             }
         }
 

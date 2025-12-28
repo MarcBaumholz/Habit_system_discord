@@ -14,6 +14,10 @@ from money_agent.models.compliance_models import (
     WeeklyReport
 )
 from money_agent.config.settings import settings
+from money_agent.utils.batch_manager import (
+    get_current_batch_name,
+    filter_habits_by_current_batch
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -99,10 +103,11 @@ class MoneyAgent:
             logger.info("\n[Step 4/6] Saving charges to Notion Price Pool...")
             await self.save_charges_to_notion(all_charges)
 
-            # Step 5: Get total pool balance
+            # Step 5: Get total pool balance for current batch
             logger.info("\n[Step 5/6] Calculating price pool balance...")
-            total_pool = await self.notion.get_total_price_pool()
-            logger.info(f"Total price pool balance: €{total_pool:.2f}")
+            batch_name = get_current_batch_name()
+            total_pool = await self.notion.get_total_price_pool(batch=batch_name)
+            logger.info(f"Total price pool balance: €{total_pool:.2f} (batch: {batch_name})")
 
             # Step 6: Generate and send report
             logger.info("\n[Step 6/6] Generating and sending report...")
@@ -171,11 +176,12 @@ class MoneyAgent:
         try:
             habit_compliance_list: List[HabitCompliance] = []
 
-            # Get habits for this user from Habits DB
-            habits = await self.notion.get_user_habits(user["id"])
+            # Get habits for this user from Habits DB and filter by current batch
+            all_habits = await self.notion.get_user_habits(user["id"])
+            habits = filter_habits_by_current_batch(all_habits)
 
             if not habits:
-                logger.info(f"User {user['name']} has no habits, skipping")
+                logger.info(f"User {user['name']} has no habits in current batch, skipping")
                 return None
 
             # Process each habit
@@ -268,6 +274,9 @@ class MoneyAgent:
             logger.info("No charges to save")
             return
 
+        # Get current batch name for all charges
+        batch_name = get_current_batch_name()
+
         success_count = 0
         for charge in charges:
             try:
@@ -276,7 +285,8 @@ class MoneyAgent:
                     week_date=charge.week_date,
                     user_relation_id=charge.user_notion_id,
                     message=charge.message,
-                    price=charge.charge
+                    price=charge.charge,
+                    batch=batch_name
                 )
 
                 if result:
@@ -285,7 +295,7 @@ class MoneyAgent:
             except Exception as e:
                 logger.error(f"Error saving charge for {charge.discord_id}: {e}")
 
-        logger.info(f"Saved {success_count}/{len(charges)} charges to Notion")
+        logger.info(f"Saved {success_count}/{len(charges)} charges to Notion (batch: {batch_name})")
 
     async def generate_manual_report(
         self,
