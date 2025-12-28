@@ -1,6 +1,6 @@
 import { NotionClient } from '../notion/client';
 import { ProfileStorage } from './profile-storage';
-import { QueryClassifier, QueryIntent } from './query-classifier';
+import { QueryClassifier, QueryIntent, QueryClassification } from './query-classifier';
 import { ContextCompressor } from './context-compressor';
 import { Habit, Proof } from '../types';
 
@@ -34,10 +34,11 @@ export class DynamicContextBuilder {
   async buildContext(
     discordId: string,
     userQuery: string,
-    userId: string
+    userId: string,
+    existingClassification?: QueryClassification
   ): Promise<DynamicContext> {
-    // Classify query
-    const classification = this.queryClassifier.classifyQuery(userQuery);
+    // Classify query (allow pre-classification from caller)
+    const classification = existingClassification || this.queryClassifier.classifyQuery(userQuery);
     const intent = classification.intent;
 
     console.log(`🔍 Query classified as: ${intent} (confidence: ${classification.confidence})`);
@@ -58,24 +59,24 @@ export class DynamicContextBuilder {
         break;
 
       case 'progress_check':
-        context = await this.buildProgressCheckContext(profileContent, userId);
+        context = await this.buildProgressCheckContext(profileContent, userId, classification.mentionedHabits);
         break;
 
       case 'personality_advice':
-        context = await this.buildPersonalityAdviceContext(profileContent);
+        context = await this.buildPersonalityAdviceContext(profileContent, userId, classification.mentionedHabits);
         break;
 
       case 'hurdle_help':
-        context = await this.buildHurdleHelpContext(profileContent, userId);
+        context = await this.buildHurdleHelpContext(profileContent, userId, classification.mentionedHabits);
         break;
 
       case 'learning_insight':
-        context = await this.buildLearningInsightContext(profileContent, userId);
+        context = await this.buildLearningInsightContext(profileContent, userId, classification.mentionedHabits);
         break;
 
       case 'general':
       default:
-        context = await this.buildGeneralContext(profileContent);
+        context = await this.buildGeneralContext(profileContent, userId, classification.mentionedHabits);
         break;
     }
 
@@ -140,6 +141,11 @@ export class DynamicContextBuilder {
     const summary = await this.notion.getUserSummary(userId);
     lines.push('\n## Summary');
     lines.push(this.compressor.compressSummary(summary));
+    lines.push('\n## Live Summary Keywords (Notion)');
+    lines.push(this.buildSummaryKeywordBlock(summary));
+
+    lines.push('\n## Habit Keywords (Notion)');
+    lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
 
     return lines.join('\n');
   }
@@ -149,7 +155,8 @@ export class DynamicContextBuilder {
    */
   private async buildProgressCheckContext(
     profileContent: string,
-    userId: string
+    userId: string,
+    mentionedHabits?: string[]
   ): Promise<string> {
     const lines: string[] = [];
 
@@ -169,13 +176,23 @@ export class DynamicContextBuilder {
     lines.push('\n## Current Status');
     lines.push(this.compressor.compressSummary(summary));
 
+    lines.push('\n## Notion Summary Keywords');
+    lines.push(this.buildSummaryKeywordBlock(summary));
+
+    lines.push('\n## Habit Keywords (Notion)');
+    lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
+
     return lines.join('\n');
   }
 
   /**
    * Build context for personality advice queries
    */
-  private async buildPersonalityAdviceContext(profileContent: string): Promise<string> {
+  private async buildPersonalityAdviceContext(
+    profileContent: string,
+    userId: string,
+    mentionedHabits?: string[]
+  ): Promise<string> {
     const lines: string[] = [];
 
     // Extract personality section
@@ -192,6 +209,12 @@ export class DynamicContextBuilder {
     const habitsSection = this.extractSection(profileContent, '## Habits Overview');
     lines.push(habitsSection);
 
+    const habits = await this.notion.getHabitsByUserId(userId);
+    const proofs = await this.getCurrentWeekProofs(userId);
+
+    lines.push('\n## Habit Keywords (Notion)');
+    lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
+
     return lines.join('\n');
   }
 
@@ -200,7 +223,8 @@ export class DynamicContextBuilder {
    */
   private async buildHurdleHelpContext(
     profileContent: string,
-    userId: string
+    userId: string,
+    mentionedHabits?: string[]
   ): Promise<string> {
     const lines: string[] = [];
 
@@ -221,6 +245,16 @@ export class DynamicContextBuilder {
       );
     }
 
+    const habits = await this.notion.getHabitsByUserId(userId);
+    const proofs = await this.getCurrentWeekProofs(userId);
+    const summary = await this.notion.getUserSummary(userId);
+
+    lines.push('\n## Live Summary Keywords');
+    lines.push(this.buildSummaryKeywordBlock(summary));
+
+    lines.push('\n## Habit Keywords (Notion)');
+    lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
+
     return lines.join('\n');
   }
 
@@ -229,7 +263,8 @@ export class DynamicContextBuilder {
    */
   private async buildLearningInsightContext(
     profileContent: string,
-    userId: string
+    userId: string,
+    mentionedHabits?: string[]
   ): Promise<string> {
     const lines: string[] = [];
 
@@ -250,18 +285,34 @@ export class DynamicContextBuilder {
       );
     }
 
+    const habits = await this.notion.getHabitsByUserId(userId);
+    const proofs = await this.getCurrentWeekProofs(userId);
+    const summary = await this.notion.getUserSummary(userId);
+
+    lines.push('\n## Live Summary Keywords');
+    lines.push(this.buildSummaryKeywordBlock(summary));
+
+    lines.push('\n## Habit Keywords (Notion)');
+    lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
+
     return lines.join('\n');
   }
 
   /**
    * Build context for general queries
    */
-  private async buildGeneralContext(profileContent: string): Promise<string> {
+  private async buildGeneralContext(
+    profileContent: string,
+    userId: string,
+    mentionedHabits?: string[]
+  ): Promise<string> {
     const lines: string[] = [];
 
     // Extract summary section only
     const summarySection = this.extractSection(profileContent, '## Summary Statistics');
-    lines.push(summarySection);
+    if (summarySection) {
+      lines.push(summarySection);
+    }
 
     // Extract personality section (minimal)
     const personalitySection = this.extractSection(profileContent, '## Personality Profile');
@@ -271,6 +322,15 @@ export class DynamicContextBuilder {
       lines.push('\n## Personality');
       lines.push(personalityLines.join('\n'));
     }
+
+    const summary = await this.notion.getUserSummary(userId);
+    lines.push('\n## Live Summary Keywords (Notion)');
+    lines.push(this.buildSummaryKeywordBlock(summary));
+
+    const habits = await this.notion.getHabitsByUserId(userId);
+    const proofs = await this.getCurrentWeekProofs(userId);
+    lines.push('\n## Habit Keywords (Notion)');
+    lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
 
     return lines.join('\n');
   }
@@ -329,5 +389,110 @@ export class DynamicContextBuilder {
       return [];
     }
   }
-}
 
+  private buildSummaryKeywordBlock(summary: {
+    completionRate: number;
+    currentStreak: number;
+    bestStreak: number;
+    totalHabits: number;
+    weekProofs: number;
+    weekDays: number;
+    weekStartDate?: string;
+    weekEndDate?: string;
+  }): string {
+    if (!summary) {
+      return 'Keine Live-Zusammenfassung verfügbar.';
+    }
+
+    const lines: string[] = [];
+    lines.push(`- **Completion Rate:** ${summary.completionRate.toFixed(1)}%`);
+    lines.push(`- **Current Streak:** ${summary.currentStreak} Tage`);
+    lines.push(`- **Best Streak:** ${summary.bestStreak} Tage`);
+    lines.push(`- **Week Proofs:** ${summary.weekProofs}/${summary.weekDays}`);
+    lines.push(`- **Total Habits:** ${summary.totalHabits}`);
+
+    if (summary.weekStartDate && summary.weekEndDate) {
+      lines.push(`- **Week Range:** ${summary.weekStartDate} → ${summary.weekEndDate}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private buildHabitKeywordBlock(
+    habits: Habit[],
+    proofs: Proof[],
+    mentionedHabits?: string[]
+  ): string {
+    if (!habits || habits.length === 0) {
+      return 'Keine Habits in Notion gefunden.';
+    }
+
+    const selectedHabits = this.selectRelevantHabits(habits, mentionedHabits);
+
+    if (selectedHabits.length === 0) {
+      return 'Keine passenden Habits zur Anfrage gefunden.';
+    }
+
+    return selectedHabits.map(habit => {
+      const matchingProofs = proofs.filter(proof => proof.habitId === habit.id);
+      const lastProof = matchingProofs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+      const lastProofDisplay = lastProof ? this.formatDate(lastProof.date) : 'Kein Nachweis diese Woche';
+
+      const parts: string[] = [
+        `**Habit:** ${habit.name}`,
+        `**Frequency:** ${habit.frequency}/Woche`,
+        `**Last Proof:** ${lastProofDisplay}`,
+        `**Week Proofs:** ${matchingProofs.length}`
+      ];
+
+      if (habit.minimalDose) {
+        parts.push(`**Minimal Dose:** ${habit.minimalDose}`);
+      }
+
+      if (habit.why) {
+        parts.push(`**Why:** ${this.compressor.truncateText(habit.why, 120)}`);
+      }
+
+      if (habit.domains && habit.domains.length > 0) {
+        parts.push(`**Domains:** ${habit.domains.slice(0, 3).join(', ')}`);
+      }
+
+      return `- ${parts.join(' | ')}`;
+    }).join('\n');
+  }
+
+  private selectRelevantHabits(habits: Habit[], mentionedHabits?: string[]): Habit[] {
+    if (!mentionedHabits || mentionedHabits.length === 0) {
+      return habits.slice(0, Math.min(5, habits.length));
+    }
+
+    const normalizedMentions = mentionedHabits.map(m => m.toLowerCase().trim()).filter(Boolean);
+    const matches = habits.filter(habit => {
+      const habitName = habit.name?.toLowerCase() || '';
+      return normalizedMentions.some(mention => habitName.includes(mention) || mention.includes(habitName));
+    });
+
+    if (matches.length === 0) {
+      return habits.slice(0, Math.min(5, habits.length));
+    }
+
+    return matches;
+  }
+
+  private formatDate(raw?: string): string {
+    if (!raw) {
+      return 'Keine Daten';
+    }
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return raw;
+    }
+
+    return parsed.toLocaleDateString('de-DE', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric'
+    });
+  }
+}

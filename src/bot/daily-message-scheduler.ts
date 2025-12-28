@@ -3,13 +3,13 @@ import { NotionClient } from '../notion/client';
 import { DiscordLogger } from './discord-logger';
 import { AIIncentiveManager } from './ai-incentive-manager';
 import * as cron from 'node-cron';
+import { getCurrentBatch, getCurrentBatchDay } from '../utils/batch-manager';
 
 export class DailyMessageScheduler {
   private client: Client;
   private notion: NotionClient;
   private logger: DiscordLogger;
   private accountabilityChannelId: string;
-  private startDate: Date;
   private motivationalQuotes: string[];
   private aiIncentiveManager: AIIncentiveManager;
 
@@ -19,12 +19,8 @@ export class DailyMessageScheduler {
     this.logger = logger;
     this.accountabilityChannelId = process.env.DISCORD_ACCOUNTABILITY_GROUP || '';
     this.aiIncentiveManager = new AIIncentiveManager(client, notion, logger);
-    
-    // Set start date to Monday, October 6, 2025 (Day 1 of the challenge)
-    // Since today is Tuesday (Day 2), we start counting from Monday
-    this.startDate = new Date('2025-10-06T00:00:00.000Z'); // Monday, Day 1
-    
-    // Collection of motivational quotes for 66 days
+
+    // Collection of motivational quotes for 66 days (batch day is calculated from batch-manager)
     this.motivationalQuotes = [
       "Der Schlüssel zum Erfolg ist anzufangen. - Mark Twain",
       "Erfolg ist nicht endgültig, Misserfolg ist nicht tödlich: der Mut weiterzumachen zählt. - Winston Churchill",
@@ -142,28 +138,11 @@ export class DailyMessageScheduler {
   }
 
   /**
-   * Calculate the current day number (1-66)
-   * Monday Oct 6, 2025 = Day 1
-   * Tuesday Oct 7, 2025 = Day 2  
-   * Wednesday Oct 8, 2025 = Day 3
+   * Calculate the current day number (1-66) from active batch
+   * Returns null if no active batch
    */
-  getCurrentDay(): number {
-    const now = new Date();
-    
-    // Normalize both dates to start of day in UTC
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfStartDate = new Date(this.startDate.getFullYear(), this.startDate.getMonth(), this.startDate.getDate());
-    
-    // Calculate difference in days
-    const timeDiff = startOfToday.getTime() - startOfStartDate.getTime();
-    const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24)) + 1;
-    
-    // Clamp between 1 and 66, but ensure we don't go below 1
-    const currentDay = Math.max(1, Math.min(daysDiff, 66));
-    
-    console.log(`📅 Day calculation: Today=${startOfToday.toISOString().split('T')[0]}, Start=${startOfStartDate.toISOString().split('T')[0]}, Day=${currentDay}`);
-    
-    return currentDay;
+  getCurrentDay(): number | null {
+    return getCurrentBatchDay();
   }
 
   /**
@@ -198,6 +177,26 @@ export class DailyMessageScheduler {
    */
   async sendDailyMessage(): Promise<void> {
     try {
+      // Check if there's an active batch
+      const batch = getCurrentBatch();
+      if (!batch) {
+        console.log('⏸️ No active batch - skipping daily message');
+        return;
+      }
+
+      // Get current day
+      const currentDay = this.getCurrentDay();
+      if (!currentDay) {
+        console.log('⏸️ Cannot determine current day - skipping daily message');
+        return;
+      }
+
+      // Check if batch is completed (day 66 reached)
+      if (currentDay > 66) {
+        console.log(`✅ Batch "${batch.name}" completed (Day ${currentDay}) - skipping daily message`);
+        return;
+      }
+
       const channel = this.client.channels.cache.get(this.accountabilityChannelId) as TextChannel;
       if (!channel) {
         await this.logger.error(
@@ -213,20 +212,20 @@ export class DailyMessageScheduler {
         return;
       }
 
-      const currentDay = this.getCurrentDay();
       const message = this.generateDailyMessage(currentDay);
       const now = new Date();
 
       // Send message immediately (cron scheduler handles timing)
       await channel.send(message);
-      console.log(`✅ Daily message sent for day ${currentDay}/66`);
-      
+      console.log(`✅ Daily message sent for batch "${batch.name}" - Day ${currentDay}/66`);
+
       // Log success
       await this.logger.success(
         'SCHEDULER',
         'Daily Message Sent',
-        `Daily motivational message sent for day ${currentDay}/66`,
+        `Daily motivational message sent for batch "${batch.name}" - Day ${currentDay}/66`,
         {
+          batchName: batch.name,
           day: currentDay,
           totalDays: 66,
           channelId: this.accountabilityChannelId,
@@ -263,8 +262,12 @@ export class DailyMessageScheduler {
       }
 
       const currentDay = this.getCurrentDay();
+      if (!currentDay) {
+        console.error('❌ No active batch - cannot send test message');
+        return;
+      }
       const message = this.generateDailyMessage(currentDay);
-      
+
       await channel.send(`🧪 **TEST MESSAGE** - ${message}`);
       console.log(`✅ Test message sent for day ${currentDay}/66`);
       
@@ -379,6 +382,7 @@ export class DailyMessageScheduler {
     console.log(`📅 Daily message scheduler started (6 AM daily, timezone: ${timezone})`);
     console.log(`🧠 AI Incentive scheduler started (Sunday 8 AM, timezone: ${timezone})`);
     
+    const batch = getCurrentBatch();
     this.logger.success(
       'SCHEDULER',
       'Scheduler Started',
@@ -388,7 +392,8 @@ export class DailyMessageScheduler {
         aiIncentiveCron: '0 8 * * 0',
         timezone: timezone,
         accountabilityChannelId: this.accountabilityChannelId,
-        startDate: this.startDate.toISOString(),
+        activeBatch: batch ? batch.name : 'None',
+        batchStartDate: batch ? batch.startDate : 'N/A',
         currentDay: this.getCurrentDay()
       }
     );
@@ -414,20 +419,29 @@ export class DailyMessageScheduler {
    * Get scheduler status and current day info (for debugging)
    */
   getSchedulerStatus(): any {
+    const batch = getCurrentBatch();
     const currentDay = this.getCurrentDay();
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfStartDate = new Date(this.startDate.getFullYear(), this.startDate.getMonth(), this.startDate.getDate());
-    
+
+    if (!batch) {
+      return {
+        status: 'No active batch',
+        currentDay: null,
+        accountabilityChannelId: this.accountabilityChannelId,
+        timezone: process.env.TIMEZONE || 'Europe/Berlin',
+        cronExpression: '0 6 * * *'
+      };
+    }
+
     return {
+      status: 'Active',
+      batchName: batch.name,
       currentDay,
-      startDate: this.startDate.toISOString(),
-      today: startOfToday.toISOString(),
-      daysSinceStart: Math.floor((startOfToday.getTime() - startOfStartDate.getTime()) / (1000 * 3600 * 24)),
+      startDate: batch.startDate,
+      daysRemaining: currentDay ? Math.max(0, 66 - currentDay) : 0,
       accountabilityChannelId: this.accountabilityChannelId,
       timezone: process.env.TIMEZONE || 'Europe/Berlin',
       cronExpression: '0 6 * * *',
-      nextMessageDate: currentDay < 66 ? `Day ${currentDay + 1}/66` : 'Challenge Complete!'
+      nextMessageDate: currentDay && currentDay < 66 ? `Day ${currentDay + 1}/66` : 'Batch Complete!'
     };
   }
 }

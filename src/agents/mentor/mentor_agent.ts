@@ -4,9 +4,9 @@
  */
 
 import { BaseAgent } from '../base/agent';
-import { 
-  UserContext, 
-  AgentResponse, 
+import {
+  UserContext,
+  AgentResponse,
   MentorResponse,
   HabitAnalysis,
   PatternInsight,
@@ -14,7 +14,11 @@ import {
   ProgressAssessment,
   SuccessPattern,
   FailurePattern,
-  OptimalConditions
+  OptimalConditions,
+  MultiWeekTrendAnalysis,
+  AdaptiveGoalRecommendation,
+  RecommendedChange,
+  Habit
 } from '../base/types';
 import { PerplexityClient } from '../../ai/perplexity-client';
 import { NotionClient } from '../../notion/client';
@@ -144,23 +148,39 @@ export class MentorAgent extends BaseAgent {
   private async performWeeklyAnalysis(userContext: UserContext, metadata?: Record<string, any>): Promise<MentorResponse> {
     this.log('info', 'Performing weekly analysis', { user_id: userContext.user.id });
 
-    // Get recent proofs for analysis
+    // Get recent proofs for analysis (last 7 days for weekly summary)
     const recentProofs = userContext.recent_proofs.filter(proof => {
       const proofDate = new Date(proof.date);
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       return proofDate >= weekAgo;
     });
 
+    // Get proofs for last 4 weeks (28 days) for multi-week trend analysis
+    const fourWeeksAgo = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000);
+    const allProofsFor4Weeks = userContext.recent_proofs.filter(proof => {
+      const proofDate = new Date(proof.date);
+      return proofDate >= fourWeeksAgo;
+    });
+
     // Get buddy progress if provided
     const buddyProgress = metadata?.buddyProgress as any;
 
-    // Analyze habit patterns
+    // Analyze habit patterns for the current week
     const habitAnalysis = await this.analyzeHabitsForWeek(userContext.current_habits, recentProofs);
-    
-    // Generate adaptive goals recommendations
+
+    // Generate adaptive goals recommendations (basic, single-week)
     const adaptiveGoalsRecommendations = this.generateAdaptiveGoalsRecommendations(
       habitAnalysis,
       userContext.current_habits
+    );
+
+    // NEW: Analyze multi-week trends for flow state adaptive recommendations
+    const multiWeekTrends = this.analyzeMultiWeekTrends(userContext, allProofsFor4Weeks, 4);
+
+    // NEW: Generate specific adaptive recommendations based on 4-week trends
+    const specificAdaptiveRecommendations = this.generateSpecificAdaptiveRecommendations(
+      userContext.current_habits,
+      multiWeekTrends
     );
     
     // Generate insights
@@ -303,10 +323,19 @@ ${buddyProgress ? `✓ Include a section about your buddy ${buddyProgress.nickna
     );
 
     const aiResponse = await this.perplexityClient.generateResponse(prompt);
-    
+
+    // Format the main weekly analysis
+    const mainAnalysis = this.formatWeeklyAnalysis(aiResponse, habitAnalysis, adaptiveGoalsRecommendations);
+
+    // NEW: Format and append the adaptive goals section (Flow State Theory)
+    const adaptiveSection = this.formatAdaptiveGoalsSection(specificAdaptiveRecommendations, multiWeekTrends);
+
+    // Combine main analysis with adaptive section at the END
+    const fullMessage = mainAnalysis + adaptiveSection;
+
     return {
       success: true,
-      message: this.formatWeeklyAnalysis(aiResponse, habitAnalysis, adaptiveGoalsRecommendations),
+      message: fullMessage,
       confidence: this.calculateConfidence(0.8, 0.7, 0.6),
       habit_analysis: habitAnalysis,
       pattern_insights: patternInsights,
@@ -327,7 +356,10 @@ ${buddyProgress ? `✓ Include a section about your buddy ${buddyProgress.nickna
         analysis_type: 'weekly',
         habits_analyzed: userContext.current_habits.length,
         proofs_analyzed: recentProofs.length,
-        adaptive_goals: adaptiveGoalsRecommendations
+        proofs_analyzed_4_weeks: allProofsFor4Weeks.length,
+        adaptive_goals: adaptiveGoalsRecommendations,
+        multi_week_trends: multiWeekTrends,
+        specific_adaptive_recommendations: specificAdaptiveRecommendations
       },
       timestamp: new Date()
     };
@@ -660,6 +692,414 @@ Provide helpful, encouraging, and practical guidance. Be specific about what the
     }
 
     return recommendations;
+  }
+
+  // ============================================================================
+  // MULTI-WEEK TREND ANALYSIS (Flow State Theory)
+  // ============================================================================
+
+  /**
+   * Analyze multi-week trends for all habits
+   * Uses 4-week rolling window with weighted averages (recent weeks matter more)
+   */
+  private analyzeMultiWeekTrends(
+    userContext: UserContext,
+    allProofs: any[],
+    weeksToAnalyze: number = 4
+  ): MultiWeekTrendAnalysis[] {
+    const analyses: MultiWeekTrendAnalysis[] = [];
+    const now = new Date();
+
+    for (const habit of userContext.current_habits) {
+      const habitId = habit.id;
+      const habitName = habit.name || habitId;
+      const targetFrequency = habit.frequency || 1;
+
+      // Calculate completion rate for each of the last N weeks
+      const weeklyRates: number[] = [];
+
+      for (let weekOffset = weeksToAnalyze - 1; weekOffset >= 0; weekOffset--) {
+        const weekEnd = new Date(now);
+        weekEnd.setDate(weekEnd.getDate() - (weekOffset * 7));
+        const weekStart = new Date(weekEnd);
+        weekStart.setDate(weekStart.getDate() - 7);
+
+        // Filter proofs for this habit in this week
+        const weekProofs = allProofs.filter(p => {
+          const proofDate = new Date(p.date);
+          const proofHabitId = p.habitId || p.habit_id;
+          return proofDate >= weekStart &&
+                 proofDate < weekEnd &&
+                 proofHabitId === habitId;
+        });
+
+        const completionRate = (weekProofs.length / targetFrequency) * 100;
+        weeklyRates.push(Math.min(completionRate, 150)); // Cap at 150% for outliers
+      }
+
+      // Calculate trend metrics
+      const trendDirection = this.calculateTrendDirection(weeklyRates);
+      const trendMagnitude = this.calculateTrendMagnitude(weeklyRates);
+      const weightedAverage = this.calculateWeightedAverage(weeklyRates);
+      const flowZone = this.determineFlowZone(weightedAverage);
+      const weeksInZone = this.countWeeksInZone(weeklyRates, flowZone);
+
+      analyses.push({
+        habit_id: habitId,
+        habit_name: habitName,
+        weekly_completion_rates: weeklyRates,
+        trend_direction: trendDirection,
+        trend_magnitude: trendMagnitude,
+        flow_zone_status: flowZone,
+        weeks_in_current_zone: weeksInZone,
+        weighted_average: weightedAverage
+      });
+    }
+
+    return analyses;
+  }
+
+  /**
+   * Determine flow zone based on weighted average completion rate
+   * Uses flow state theory: too easy = boredom, optimal = engagement, too hard = anxiety
+   */
+  private determineFlowZone(weightedAverage: number): 'too_easy' | 'optimal' | 'too_hard' {
+    if (weightedAverage >= 100) {
+      return 'too_easy'; // Consistently exceeding - needs more challenge
+    } else if (weightedAverage < 80) {
+      return 'too_hard'; // Struggling - needs easier goals
+    } else {
+      return 'optimal'; // 80-100% is the sweet spot
+    }
+  }
+
+  /**
+   * Calculate weighted average where recent weeks matter more
+   * Weights: W1=10%, W2=20%, W3=30%, W4=40%
+   */
+  private calculateWeightedAverage(weeklyRates: number[]): number {
+    if (weeklyRates.length === 0) return 0;
+
+    // Weights increase for more recent weeks
+    const weights = [0.1, 0.2, 0.3, 0.4];
+    const actualWeights = weights.slice(-weeklyRates.length); // Use last N weights for available weeks
+
+    let weightedSum = 0;
+    let weightTotal = 0;
+
+    for (let i = 0; i < weeklyRates.length; i++) {
+      const weight = actualWeights[i] || 0.25; // Default equal weight if not enough
+      weightedSum += weeklyRates[i] * weight;
+      weightTotal += weight;
+    }
+
+    return weightTotal > 0 ? weightedSum / weightTotal : 0;
+  }
+
+  /**
+   * Calculate trend direction based on comparing first half vs second half of weeks
+   */
+  private calculateTrendDirection(weeklyRates: number[]): 'improving' | 'stable' | 'declining' {
+    if (weeklyRates.length < 2) return 'stable';
+
+    const midpoint = Math.floor(weeklyRates.length / 2);
+    const firstHalf = weeklyRates.slice(0, midpoint);
+    const secondHalf = weeklyRates.slice(midpoint);
+
+    const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+    const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+
+    const difference = secondAvg - firstAvg;
+    const threshold = 10; // 10% change threshold
+
+    if (difference > threshold) return 'improving';
+    if (difference < -threshold) return 'declining';
+    return 'stable';
+  }
+
+  /**
+   * Calculate trend magnitude as percentage change per week
+   */
+  private calculateTrendMagnitude(weeklyRates: number[]): number {
+    if (weeklyRates.length < 2) return 0;
+
+    // Simple linear regression slope
+    const n = weeklyRates.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+
+    for (let i = 0; i < n; i++) {
+      sumX += i;
+      sumY += weeklyRates[i];
+      sumXY += i * weeklyRates[i];
+      sumX2 += i * i;
+    }
+
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    return isNaN(slope) ? 0 : slope;
+  }
+
+  /**
+   * Count how many consecutive weeks have been in the current zone
+   */
+  private countWeeksInZone(weeklyRates: number[], currentZone: 'too_easy' | 'optimal' | 'too_hard'): number {
+    let count = 0;
+
+    // Count from most recent week backwards
+    for (let i = weeklyRates.length - 1; i >= 0; i--) {
+      const rate = weeklyRates[i];
+      const weekZone = this.determineFlowZone(rate);
+
+      if (weekZone === currentZone) {
+        count++;
+      } else {
+        break;
+      }
+    }
+
+    return count;
+  }
+
+  /**
+   * Generate specific adaptive recommendations based on multi-week trends
+   */
+  private generateSpecificAdaptiveRecommendations(
+    habits: any[],
+    multiWeekTrends: MultiWeekTrendAnalysis[]
+  ): AdaptiveGoalRecommendation[] {
+    const recommendations: AdaptiveGoalRecommendation[] = [];
+
+    for (const trend of multiWeekTrends) {
+      const habit = habits.find(h => h.id === trend.habit_id);
+      if (!habit) continue;
+
+      const recommendation: AdaptiveGoalRecommendation = {
+        habit_id: trend.habit_id,
+        habit_name: trend.habit_name,
+        current_settings: {
+          frequency: habit.frequency || 0,
+          minimal_dose: habit.minimal_dose || habit.minimalDose || '',
+          smart_goal: habit.smart_goal || habit.smartGoal || '',
+          context: habit.context || '',
+          implementation_intentions: habit.implementation_intentions || habit.implementationIntentions || ''
+        },
+        recommended_changes: [],
+        flow_state_analysis: {
+          current_zone: trend.flow_zone_status,
+          confidence: this.calculateRecommendationConfidence(trend)
+        },
+        priority: this.determinePriority(trend)
+      };
+
+      // Generate specific recommendations based on flow zone
+      if (trend.flow_zone_status === 'too_easy' && trend.weeks_in_current_zone >= 2) {
+        const increaseRec = this.generateIncreaseRecommendation(habit, trend);
+        if (increaseRec) {
+          recommendation.recommended_changes.push(increaseRec);
+        }
+      } else if (trend.flow_zone_status === 'too_hard' && trend.weeks_in_current_zone >= 2) {
+        const decreaseRec = this.generateDecreaseRecommendation(habit, trend);
+        if (decreaseRec) {
+          recommendation.recommended_changes.push(decreaseRec);
+        }
+      }
+
+      // Only include if there are changes to recommend OR habit is optimal
+      if (recommendation.recommended_changes.length > 0 || trend.flow_zone_status === 'optimal') {
+        recommendations.push(recommendation);
+      }
+    }
+
+    // Sort by priority: high first, then medium, then low
+    return recommendations.sort((a, b) => {
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      return priorityOrder[a.priority] - priorityOrder[b.priority];
+    });
+  }
+
+  /**
+   * Generate recommendation to increase challenge for "too easy" habits
+   */
+  private generateIncreaseRecommendation(habit: any, trend: MultiWeekTrendAnalysis): RecommendedChange | null {
+    const currentFrequency = habit.frequency || 1;
+    const avgCompletion = trend.weighted_average;
+
+    // Prefer increasing frequency if below 7
+    if (currentFrequency < 7) {
+      const newFrequency = Math.min(currentFrequency + 1, 7);
+      return {
+        parameter: 'frequency',
+        current_value: currentFrequency,
+        recommended_value: newFrequency,
+        change_type: 'increase',
+        rationale: `You've exceeded your goal for ${trend.weeks_in_current_zone} consecutive weeks (avg ${Math.round(avgCompletion)}%). Time to grow!`
+      };
+    }
+
+    // If already at 7x/week, suggest improving minimal dose
+    const currentMinimalDose = habit.minimal_dose || habit.minimalDose || '';
+    if (currentMinimalDose) {
+      return {
+        parameter: 'minimal_dose',
+        current_value: currentMinimalDose,
+        recommended_value: `Increase beyond "${currentMinimalDose}"`,
+        change_type: 'increase',
+        rationale: `Already at max frequency. Consider raising the bar on minimum effort.`
+      };
+    }
+
+    // Fallback: suggest making SMART goal more ambitious
+    const currentSmartGoal = habit.smart_goal || habit.smartGoal || '';
+    return {
+      parameter: 'smart_goal',
+      current_value: currentSmartGoal,
+      recommended_value: 'Make more specific or ambitious',
+      change_type: 'modify',
+      rationale: `You're crushing it! Consider making your goal more challenging.`
+    };
+  }
+
+  /**
+   * Generate recommendation to decrease difficulty for "too hard" habits
+   */
+  private generateDecreaseRecommendation(habit: any, trend: MultiWeekTrendAnalysis): RecommendedChange | null {
+    const currentFrequency = habit.frequency || 1;
+    const avgCompletion = trend.weighted_average;
+
+    // Prefer decreasing frequency if above 1
+    if (currentFrequency > 1) {
+      // Calculate a reasonable decrease based on how far below target
+      const reductionFactor = avgCompletion < 50 ? 2 : 1;
+      const newFrequency = Math.max(currentFrequency - reductionFactor, 1);
+      return {
+        parameter: 'frequency',
+        current_value: currentFrequency,
+        recommended_value: newFrequency,
+        change_type: 'decrease',
+        rationale: `${Math.round(avgCompletion)}% completion over ${trend.weeks_in_current_zone} weeks suggests the bar is too high. Build momentum first!`
+      };
+    }
+
+    // If already at 1x/week, suggest simplifying minimal dose
+    const currentMinimalDose = habit.minimal_dose || habit.minimalDose || '';
+    if (currentMinimalDose) {
+      return {
+        parameter: 'minimal_dose',
+        current_value: currentMinimalDose,
+        recommended_value: `Simplify "${currentMinimalDose}"`,
+        change_type: 'decrease',
+        rationale: `Make the minimum acceptable effort easier to achieve consistently.`
+      };
+    }
+
+    // Fallback: suggest narrowing context/implementation
+    const currentContext = habit.context || '';
+    return {
+      parameter: 'context',
+      current_value: currentContext,
+      recommended_value: 'Narrow down when/where to make it easier',
+      change_type: 'modify',
+      rationale: `Simplify the conditions for when you do this habit.`
+    };
+  }
+
+  /**
+   * Calculate confidence score for a recommendation based on data quality
+   */
+  private calculateRecommendationConfidence(trend: MultiWeekTrendAnalysis): number {
+    let confidence = 0.5; // Base confidence
+
+    // More weeks of data = higher confidence
+    if (trend.weekly_completion_rates.length >= 4) confidence += 0.2;
+    else if (trend.weekly_completion_rates.length >= 2) confidence += 0.1;
+
+    // More weeks in current zone = higher confidence
+    if (trend.weeks_in_current_zone >= 3) confidence += 0.2;
+    else if (trend.weeks_in_current_zone >= 2) confidence += 0.1;
+
+    // Stable or clear trend = higher confidence
+    if (trend.trend_direction !== 'stable') confidence += 0.1;
+
+    return Math.min(confidence, 1.0);
+  }
+
+  /**
+   * Determine priority based on how far from optimal and trend direction
+   */
+  private determinePriority(trend: MultiWeekTrendAnalysis): 'high' | 'medium' | 'low' {
+    // Optimal zone is low priority (no changes needed)
+    if (trend.flow_zone_status === 'optimal') return 'low';
+
+    // Very far from optimal + declining = high priority
+    if (trend.weighted_average < 50 && trend.trend_direction === 'declining') return 'high';
+    if (trend.weighted_average > 130 && trend.weeks_in_current_zone >= 3) return 'high';
+
+    // Been in non-optimal zone for a while = medium priority
+    if (trend.weeks_in_current_zone >= 2) return 'medium';
+
+    return 'low';
+  }
+
+  /**
+   * Format the adaptive goals section for Discord output
+   */
+  private formatAdaptiveGoalsSection(
+    recommendations: AdaptiveGoalRecommendation[],
+    trends: MultiWeekTrendAnalysis[]
+  ): string {
+    if (trends.length === 0) {
+      return '';
+    }
+
+    let output = '\n\n═══════════════════════════════════════\n';
+    output += '🎯 **ADAPTIVE GOAL RECOMMENDATIONS**\n';
+    output += '═══════════════════════════════════════\n\n';
+    output += '*Based on your 4-week performance trends (Flow State Theory)*\n\n';
+
+    // Add 4-week trend summary table
+    output += '**📊 4-Week Trend Summary:**\n```\n';
+    output += 'Habit            | W1   | W2   | W3   | W4   | Trend | Zone\n';
+    output += '-----------------|------|------|------|------|-------|----------\n';
+
+    for (const trend of trends) {
+      const habitName = trend.habit_name.substring(0, 15).padEnd(16);
+      const rates = trend.weekly_completion_rates.map(r => `${Math.round(r)}%`.padStart(4)).join(' | ');
+      const trendIcon = trend.trend_direction === 'improving' ? '↑' :
+                        trend.trend_direction === 'declining' ? '↓' : '→';
+      const zoneLabel = trend.flow_zone_status === 'too_easy' ? 'Too Easy' :
+                        trend.flow_zone_status === 'too_hard' ? 'Too Hard' : 'Optimal';
+      output += `${habitName} | ${rates} | ${trendIcon.padStart(5)} | ${zoneLabel}\n`;
+    }
+    output += '```\n\n';
+
+    // Add specific recommendations for each habit
+    for (const rec of recommendations) {
+      const zoneEmoji = rec.flow_state_analysis.current_zone === 'too_easy' ? '🚀' :
+                        rec.flow_state_analysis.current_zone === 'too_hard' ? '💪' : '✅';
+      const zoneName = rec.flow_state_analysis.current_zone === 'too_easy' ? 'TOO EASY' :
+                       rec.flow_state_analysis.current_zone === 'too_hard' ? 'TOO HARD' : 'OPTIMAL';
+      const trend = trends.find(t => t.habit_id === rec.habit_id);
+      const avgRate = trend ? Math.round(trend.weighted_average) : 0;
+
+      output += `${zoneEmoji} **${rec.habit_name}** - ${zoneName} (avg ${avgRate}%)\n`;
+
+      if (rec.flow_state_analysis.current_zone === 'optimal') {
+        output += `Keep current settings - you're in the flow zone!\n\n`;
+      } else if (rec.recommended_changes.length > 0) {
+        for (const change of rec.recommended_changes) {
+          output += `**Current:** ${change.parameter} = ${change.current_value}\n`;
+          output += `**Recommended:** ${change.parameter} → ${change.recommended_value}\n`;
+          output += `**Why:** ${change.rationale}\n\n`;
+        }
+      }
+    }
+
+    // Add flow state theory explanation
+    output += '---\n';
+    output += '💡 **Flow State Theory:** The goal isn\'t 100% - it\'s 80-100%.\n';
+    output += 'Too easy = boredom. Too hard = anxiety. Optimal = engaged growth.\n\n';
+    output += '*These are recommendations only. Reply "I want to change my [habit]" or use /edit-habit*\n';
+
+    return output;
   }
 
   private async generateCoachingAdvice(userContext: UserContext, habitAnalysis: HabitAnalysis[]): Promise<CoachingAdvice[]> {

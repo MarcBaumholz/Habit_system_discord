@@ -1,21 +1,20 @@
 /**
- * Buddy Rotation Scheduler
+ * Buddy Assignment Manager
  *
- * Rotates buddy pairs every 2 weeks (every other Sunday at 8 AM)
- * Pairs active users randomly and updates their buddy assignments in Notion
+ * Assigns buddy pairs at the start of each batch (66-day cycle)
+ * Pairs active users in the current batch randomly and updates their buddy assignments in Notion
+ * Buddies stay together for the entire 66-day batch
  */
 
 import { Client, TextChannel } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { DiscordLogger } from './discord-logger';
 import { User } from '../types';
-import * as cron from 'node-cron';
 
 export class BuddyRotationScheduler {
   private client: Client;
   private notion: NotionClient;
   private logger: DiscordLogger;
-  private timezone: string;
 
   constructor(
     client: Client,
@@ -25,39 +24,44 @@ export class BuddyRotationScheduler {
     this.client = client;
     this.notion = notion;
     this.logger = logger;
-    this.timezone = process.env.TIMEZONE || 'Europe/Berlin';
   }
 
   /**
-   * Rotate buddies - pair active users randomly
+   * Assign buddies for a new batch - pair active users in the batch randomly
+   * @param batchName - Name of the batch (e.g., "january 2026")
+   * @returns Number of pairs created
    */
-  async rotateBuddies(): Promise<void> {
+  async assignBuddiesForBatch(batchName: string): Promise<number> {
     try {
       await this.logger.info(
-        'BUDDY_ROTATION',
-        'Rotation Started',
-        'Starting buddy rotation',
+        'BUDDY_ASSIGNMENT',
+        'Assignment Started',
+        `Starting buddy assignment for batch: ${batchName}`,
         {
-          day: new Date().toLocaleDateString('en-US', { weekday: 'long' }),
+          batchName: batchName,
           time: new Date().toLocaleTimeString()
         }
       );
 
-      // Get all active users
-      const activeUsers = await this.notion.getActiveUsers();
-      
+      // Get all active users in this batch
+      const batchUsers = await this.notion.getUsersInBatch(batchName);
+      const activeUsers = batchUsers.filter(user => user.status === 'active');
+
       if (activeUsers.length < 2) {
         await this.logger.info(
-          'BUDDY_ROTATION',
-          'Rotation Skipped',
-          'Not enough active users for pairing',
-          { activeUsersCount: activeUsers.length }
+          'BUDDY_ASSIGNMENT',
+          'Assignment Skipped',
+          'Not enough active users in batch for pairing',
+          {
+            batchName: batchName,
+            activeUsersCount: activeUsers.length
+          }
         );
-        console.log('⚠️ Not enough active users for buddy rotation');
-        return;
+        console.log(`⚠️ Not enough active users in batch "${batchName}" for buddy assignment (${activeUsers.length} users)`);
+        return 0;
       }
 
-      console.log(`👥 Rotating buddies for ${activeUsers.length} active users`);
+      console.log(`👥 Assigning buddies for ${activeUsers.length} active users in batch "${batchName}"`);
 
       // Shuffle users randomly
       const shuffled = [...activeUsers].sort(() => Math.random() - 0.5);
@@ -113,21 +117,23 @@ export class BuddyRotationScheduler {
       }
 
       await this.logger.success(
-        'BUDDY_ROTATION',
-        'Rotation Completed',
-        'Buddy rotation completed successfully',
+        'BUDDY_ASSIGNMENT',
+        'Assignment Completed',
+        `Buddy assignment completed successfully for batch: ${batchName}`,
         {
+          batchName: batchName,
           pairsCreated: pairs.length,
           totalUsers: activeUsers.length
         }
       );
 
-      console.log(`✅ Buddy rotation completed: ${pairs.length} pairs created`);
+      console.log(`✅ Buddy assignment completed for batch "${batchName}": ${pairs.length} pairs created`);
+      return pairs.length;
     } catch (error) {
       await this.logger.logError(
         error as Error,
-        'Buddy Rotation Failed',
-        { scheduler: 'buddy_rotation' }
+        'Buddy Assignment Failed',
+        { scheduler: 'buddy_assignment', batchName: batchName }
       );
       throw error;
     }
@@ -149,15 +155,15 @@ export class BuddyRotationScheduler {
         return;
       }
 
-      const message = `👥 **New Buddy Assignment!**
+      const message = `👥 **Buddy Assignment for 66-Day Challenge!**
 
-Your new accountability buddy is **${buddy.name}**!
+Your accountability buddy is **${buddy.name}**!
 
-You'll be paired together for the next 2 weeks. Support each other, share your progress, and help each other stay accountable!
+You'll be paired together for the **entire 66-day batch** (from Day 1 to Day 66). Support each other, share your progress, and help each other stay accountable throughout the journey!
 
 💪 **Remember:** Check in with your buddy regularly and celebrate each other's wins!
 
-*Buddy rotation happens every 2 weeks on Sunday.*`;
+*Your buddy stays with you for the full batch - no rotations!*`;
 
       await channel.send(message);
       console.log(`✅ Notified ${user.name} about new buddy ${buddy.name}`);
@@ -168,92 +174,28 @@ You'll be paired together for the next 2 weeks. Support each other, share your p
   }
 
   /**
-   * Start the buddy rotation scheduler
-   * Runs every 2 weeks (every other Sunday at 8:00 AM)
+   * Clear all buddy assignments (for testing/debugging)
    */
-  async startScheduler(): Promise<void> {
-    // Every other Sunday at 8:00 AM
-    // Cron: 0 8 */14 * 0 (every 14 days on Sunday at 8 AM)
-    // Note: node-cron doesn't support */14 directly, so we'll use a workaround
-    // We'll run it every Sunday and check if 14 days have passed since last rotation
-    // For simplicity, we'll use: 0 8 1,15 * 0 (1st and 15th of month, Sunday at 8 AM)
-    // Or better: 0 8 * * 0 and track last rotation date
-    
-    // Using simpler approach: every other Sunday
-    // This requires tracking, but for now we'll use: 0 8 * * 0 (every Sunday)
-    // In production, you'd want to track last rotation date
-    
-    const task = cron.schedule('0 8 * * 0', async () => {
-      try {
-        // Check if we should rotate (every 2 weeks)
-        // For now, we'll rotate every time it runs
-        // In production, add logic to check last rotation date
-        
-        console.log('📅 Buddy rotation scheduler triggered on Sunday at 8 AM...');
-        
-        await this.logger.info(
-          'BUDDY_ROTATION',
-          'Scheduled Task Triggered',
-          'Buddy rotation triggered by cron on Sunday at 8 AM',
-          {
-            cronExpression: '0 8 * * 0',
-            timezone: this.timezone,
-            triggerTime: new Date().toISOString()
-          }
-        );
-        
-        // Run the rotation
-        await this.rotateBuddies();
-        
-        console.log('✅ Buddy rotation completed successfully');
-        
-      } catch (error) {
-        console.error('❌ Error in buddy rotation scheduler:', error);
-        await this.logger.logError(
-          error as Error,
-          'Buddy Rotation Scheduler Error',
-          {
-            cronExpression: '0 8 * * 0',
-            timezone: this.timezone
-          }
-        );
+  async clearAllBuddies(): Promise<void> {
+    try {
+      const allUsers = await this.notion.getActiveUsers();
+
+      for (const user of allUsers) {
+        await this.notion.updateUserBuddy(user.id, null, null);
       }
-    }, {
-      scheduled: true,
-      timezone: this.timezone
-    });
 
-    console.log(`📅 Buddy rotation scheduler started (Every other Sunday 8 AM, timezone: ${this.timezone})`);
-    
-    await this.logger.success(
-      'BUDDY_ROTATION',
-      'Scheduler Started',
-      'Buddy rotation scheduler started successfully',
-      {
-        cronExpression: '0 8 * * 0',
-        timezone: this.timezone,
-        description: 'Every other Sunday at 8:00 AM'
-      }
-    );
-  }
+      console.log(`✅ Cleared buddy assignments for ${allUsers.length} users`);
 
-  /**
-   * Manually trigger buddy rotation (for testing)
-   */
-  async triggerRotation(): Promise<void> {
-    console.log('🧪 Manually triggering buddy rotation...');
-    await this.rotateBuddies();
-  }
-
-  /**
-   * Get scheduler status
-   */
-  getSchedulerStatus(): any {
-    return {
-      cronExpression: '0 8 * * 0',
-      description: 'Every other Sunday at 8:00 AM',
-      timezone: this.timezone
-    };
+      await this.logger.info(
+        'BUDDY_ASSIGNMENT',
+        'Buddies Cleared',
+        'All buddy assignments cleared',
+        { usersAffected: allUsers.length }
+      );
+    } catch (error) {
+      console.error('❌ Error clearing buddy assignments:', error);
+      throw error;
+    }
   }
 }
 

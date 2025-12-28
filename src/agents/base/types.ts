@@ -392,6 +392,47 @@ export interface ProgressAssessment {
   next_milestones: string[];
 }
 
+// ============================================================================
+// ADAPTIVE GOAL RECOMMENDATION TYPES (Flow State Theory)
+// ============================================================================
+
+export interface MultiWeekTrendAnalysis {
+  habit_id: string;
+  habit_name: string;
+  weekly_completion_rates: number[];  // Last 4 weeks [W1, W2, W3, W4] (oldest to newest)
+  trend_direction: 'improving' | 'stable' | 'declining';
+  trend_magnitude: number;  // Percentage change per week
+  flow_zone_status: 'too_easy' | 'optimal' | 'too_hard';
+  weeks_in_current_zone: number;
+  weighted_average: number;  // Weighted avg with recent weeks weighted more
+}
+
+export interface RecommendedChange {
+  parameter: 'frequency' | 'minimal_dose' | 'smart_goal' | 'context' | 'implementation_intentions';
+  current_value: string | number;
+  recommended_value: string | number;
+  change_type: 'increase' | 'decrease' | 'modify';
+  rationale: string;
+}
+
+export interface AdaptiveGoalRecommendation {
+  habit_id: string;
+  habit_name: string;
+  current_settings: {
+    frequency: number;
+    minimal_dose: string;
+    smart_goal: string;
+    context: string;
+    implementation_intentions: string;
+  };
+  recommended_changes: RecommendedChange[];
+  flow_state_analysis: {
+    current_zone: 'too_easy' | 'optimal' | 'too_hard';
+    confidence: number;
+  };
+  priority: 'high' | 'medium' | 'low';
+}
+
 export interface IdentityResponse extends AgentResponse {
   personality_profile: PersonalityProfile;
   habit_recommendations: HabitRecommendation[];

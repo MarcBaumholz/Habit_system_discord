@@ -462,6 +462,27 @@ export const DEFAULT_TOOLS: HabitTool[] = [
       'Use social pressure positively.'
     ],
     sources: ['https://www.psychologytoday.com/us/blog/tech-happy-life/201204/accountability-partners']
+  },
+  {
+    id: 'five-whys',
+    name: '5 Whys Method',
+    summary: 'Ask "why" five times to uncover the root cause of habit failures.',
+    categories: ['motivation', 'routine'],
+    keywords: ['why', 'root cause', '5 whys', 'five whys', 'understand problem', 'deep dive', 'cause analysis', 'warum', 'ursache', 'grundproblem', 'verstehen'],
+    problemPatterns: [
+      'dont know why', 'not sure why', 'keep failing', 'dont understand', 'same problem keeps happening', 'recurring issues',
+      'warum', 'verstehe nicht', 'immer wieder', 'gleiches problem', 'ursache nicht klar', 'grundproblem',
+      'dont know why', 'not sure why', 'keep failing', 'dont understand', 'same problem keeps happening', 'recurring issues', 'need to understand root cause'
+    ],
+    whenToUse: ['You keep encountering the same obstacles', 'You don\'t understand why habits fail', 'You need to find the root cause'],
+    steps: [
+      'Start with your habit problem statement (e.g., "I keep skipping my morning workout").',
+      'Ask "Why?" and write down the first answer.',
+      'Ask "Why?" again about that answer, and continue for 5 iterations.',
+      'The 5th answer reveals the root cause.',
+      'Address the root cause, not just the symptoms.'
+    ],
+    sources: ['https://www.lean.org/lexicon-terms/5-whys/']
   }
 ];
 

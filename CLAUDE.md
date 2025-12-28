@@ -10,7 +10,10 @@ Discord Habit System is a Discord bot for habit tracking with Notion integration
 - TypeScript (strict mode)
 - Discord.js v14
 - Notion API (@notionhq/client)
-- Perplexity AI (Sonar model) for message classification
+- Perplexity AI (Sonar model) for message classification and LLM tasks
+- Canvas (node-canvas) for server-side image generation
+- node-cron for scheduled tasks
+- Python/CrewAI for advanced multi-agent workflows
 - Jest for testing
 - Docker for deployment
 
@@ -89,7 +92,9 @@ npm run docker:update
 - `tools-assistant.ts` - Matches user requests to available tools
 - `daily-message-scheduler.ts` - Sends scheduled messages using node-cron
 - `weekly-agent-scheduler.ts` - Triggers weekly summaries via multi-agent system
-- `ai-incentive-manager.ts` - Gamification and incentive tracking
+- `all-users-weekly-scheduler.ts` - Coordinates weekly evaluations for all active users
+- `ai-incentive-manager.ts` - Gamification, incentive tracking, and weekly evaluation messages with trend graphs
+- `buddy-rotation-scheduler.ts` - Buddy assignment system (assigns buddies when batch starts)
 - `discord-logger.ts` - Centralized logging to Discord info channel
 - `webhook-poller.ts` - Polls for new messages in accountability channel
 
@@ -120,6 +125,15 @@ The system uses a Pydantic AI-inspired architecture with specialized agents:
 **6. Types (`src/types/`):**
 - `index.ts` - All TypeScript interfaces (User, Habit, Proof, Learning, etc.)
 
+**7. Utilities (`src/utils/`):**
+- `trend-graph-generator.ts` - Generates PNG trend graphs showing weekly proof counts over time (requires canvas library)
+
+**8. Python Agents (`python-agents/`):**
+- `midweek_agent.py` - CrewAI-based mid-week analysis agent using Perplexity LLM
+- `api.py` - Flask API for Python agent integration
+- Uses Notion tool for data access
+- Requires Python dependencies: crewai, langchain-openai, flask
+
 ### Data Flow
 
 1. **User Joins**: `/join` → creates User in Notion → creates personal channel → sends personality questionnaire
@@ -127,8 +141,10 @@ The system uses a Pydantic AI-inspired architecture with specialized agents:
 3. **Proof Submission**:
    - Manual: `/proof` command → proof-processor validates minimal dose → saves to Notion
    - Automatic: Message in accountability channel → webhook-poller → message-analyzer classifies → proof-processor saves
-4. **Weekly Summary**: Cron job → weekly-agent-scheduler → orchestrator coordinates agents → generates summary → posts to user channel
-5. **Agent Coordination**: Personal channel message → orchestrator → routes to appropriate agent(s) → aggregates responses
+4. **Weekly Summary**: Cron job (Sunday 8 AM) → all-users-weekly-scheduler → ai-incentive-manager analyzes each user → generates trend graphs → posts evaluation message with graphs to user channels
+5. **Buddy Assignment**: `/batch start` command → admin-commands → buddy-rotation-scheduler.assignBuddiesForBatch() → pairs active users in batch → sends notifications
+6. **Mid-Week Check**: Python agent (Wednesday) → analyzes team dynamics and habit progress → posts to relevant channels
+7. **Agent Coordination**: Personal channel message → orchestrator → routes to appropriate agent(s) → aggregates responses
 
 ### Key Design Patterns
 
@@ -152,6 +168,22 @@ The system uses a Pydantic AI-inspired architecture with specialized agents:
 - Supports cheat days (marked separately in Notion)
 - Automatic proof detection from accountability channel messages
 
+**Buddy System:**
+- One-time buddy assignment when batch starts (via `/batch start` command)
+- Only active users in the current batch are paired
+- Buddies stay together for the entire 66-day batch (no rotation)
+- All users get buddies simultaneously when batch begins
+- Uses `BuddyStart` date field to track when buddy pairing began
+- Odd number of users handled gracefully (one user may not get paired)
+
+**Weekly Trend Graphs:**
+- Generated for habits with at least 4 weeks of data
+- Shows complete journey from first proof to present
+- Week numbering starts from first proof date (not calendar weeks)
+- Graphs are PNG images attached to weekly evaluation messages
+- Dynamic width scales with number of weeks (800-1600px)
+- Color-coded trend lines: blue (up), red (down), gray (stable)
+
 ## Important Field Names in Notion
 
 When working with Notion databases, use these exact field names:
@@ -162,6 +194,8 @@ When working with Notion databases, use these exact field names:
 - `Personal Channel ID` (rich_text)
 - `Trust Count` (number)
 - `Status` (select: active/pause)
+- `BuddyStart` (date) - tracks when buddy pairing began (set at batch start)
+- `Buddy` (select) - stores buddy's nickname (not a relation)
 
 **Habits DB:**
 - `Name` (title)
@@ -234,6 +268,20 @@ The project follows a structured development workflow:
 - Orchestrator only processes requests from designated personal channel (hardcoded channel ID check)
 - Agents must be initialized before use via AgentRegistry
 - Always validate UserContext before processing requests
+- Python agents run separately via Flask API (port configuration in python-agents/.env)
+
+**Buddy System:**
+- Buddy assignment happens once per batch (triggered by `/batch start` command)
+- Only active users (Status = "active") in the current batch are paired
+- Buddies stay together for full 66-day batch (no rotation)
+- Odd number of users handled gracefully (one user may not get paired)
+- `Buddy` field stores nickname (not a relation), `BuddyStart` stores assignment date
+
+**Trend Graphs:**
+- Only generated if habit has at least 4 weeks of data
+- Week calculation: `Math.ceil((today - firstProofDate) / 7 days)`
+- Week buckets: Week N = days ((N-1)*7+1) to (N*7) from first proof
+- Canvas errors are caught gracefully (message continues without graph)
 
 **Proof Detection:**
 - Webhook poller polls every 10 seconds for new messages
@@ -251,7 +299,13 @@ The project follows a structured development workflow:
 - `src/notion/client.ts` - All Notion database operations
 - `src/agents/orchestrator/orchestrator.ts` - Agent routing logic
 - `src/types/index.ts` - TypeScript type definitions
+- `src/utils/trend-graph-generator.ts` - Weekly trend graph generation
+- `src/bot/buddy-rotation-scheduler.ts` - Batch-based buddy assignment logic
+- `src/bot/ai-incentive-manager.ts` - Weekly evaluations with trend graphs
+- `python-agents/midweek_agent.py` - CrewAI mid-week analysis
 - `README.md` - Setup instructions and feature overview
+- `BUDDY_SYSTEM_MONTHLY_UPDATE.md` - Buddy system implementation details (NOTE: outdated, system now uses batch-based assignment)
+- `TREND_GRAPH_IMPLEMENTATION.md` - Trend graph feature documentation
 - `.cursor/rules/codingurle.mdc` - Development workflow rules
 
 ## Docker Notes

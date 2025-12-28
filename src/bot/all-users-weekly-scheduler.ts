@@ -391,37 +391,37 @@ ${mentorResponse.next_steps && mentorResponse.next_steps.length > 0 ? `\n**Next 
 
   /**
    * Start the weekly scheduler
-   * Runs every Wednesday at 9:00 AM
+   * Runs every Sunday at 8:00 PM (with Adaptive Goal Recommendations)
    */
   async startScheduler(): Promise<void> {
-    // Wednesday at 9:00 AM (0 9 * * 3)
-    const task = cron.schedule('0 9 * * 3', async () => {
+    // Sunday at 8:00 PM (0 20 * * 0)
+    const task = cron.schedule('0 20 * * 0', async () => {
       try {
-        console.log('📅 All-users weekly scheduler triggered on Wednesday at 9 AM...');
-        
+        console.log('📅 All-users weekly scheduler triggered on Sunday at 8 PM...');
+
         await this.logger.info(
           'ALL_USERS_WEEKLY_SCHEDULER',
           'Scheduled Task Triggered',
-          'Weekly analysis triggered by cron on Wednesday at 9 AM',
+          'Weekly analysis with Adaptive Goal Recommendations triggered by cron on Sunday at 8 PM',
           {
-            cronExpression: '0 9 * * 3',
+            cronExpression: '0 20 * * 0',
             timezone: this.timezone,
             triggerTime: new Date().toISOString()
           }
         );
-        
+
         // Run the weekly analysis
         await this.runWeeklyAnalysisForAllUsers();
-        
+
         console.log('✅ All-users weekly analysis completed successfully');
-        
+
       } catch (error) {
         console.error('❌ Error in all-users weekly scheduler:', error);
         await this.logger.logError(
           error as Error,
           'All-Users Weekly Scheduler Error',
           {
-            cronExpression: '0 9 * * 3',
+            cronExpression: '0 20 * * 0',
             timezone: this.timezone
           }
         );
@@ -431,16 +431,16 @@ ${mentorResponse.next_steps && mentorResponse.next_steps.length > 0 ? `\n**Next 
       timezone: this.timezone
     });
 
-    console.log(`📅 All-users weekly scheduler started (Wednesday 9 AM, timezone: ${this.timezone})`);
-    
+    console.log(`📅 All-users weekly scheduler started (Sunday 8 PM, timezone: ${this.timezone})`);
+
     await this.logger.success(
       'ALL_USERS_WEEKLY_SCHEDULER',
       'Scheduler Started',
       'All-users weekly scheduler started successfully',
       {
-        cronExpression: '0 9 * * 3',
+        cronExpression: '0 20 * * 0',
         timezone: this.timezone,
-        description: 'Every Wednesday at 9:00 AM'
+        description: 'Every Sunday at 8:00 PM (with Adaptive Goal Recommendations)'
       }
     );
   }

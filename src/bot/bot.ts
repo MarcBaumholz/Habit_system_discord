@@ -24,6 +24,7 @@ import { ChallengeStateManager } from './challenge-state';
 import { ChallengeScheduler } from './challenge-scheduler';
 import { ChallengeProofProcessor } from './challenge-proof-processor';
 import { MidWeekScheduler } from './midweek-scheduler';
+import { AdminCommandHandler } from './admin-commands';
 
 export class HabitBot {
   private client: Client;
@@ -52,6 +53,7 @@ export class HabitBot {
   private challengeScheduler?: ChallengeScheduler;
   private challengeProofProcessor: ChallengeProofProcessor;
   private midWeekScheduler?: MidWeekScheduler;
+  private adminCommandHandler: AdminCommandHandler;
 
   constructor(notion: NotionClient) {
     console.log('🔍 DEBUG: HabitBot constructor called');
@@ -71,16 +73,17 @@ export class HabitBot {
     this.channelHandlers = new ChannelHandlers(this.client, notion);
     this.personalChannelManager = new PersonalChannelManager(this.client, notion);
     this.personalAssistant = new PersonalAssistant(this.client, this.notion, this.logger);
-    this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager, this.logger, this.personalAssistant);
-    this.habitFlow = new HabitFlowManager(notion, this.personalAssistant);
-    this.proofProcessor = new ProofProcessor(notion);
-    this.messageAnalyzer = new MessageAnalyzer(notion, this.client, this.logger);
-    this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
     this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion, this.logger);
     this.weeklyAgentScheduler = new WeeklyAgentScheduler(this.client, notion, this.logger);
     this.accountabilityScheduler = new AccountabilityScheduler(this.client, notion, this.logger);
     this.buddyRotationScheduler = new BuddyRotationScheduler(this.client, notion, this.logger);
     this.allUsersWeeklyScheduler = new AllUsersWeeklyScheduler(this.client, notion, this.logger);
+    this.adminCommandHandler = new AdminCommandHandler(notion, this.buddyRotationScheduler);
+    this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager, this.logger, this.personalAssistant);
+    this.habitFlow = new HabitFlowManager(notion, this.personalAssistant);
+    this.proofProcessor = new ProofProcessor(notion);
+    this.messageAnalyzer = new MessageAnalyzer(notion, this.client, this.logger);
+    this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
     
     // Generate profiles for all users on startup (async, don't block)
     this.personalAssistant.generateAllUserProfiles(true).catch(error => {
@@ -301,7 +304,10 @@ export class HabitBot {
 
       new SlashCommandBuilder()
         .setName('activate')
-        .setDescription('Reactivate your participation in the habit system')
+        .setDescription('Reactivate your participation in the habit system'),
+
+      // Admin commands
+      ...this.adminCommandHandler.getCommands()
     ];
 
     this.commands.set('join', { execute: this.commandHandler.handleJoin.bind(this.commandHandler) });
@@ -320,6 +326,7 @@ export class HabitBot {
     this.commands.set('learning-agent', { execute: this.handleLearningCommand.bind(this) });
     this.commands.set('pause', { execute: this.commandHandler.handlePause.bind(this.commandHandler) });
     this.commands.set('activate', { execute: this.commandHandler.handleActivate.bind(this.commandHandler) });
+    this.commands.set('batch', { execute: this.adminCommandHandler.handleBatchCommand.bind(this.adminCommandHandler) });
 
     return commands;
   }
@@ -916,9 +923,8 @@ export class HabitBot {
       await this.weeklyAgentScheduler.initialize();
       this.weeklyAgentScheduler.startScheduler();
 
-      // Initialize and start buddy rotation scheduler
-      await this.buddyRotationScheduler.startScheduler();
-      console.log('✅ Buddy Rotation Scheduler started successfully (Every other Sunday 8 AM)');
+      // Buddy assignment now happens automatically when /batch start is called
+      console.log('👥 Buddy Assignment: Configured to run when batch starts (via /batch start command)');
 
       // Initialize and start all-users weekly scheduler
       await this.allUsersWeeklyScheduler.initialize();

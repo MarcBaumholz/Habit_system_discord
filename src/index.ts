@@ -27,6 +27,7 @@ async function main() {
     'DISCORD_TOOLS',
     'DISCORD_INFO_CHANNEL',
     'DISCORD_WEEKLY_CHALLENGES',
+    'DISCORD_ADMIN',
     'PERPLEXITY_API_KEY'
   ];
 

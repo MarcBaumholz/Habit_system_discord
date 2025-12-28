@@ -465,37 +465,37 @@ ${response.next_steps && response.next_steps.length > 0 ? `\n**Next Steps:**\n${
 
   /**
    * Start the weekly scheduler
-   * Runs every Wednesday at 9:00 AM
+   * Runs every Sunday at 8:00 PM (with Adaptive Goal Recommendations)
    */
   startScheduler(): void {
-    // Wednesday at 9:00 AM (0 9 * * 3)
-    const task = cron.schedule('0 9 * * 3', async () => {
+    // Sunday at 8:00 PM (0 20 * * 0)
+    const task = cron.schedule('0 20 * * 0', async () => {
       try {
-        console.log('📅 Weekly agent scheduler triggered on Wednesday at 9 AM...');
-        
+        console.log('📅 Weekly agent scheduler triggered on Sunday at 8 PM...');
+
         await this.logger.info(
           'WEEKLY_SCHEDULER',
           'Scheduled Task Triggered',
-          'Weekly agent analysis triggered by cron on Wednesday at 9 AM',
+          'Weekly agent analysis with Adaptive Goal Recommendations triggered by cron on Sunday at 8 PM',
           {
-            cronExpression: '0 9 * * 3',
+            cronExpression: '0 20 * * 0',
             timezone: this.timezone,
             triggerTime: new Date().toISOString()
           }
         );
-        
+
         // Run the weekly analysis
         await this.runWeeklyAnalysis();
-        
+
         console.log('✅ Weekly agent analysis completed successfully');
-        
+
       } catch (error) {
         console.error('❌ Error in weekly agent scheduler:', error);
         await this.logger.logError(
           error as Error,
           'Weekly Scheduler Error',
           {
-            cronExpression: '0 9 * * 3',
+            cronExpression: '0 20 * * 0',
             timezone: this.timezone
           }
         );
@@ -505,15 +505,15 @@ ${response.next_steps && response.next_steps.length > 0 ? `\n**Next Steps:**\n${
       timezone: this.timezone
     });
 
-    console.log(`📅 Weekly agent scheduler started (Wednesday 9 AM, timezone: ${this.timezone})`);
+    console.log(`📅 Weekly agent scheduler started (Sunday 8 PM, timezone: ${this.timezone})`);
     console.log(`🎯 Target channel: ${this.targetChannelId}`);
-    
+
     this.logger.success(
       'WEEKLY_SCHEDULER',
       'Scheduler Started',
       'Weekly agent scheduler started successfully',
       {
-        cronExpression: '0 9 * * 3',
+        cronExpression: '0 20 * * 0',
         timezone: this.timezone,
         targetChannel: this.targetChannelId,
         agents: ['mentor', 'identity', 'accountability', 'learning', 'group']
@@ -534,8 +534,8 @@ ${response.next_steps && response.next_steps.length > 0 ? `\n**Next Steps:**\n${
    */
   getSchedulerStatus(): any {
     return {
-      cronExpression: '0 9 * * 3',
-      description: 'Every Wednesday at 9:00 AM',
+      cronExpression: '0 20 * * 0',
+      description: 'Every Sunday at 8:00 PM (with Adaptive Goal Recommendations)',
       timezone: this.timezone,
       targetChannel: this.targetChannelId,
       marcDiscordId: this.marcDiscordId,

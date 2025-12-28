@@ -13,6 +13,7 @@ import {
 } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { Habit, User } from '../types';
+import { getCurrentBatch } from '../utils/batch-manager';
 
 type SendableChannel = TextBasedChannel & { send: TextChannel['send'] };
 
@@ -52,6 +53,12 @@ export class HabitFlowManager {
   private modalCache: Map<string, HabitModalCache> = new Map();
   private readonly CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
   private personalAssistant?: any; // Optional - will be set if available
+  private readonly CELEBRATION_GIFS = [
+    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMG01NmZneXMybmx5c2pjOTgweXk3MTZxZWdtOWFhY243dXR6NG9xcyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3orieSQLr3L6lYpSo0/giphy.gif',
+    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcjBzemNhZW5pemF6OTd1OG8wdDhjNTB4bHJzenVzemlmaXN5bjFqYSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l4FGI8GoTL7N4DsyI/giphy.gif',
+    'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbWlkdDF5YzgxOTA3NTFqcjkxbWc4dXFvN3V5cGxkNzF0Y2Zsc3o3ZSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l0MYGYzk5wXCFnQ76/giphy.gif'
+  ];
+  private readonly CELEBRATION_REACTION = '🎊';
 
   constructor(notion: NotionClient, personalAssistant?: any) {
     this.notion = notion;
@@ -381,7 +388,8 @@ export class HabitFlowManager {
       .setCustomId('name')
       .setLabel('What do you want to call this habit?')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g. Morning Meditation, Fitness Training')
+      .setPlaceholder('💡 Choose a clear, specific name that motivates you. e.g. Morning Meditation, Fitness Training')
+      .setMaxLength(100)
       .setRequired(true);
 
     // Field 2: Domains
@@ -389,7 +397,8 @@ export class HabitFlowManager {
       .setCustomId('domains')
       .setLabel('Which life categories? (comma-separated)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g. mental health, productivity, fitness')
+      .setPlaceholder('💡 Which areas of life does this affect? e.g. mental health, productivity, fitness')
+      .setMaxLength(200)
       .setRequired(true);
 
     // Field 3: Context
@@ -397,7 +406,8 @@ export class HabitFlowManager {
       .setCustomId('context')
       .setLabel('When and where will you do it?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('e.g. Morning at 7am in my bedroom, after waking up')
+      .setPlaceholder('💡 Pick time where you feel most energized. Consider when you have most willpower & what aligns with your energy levels. e.g. Morning at 7am in my bedroom, after waking up')
+      .setMaxLength(1000)
       .setRequired(true);
 
     // Field 4: Difficulty
@@ -405,7 +415,8 @@ export class HabitFlowManager {
       .setCustomId('difficulty')
       .setLabel('Difficulty level? (easy/medium/hard)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('easy, medium, or hard')
+      .setPlaceholder('💡 Easy: minimal effort | Medium: some discipline | Hard: strong commitment. Type: easy, medium, or hard')
+      .setMaxLength(10)
       .setRequired(true);
 
     // Create action rows (max 5 per modal)
@@ -455,29 +466,42 @@ export class HabitFlowManager {
       : 'Not selected';
     const frequency = cachedData.selectedDays.length;
 
+    // Helper function to truncate text for Discord's 2000 char limit
+    const truncate = (text: string | undefined, maxLength: number = 150): string => {
+      if (!text) return 'Not provided';
+      if (text.length <= maxLength) return text;
+      return text.substring(0, maxLength - 3) + '...';
+    };
+
     const summary = `📋 **Step 4/4: Review Your Habit Contract**
 
 **Basics:**
-• **Name:** ${cachedData.name}
-• **Domains:** ${cachedData.domains}
+• **Name:** ${truncate(cachedData.name, 100)}
+• **Domains:** ${truncate(cachedData.domains, 100)}
 • **Days:** ${selectedDaysText} (${frequency}x/week)
-• **Context:** ${cachedData.context}
-• **Difficulty:** ${cachedData.difficulty}
+• **Context:** ${truncate(cachedData.context, 150)}
+• **Difficulty:** ${truncate(cachedData.difficulty, 10)}
 
 **Goals & Motivation:**
-• **SMART Goal:** ${cachedData.smartGoal}
-• **Epic Meaning:** ${cachedData.why}
-• **Minimal Dose:** ${cachedData.minimalDose}
-• **Habit Loop:** ${cachedData.habitLoop}
-• **Consequences:** ${cachedData.consequences}
+• **SMART Goal:** ${truncate(cachedData.smartGoal, 150)}
+• **Epic Meaning:** ${truncate(cachedData.why, 150)}
+• **Minimal Dose:** ${truncate(cachedData.minimalDose, 100)}
+• **Habit Loop:** ${truncate(cachedData.habitLoop, 150)}
+• **Consequences:** ${truncate(cachedData.consequences, 150)}
 
 **Reflection & Planning:**
-• **Curiosity/Passion/Purpose:** ${cachedData.curiosityPassionPurpose}
-• **Autonomy:** ${cachedData.autonomy}
-• **Hurdles:** ${cachedData.hurdles}
-• **Reminder:** ${cachedData.reminderType}
+• **Curiosity/Passion/Purpose:** ${truncate(cachedData.curiosityPassionPurpose, 150)}
+• **Autonomy:** ${truncate(cachedData.autonomy, 150)}
+• **Hurdles:** ${truncate(cachedData.hurdles, 150)}
+• **Reminder:** ${truncate(cachedData.reminderType, 100)}
 
 **Ready to commit to 66 days?**`;
+
+    // Ensure summary doesn't exceed Discord's 2000 character limit
+    const maxSummaryLength = 1950; // Leave buffer
+    const finalSummary = summary.length > maxSummaryLength 
+      ? summary.substring(0, maxSummaryLength - 3) + '...' 
+      : summary;
 
     const confirmButton = new ButtonBuilder()
       .setCustomId('keystone_summary_confirm')
@@ -487,7 +511,7 @@ export class HabitFlowManager {
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(confirmButton);
 
     await interaction.reply({
-      content: summary,
+      content: finalSummary,
       components: [row],
       ephemeral: false
     });
@@ -562,10 +586,14 @@ export class HabitFlowManager {
         ? cachedData.selectedDays.join(', ') 
         : 'Not selected';
 
-      await interaction.reply({
+      const successMessage = await interaction.reply({
         content: `🎉 **Keystone Habit Created!**\n\n**${habit.name}** has been successfully saved!\n\n✨ **Domains:** ${habit.domains.join(', ')}\n📅 **Days:** ${selectedDaysText} (${habit.frequency}x/week)\n💪 **Minimal Dose:** ${habit.minimalDose}\n✅ **66-Day Commitment:** Signed\n\nUse \`/proof\` to track your daily proofs!`,
-        ephemeral: false
-      });
+        ephemeral: false,
+        fetchReply: true
+      }) as Message;
+
+      await this.addConfettiReaction(successMessage);
+      await this.sendCelebrationFollowUp(interaction, habit.name);
 
       // Clear cache
       this.modalCache.delete(discordId);
@@ -669,7 +697,8 @@ export class HabitFlowManager {
       .setCustomId('smartGoal')
       .setLabel('Enter a clear SMART goal')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Balance challenge & skill. e.g. Meditate 10 min daily for better focus in 66 days')
+      .setPlaceholder('💡 Make it Specific, Measurable, Achievable, Relevant, Time-bound. Balance challenge with skill. e.g. Meditate 10 min daily for better focus in 66 days')
+      .setMaxLength(1000)
       .setRequired(true);
 
     // Field 2: Epic Meaning / Big Why
@@ -677,7 +706,8 @@ export class HabitFlowManager {
       .setCustomId('why')
       .setLabel('What is your epic meaning?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Define your big why - why this truly matters to you')
+      .setPlaceholder('💡 Connect to deeper values & long-term vision. What identity does this habit help you become? Why this truly matters to you.')
+      .setMaxLength(1000)
       .setRequired(true);
 
     // Field 3: Minimal Dose
@@ -685,15 +715,17 @@ export class HabitFlowManager {
       .setCustomId('minimalDose')
       .setLabel('Minimal dose (0.8 rule)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g. 2 min meditation, 5 push-ups, 1 page read')
+      .setPlaceholder('💡 Smallest version for tough days (80% of goal). e.g. 2 min meditation, 5 push-ups, 1 page read')
+      .setMaxLength(200)
       .setRequired(true);
 
     // Field 4: Habit Loop
     const habitLoopInput = new TextInputBuilder()
       .setCustomId('habitLoop')
-      .setLabel('Habit loop (cue → routine → reward)')
+      .setLabel('Habit loop (cue→craving→routine→reward)')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('e.g. Cue: Alarm → Routine: 10min meditation → Reward: Coffee')
+      .setPlaceholder('Cue: Alarm rings → Craving: Want calm & focus → Routine: 10min meditation → Reward: Coffee & feeling peaceful. Format: Cue → Craving → Routine → Reward')
+      .setMaxLength(1000)
       .setRequired(true);
 
     // Field 5: Consequences
@@ -701,7 +733,8 @@ export class HabitFlowManager {
       .setCustomId('consequences')
       .setLabel('Consequences of not committing?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('What happens if you don\'t do this habit? What are the costs?')
+      .setPlaceholder('💡 Understanding cost of inaction increases commitment. What happens if you don\'t do this? What will you lose or miss out on?')
+      .setMaxLength(1000)
       .setRequired(true);
 
     const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(smartGoalInput);
@@ -767,7 +800,8 @@ export class HabitFlowManager {
       .setCustomId('curiosityPassionPurpose')
       .setLabel('Curiosity, passion & purpose?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('What makes you curious? Which passion? What higher purpose?')
+      .setPlaceholder('💡 Connect to intrinsic motivation: curiosity, passion, higher purpose drive long-term commitment. What makes you curious? Which passion? What higher purpose?')
+      .setMaxLength(1000)
       .setRequired(true);
 
     // Field 2: Autonomy
@@ -775,7 +809,8 @@ export class HabitFlowManager {
       .setCustomId('autonomy')
       .setLabel('How does this give you control?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Describe your perfect vision of this habit autonomously integrated')
+      .setPlaceholder('💡 Autonomy increases motivation. How does this habit give you more control over your life and choices? Describe your perfect vision of this habit autonomously integrated')
+      .setMaxLength(1000)
       .setRequired(true);
 
     // Field 3: Hurdles
@@ -783,7 +818,8 @@ export class HabitFlowManager {
       .setCustomId('hurdles')
       .setLabel('What hurdles might get in the way?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('e.g. Too tired mornings, time pressure, forgetfulness, family interruptions')
+      .setPlaceholder('💡 Anticipating obstacles helps you prepare. Think about time, energy, environment, social factors. e.g. Too tired mornings, time pressure, forgetfulness, family interruptions')
+      .setMaxLength(1000)
       .setRequired(true);
 
     // Field 4: Reminder Type
@@ -791,7 +827,8 @@ export class HabitFlowManager {
       .setCustomId('reminderType')
       .setLabel('How to be reminded?')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('e.g. Discord DM, Calendar, Phone Alarm')
+      .setPlaceholder('💡 Choose: phone alarms, calendar, habit stacking, visual cues, accountability partners. e.g. Discord DM, Calendar, Phone Alarm')
+      .setMaxLength(200)
       .setRequired(true);
 
     const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(curiosityPassionPurposeInput);
@@ -853,6 +890,10 @@ export class HabitFlowManager {
     // Calculate frequency from selected days
     const frequency = Math.max(1, Math.min(7, cache.selectedDays?.length || 1));
 
+    // Get current active batch
+    const currentBatch = getCurrentBatch();
+    const batchName = currentBatch?.name;
+
     return {
       userId: cache.userId,
       name: cache.name,
@@ -870,7 +911,8 @@ export class HabitFlowManager {
       autonomy: cache.autonomy,
       curiosityPassionPurpose: cache.curiosityPassionPurpose,
       consequences: cache.consequences,
-      commitmentSignature: cache.commitmentSignature
+      commitmentSignature: cache.commitmentSignature,
+      batch: batchName
     };
   }
 
@@ -900,6 +942,43 @@ export class HabitFlowManager {
       console.error('Failed to fetch user for keystone habit flow:', error);
       await channel.send('⚠️ I couldn\'t verify your account right now. Please try again in a moment.');
       return null;
+    }
+  }
+
+  private getRandomCelebrationGif(): string {
+    if (!this.CELEBRATION_GIFS.length) {
+      return '';
+    }
+
+    const index = Math.floor(Math.random() * this.CELEBRATION_GIFS.length);
+    return this.CELEBRATION_GIFS[index];
+  }
+
+  private async addConfettiReaction(message: Message) {
+    try {
+      await message.react(this.CELEBRATION_REACTION);
+    } catch (error) {
+      console.error('Failed to add celebration reaction:', error);
+    }
+  }
+
+  private async sendCelebrationFollowUp(interaction: ModalSubmitInteraction, habitName: string) {
+    const gifUrl = this.getRandomCelebrationGif();
+    const mention = `<@${interaction.user.id}>`;
+    const messageLines = [
+      `🎊 ${mention} Yeah, you started this new habit **${habitName}**!`,
+      'Keep showing up — the 66-day streak begins right now! 🚀'
+    ];
+
+    const content = gifUrl ? `${messageLines.join('\n')}\n${gifUrl}` : messageLines.join('\n');
+
+    try {
+      await interaction.followUp({
+        content,
+        ephemeral: false
+      });
+    } catch (error) {
+      console.error('Failed to send celebration GIF:', error);
     }
   }
 }

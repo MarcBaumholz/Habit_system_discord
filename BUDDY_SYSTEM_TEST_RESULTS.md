@@ -40,10 +40,11 @@ December 1, 2025
 
 ## What the Buddy System Does
 
-### 1. **Buddy Rotation** (Every 2 Weeks)
-- **Schedule:** Every other Sunday at 8:00 AM
+### 1. **Buddy Rotation** (Monthly)
+- **Schedule:** 1st of each month at 8:00 AM
 - **Process:**
   - Gets all active users
+  - Checks if rotation already happened this month (prevents duplicate rotations)
   - Randomly pairs them
   - Updates `buddy` field with partner's nickname
   - Updates `BuddyStart` date
@@ -84,7 +85,7 @@ December 1, 2025
 - `rotateBuddies()` - Pairs users and updates assignments
 
 ### Schedulers
-- `BuddyRotationScheduler` - Handles rotation every 2 weeks
+- `BuddyRotationScheduler` - Handles rotation monthly (1st of each month at 8 AM)
 - `AllUsersWeeklyScheduler` - Runs weekly analysis for all users
 
 ## Test Results Details

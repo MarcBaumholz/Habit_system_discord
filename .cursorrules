@@ -1,0 +1,104 @@
+# Cursor Rules for Test-Driven Development (TDD)
+
+## Core Principle: Test-First Development
+
+**ALWAYS write tests BEFORE implementing features.**
+
+## Workflow
+
+1. **Write Test First**: When implementing a new feature or fixing a bug:
+   - Create a test file in `src/test/` or `tests/`
+   - Write tests that describe the expected behavior
+   - Tests should fail initially (Red phase)
+
+2. **Implement Feature**: Write minimal code to make tests pass (Green phase)
+
+3. **Refactor**: Improve code while keeping tests green (Refactor phase)
+
+4. **Auto-Run Tests**: Tests are automatically executed and results sent to Discord test channel
+
+## Test Channel Integration
+
+- **Test Channel ID**: `1454881425911316572` (DISCORD_TESTCHANNEL)
+- All test results are automatically sent to this channel
+- Test failures trigger immediate notifications
+
+## Test Structure
+
+```typescript
+import { TestFramework } from './test-framework';
+
+const test = new TestFramework('Feature Name', process.env.DISCORD_TESTCHANNEL!);
+
+test.test('should do something', async () => {
+  // Arrange
+  // Act
+  // Assert
+  TestFramework.assertEqual(actual, expected);
+});
+
+await test.run();
+```
+
+## Rules
+
+1. **No Code Without Tests**: Every function, class, or feature must have corresponding tests
+2. **Test Coverage**: Aim for >80% code coverage
+3. **Test Naming**: Use descriptive names: `should [expected behavior] when [condition]`
+4. **Isolation**: Tests should be independent and not rely on execution order
+5. **Mock External Dependencies**: Use mocks for Discord, Notion, APIs
+6. **Fast Tests**: Tests should complete quickly (<5s per test)
+7. **Clear Assertions**: Use descriptive error messages
+
+## When Code Changes
+
+1. **Detect Changes**: Monitor file changes in `src/`
+2. **Identify Affected Tests**: Find tests related to changed code
+3. **Run Tests**: Execute relevant test suite
+4. **Send Results**: Post results to Discord test channel
+5. **Notify on Failure**: Alert immediately if tests fail
+
+## Test Categories
+
+- **Unit Tests**: Test individual functions/classes in isolation
+- **Integration Tests**: Test component interactions
+- **E2E Tests**: Test complete user flows via Discord
+
+## Example Test
+
+```typescript
+// tests/commands.test.ts
+import { TestFramework } from '../src/test/test-framework';
+import { CommandHandler } from '../src/bot/commands';
+
+const test = new TestFramework('Command Handler', process.env.DISCORD_TESTCHANNEL!);
+
+test.test('should handle /join command', async () => {
+  const handler = new CommandHandler(/* mocks */);
+  const result = await handler.handleJoin(/* test interaction */);
+  TestFramework.assertEqual(result.success, true);
+});
+
+await test.run();
+```
+
+## Continuous Testing
+
+- Tests run automatically on file save
+- Results posted to Discord test channel
+- Failed tests block deployment
+- All tests must pass before merging
+
+## Error Handling in Tests
+
+- Always test error cases
+- Verify error messages are helpful
+- Test edge cases and boundary conditions
+- Test with invalid inputs
+
+## Performance Tests
+
+- Test response times
+- Test with large datasets
+- Test concurrent operations
+- Monitor memory usage

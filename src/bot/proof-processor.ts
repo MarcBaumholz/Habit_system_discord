@@ -2,6 +2,7 @@ import { Message } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { Habit, User } from '../types';
 import axios from 'axios';
+import { filterHabitsByCurrentBatch } from '../utils/batch-manager';
 
 interface ProofClassification {
   habitName: string;
@@ -106,9 +107,12 @@ export class ProofProcessor {
       return;
     }
 
-    const habits = await this.notion.getHabitsByUserId(user.id);
+    // Get all user habits and filter by current batch
+    const allHabits = await this.notion.getHabitsByUserId(user.id);
+    const habits = filterHabitsByCurrentBatch(allHabits);
+
     if (!habits || habits.length === 0) {
-      await message.reply('I could not find any habits yet. Create one with `KeystoneHabit` or `/habit add` first.');
+      await message.reply('I could not find any habits from the current batch. Create one with `KeystoneHabit` or `/habit add` first.');
       return;
     }
 

@@ -12,6 +12,7 @@ export interface User {
   pauseDuration?: string;
   buddy?: string; // Nickname of buddy (select field stores nickname)
   buddyStart?: string; // Date when buddy pairing started (YYYY-MM-DD)
+  batch?: string[]; // Multi-select of batches user has participated in (e.g., ["january 2026", "february 2026"])
 }
 
 export interface Habit {
@@ -34,6 +35,7 @@ export interface Habit {
   curiosityPassionPurpose?: string; // Triangle of curiosity, passion, purpose
   consequences?: string; // Consequences of not committing
   commitmentSignature?: string; // 66-day commitment confirmation
+  batch?: string; // Current active batch when habit was created (e.g., "january 2026")
 }
 
 export interface Proof {
@@ -82,6 +84,11 @@ export interface Group {
   name: string;
   channelId: string;
   donationPool: number;
+}
+
+export interface BatchMetadata {
+  name: string; // e.g., "january 2026"
+  startDate: string; // ISO date string (YYYY-MM-DD)
 }
 
 // User Profile für Personality DB

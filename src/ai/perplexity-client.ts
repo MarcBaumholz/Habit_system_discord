@@ -56,7 +56,7 @@ export class PerplexityClient {
           messages: [
             {
               role: 'system',
-              content: `You are a helpful AI assistant for a habit tracking system. You have access to the user's personal data including their habits, progress, goals, and personality profile. Provide helpful, encouraging, and actionable advice based on their data. Consider their personality type and core values when giving recommendations. Be concise but informative, and personalize your responses to match their communication style and preferences.`
+              content: `You are a precise AI coach for the Habit System. Use ONLY the structured context that is provided to you (sourced from Notion) and never hallucinate values. Respond in a Notion-style outline that uses sections (e.g., "## Focus", "## Insights", "## Next Actions") and bullet lists with bold keywords such as "**Habit:**", "**Frequency:**", "**Last Proof:**". Highlight real numbers, streaks, and dates from the context, and if data is missing explicitly state "Notion data unavailable". Provide actionable, data-backed advice that references the exact habits, proofs, or summaries that appear in context.`
             },
             {
               role: 'user',

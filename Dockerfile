@@ -3,6 +3,16 @@
 # ================================
 FROM node:18-alpine AS builder
 
+# Install system dependencies required for canvas package
+RUN apk add --no-cache \
+    build-base \
+    cairo-dev \
+    jpeg-dev \
+    pango-dev \
+    giflib-dev \
+    pixman-dev \
+    fontconfig-dev
+
 # Set working directory
 WORKDIR /app
 
@@ -11,6 +21,7 @@ COPY package*.json ./
 
 # Install ALL dependencies (needed for build)
 RUN npm ci
+
 # Copy only necessary source files
 COPY tsconfig.json ./
 COPY src ./src
@@ -18,20 +29,33 @@ COPY src ./src
 # Build TypeScript to JavaScript
 RUN npm run build
 
+# Strip dev dependencies to reduce final image size
+RUN npm prune --production
+
 # ================================
 # Stage 2: Production
 # ================================
 FROM node:18-alpine
 
+# Install runtime dependencies required for canvas package
+# Python is needed for building native modules like canvas
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    cairo \
+    jpeg \
+    pango \
+    giflib \
+    pixman \
+    fontconfig
+
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-
-# Install ONLY production dependencies
-RUN npm ci --only=production && \
-    npm cache clean --force
+# Copy production node_modules and built app from builder stage
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist

@@ -4,7 +4,7 @@ import { DiscordLogger } from './discord-logger';
 import { PerplexityClient } from '../ai/perplexity-client';
 import { ProfileGenerator } from '../ai/profile-generator';
 import { ProfileStorage } from '../ai/profile-storage';
-import { QueryClassifier } from '../ai/query-classifier';
+import { QueryClassifier, QueryClassification } from '../ai/query-classifier';
 import { DynamicContextBuilder } from '../ai/dynamic-context-builder';
 import { ContextCompressor } from '../ai/context-compressor';
 
@@ -59,10 +59,11 @@ export class PersonalAssistant {
     }
 
     const content = message.content.toLowerCase().trim();
+    const classification = this.queryClassifier.classifyQuery(message.content);
 
     // Try AI-powered response first if available
-    if (this.aiClient && this.shouldUseAI(content)) {
-      const aiHandled = await this.handleAIQuery(message);
+    if (this.aiClient && this.shouldUseAI(content, classification)) {
+      const aiHandled = await this.handleAIQuery(message, classification);
       if (aiHandled) {
         return true;
       }
@@ -117,20 +118,38 @@ export class PersonalAssistant {
     return progressWords.some(word => content.includes(word));
   }
 
-  private shouldUseAI(content: string): boolean {
-    // Use AI for complex questions, data analysis, or specific habit-related queries
-    const aiTriggers = [
-      'how', 'what', 'why', 'when', 'where', 'wie', 'was', 'warum', 'wann', 'wo',
-      'analysis', 'analyze', 'analyze', 'statistics', 'stats', 'data', 'trend',
-      'recommend', 'suggest', 'advice', 'help', 'tip', 'empfehlung', 'rat',
-      'improve', 'better', 'optimize', 'optimize', 'verbessern', 'optimieren',
-      'pattern', 'habit', 'routine', 'consistency', 'consist', 'gewohnheit'
+  private shouldUseAI(content: string, classification: QueryClassification): boolean {
+    if (classification.intent !== 'general' && classification.confidence >= 0.5) {
+      return true;
+    }
+
+    if ((classification.mentionedHabits?.length || 0) > 0) {
+      return true;
+    }
+
+    const hasQuestion = this.isQuestion(content);
+    const dataKeywords = [
+      'habit',
+      'gewohnheit',
+      'summary',
+      'übersicht',
+      'fortschritt',
+      'progress',
+      'stats',
+      'daten',
+      'zahlen',
+      'proof',
+      'nachweis',
+      'notion',
+      'journal'
     ];
-    
-    return aiTriggers.some(trigger => content.includes(trigger)) && content.length > 10;
+
+    const hasDataIntent = dataKeywords.some(keyword => content.includes(keyword));
+
+    return (hasQuestion && content.length > 10) || hasDataIntent;
   }
 
-  private async handleAIQuery(message: Message): Promise<boolean> {
+  private async handleAIQuery(message: Message, classification?: QueryClassification): Promise<boolean> {
     if (!this.aiClient) return false;
 
     try {
@@ -146,11 +165,14 @@ export class PersonalAssistant {
         return true;
       }
 
+      const currentClassification = classification ?? this.queryClassifier.classifyQuery(message.content);
+
       // Build dynamic context based on query intent
       const dynamicContext = await this.contextBuilder.buildContext(
         message.author.id,
         message.content,
-        user.id
+        user.id,
+        currentClassification
       );
 
       console.log(`📊 Context built - Intent: ${dynamicContext.queryIntent}, Tokens: ${dynamicContext.tokensUsed}`);

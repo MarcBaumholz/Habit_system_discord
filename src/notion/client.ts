@@ -110,6 +110,9 @@ export class NotionClient {
     if (habit.commitmentSignature) {
       properties['Commitment Signature'] = { rich_text: [{ text: { content: habit.commitmentSignature } }] };
     }
+    if (habit.batch) {
+      properties['batch'] = { rich_text: [{ text: { content: habit.batch } }] };
+    }
 
     const response = await this.client.pages.create({
       parent: { database_id: this.databases.habits },
@@ -163,7 +166,8 @@ export class NotionClient {
         autonomy: getRichText('Autonomy'),
         curiosityPassionPurpose: getRichText('Curiosity Passion Purpose'),
         consequences: getRichText('Consequences'),
-        commitmentSignature: getRichText('Commitment Signature')
+        commitmentSignature: getRichText('Commitment Signature'),
+        batch: getRichText('batch')
       } as Habit;
     });
   }
@@ -428,7 +432,9 @@ export class NotionClient {
         pauseDuration: page.properties['Pause Duration'] ? getRichTextContent(page.properties['Pause Duration']) : undefined,
         // Buddy fields
         buddy: getSelectContent(page.properties['buddy']),
-        buddyStart: getDateContent(page.properties['BuddyStart'])
+        buddyStart: getDateContent(page.properties['BuddyStart']),
+        // Batch field
+        batch: page.properties['batch']?.multi_select?.map((item: any) => item.name) || []
       };
 
       console.log('✅ User found:', {
@@ -1229,7 +1235,9 @@ export class NotionClient {
           status: (getSelectContent(properties['Status']) || 'active') as 'active' | 'pause',
           // Pause Reason and Duration are optional - only extract if property exists
           pauseReason: properties['Pause Reason'] ? getRichTextContent(properties['Pause Reason']) : undefined,
-          pauseDuration: properties['Pause Duration'] ? getRichTextContent(properties['Pause Duration']) : undefined
+          pauseDuration: properties['Pause Duration'] ? getRichTextContent(properties['Pause Duration']) : undefined,
+          // Batch field
+          batch: properties['batch']?.multi_select?.map((item: any) => item.name) || []
         };
       });
     } catch (error) {
@@ -1297,7 +1305,9 @@ export class NotionClient {
           pauseDuration: properties['Pause Duration'] ? getRichTextContent(properties['Pause Duration']) : undefined,
           // Buddy fields
           buddy: getSelectContent(properties['buddy']),
-          buddyStart: getDateContent(properties['BuddyStart'])
+          buddyStart: getDateContent(properties['BuddyStart']),
+          // Batch field
+          batch: properties['batch']?.multi_select?.map((item: any) => item.name) || []
         };
       });
     } catch (error) {
@@ -2031,6 +2041,122 @@ export class NotionClient {
     } catch (error) {
       console.error('Error creating challenge reward:', error);
       throw error;
+    }
+  }
+
+  // ===== BATCH OPERATIONS (Simple - No separate database) =====
+
+  /**
+   * Add batch label to all active users
+   * @param batchName - Batch name (e.g., "january 2026")
+   * @returns Number of users enrolled
+   */
+  async addBatchToAllActiveUsers(batchName: string): Promise<number> {
+    try {
+      console.log(`👥 Adding batch "${batchName}" to all active users`);
+
+      // Get all active users
+      const activeUsers = await this.getActiveUsers();
+      console.log(`Found ${activeUsers.length} active users`);
+
+      let enrolledCount = 0;
+
+      for (const user of activeUsers) {
+        try {
+          // Get existing batch labels
+          const existingBatches = user.batch || [];
+
+          // Add batch name if not already present
+          if (!existingBatches.includes(batchName)) {
+            existingBatches.push(batchName);
+          }
+
+          // Update user with new batch label
+          await this.client.pages.update({
+            page_id: user.id,
+            properties: {
+              'batch': {
+                multi_select: existingBatches.map(b => ({ name: b }))
+              }
+            }
+          });
+
+          enrolledCount++;
+          console.log(`  ✅ Added batch to: ${user.name} (${user.discordId})`);
+        } catch (userError) {
+          console.error(`  ❌ Error adding batch to user ${user.name}:`, userError);
+        }
+      }
+
+      console.log(`✅ Added batch "${batchName}" to ${enrolledCount} users`);
+      return enrolledCount;
+    } catch (error) {
+      console.error('❌ Error adding batch to users:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all users who have a specific batch label
+   * @param batchName - Batch name to search for
+   * @returns Array of users in that batch
+   */
+  async getUsersInBatch(batchName: string): Promise<User[]> {
+    try {
+      const response = await this.client.databases.query({
+        database_id: this.databases.users,
+        filter: {
+          property: 'batch',
+          multi_select: { contains: batchName }
+        }
+      });
+
+      return response.results.map(page => {
+        if (!('properties' in page)) {
+          throw new Error('Invalid page response');
+        }
+        const properties = page.properties;
+
+        const getTitleContent = (prop: any) => {
+          if (!prop?.title || !Array.isArray(prop.title) || prop.title.length === 0) return '';
+          return prop.title[0]?.text?.content || prop.title[0]?.plain_text || '';
+        };
+
+        const getRichTextContent = (prop: any) => {
+          if (!prop?.rich_text || !Array.isArray(prop.rich_text) || prop.rich_text.length === 0) return '';
+          return prop.rich_text[0]?.text?.content || prop.rich_text[0]?.plain_text || '';
+        };
+
+        const getSelectContent = (prop: any): string | undefined => {
+          if (!prop?.select) return undefined;
+          return prop.select.name;
+        };
+
+        const getDateContent = (prop: any): string | undefined => {
+          if (!prop?.date) return undefined;
+          return prop.date.start;
+        };
+
+        return {
+          id: page.id,
+          discordId: getRichTextContent(properties['DiscordID']),
+          name: getTitleContent(properties['Name']) || 'Unknown User',
+          nickname: getRichTextContent(properties['nickname']),
+          timezone: getRichTextContent(properties['Timezone']) || 'Europe/Berlin',
+          bestTime: getRichTextContent(properties['Best Time']) || '09:00',
+          trustCount: (properties['Trust Count'] as any)?.number || 0,
+          personalChannelId: getRichTextContent(properties['Personal Channel ID']),
+          status: (getSelectContent(properties['Status']) || 'active') as 'active' | 'pause',
+          pauseReason: getRichTextContent(properties['Pause Reason']) || undefined,
+          pauseDuration: getRichTextContent(properties['Pause Duration']) || undefined,
+          buddy: getSelectContent(properties['buddy']),
+          buddyStart: getDateContent(properties['BuddyStart']),
+          batch: (properties['batch'] as any)?.multi_select?.map((item: any) => item.name) || []
+        };
+      });
+    } catch (error) {
+      console.error(`❌ Error getting users in batch "${batchName}":`, error);
+      return [];
     }
   }
 }
