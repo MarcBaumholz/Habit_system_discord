@@ -57,9 +57,6 @@ WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
-# Copy built application from builder stage
-COPY --from=builder /app/dist ./dist
-
 # Create logs and data directories
 RUN mkdir -p logs data && \
     chown -R node:node /app

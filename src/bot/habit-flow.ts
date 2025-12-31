@@ -388,7 +388,7 @@ export class HabitFlowManager {
       .setCustomId('name')
       .setLabel('What do you want to call this habit?')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('💡 Choose a clear, specific name that motivates you. e.g. Morning Meditation, Fitness Training')
+      .setPlaceholder('e.g. Morning Meditation, Daily Running, Reading Before Bed')
       .setMaxLength(100)
       .setRequired(true);
 
@@ -397,7 +397,7 @@ export class HabitFlowManager {
       .setCustomId('domains')
       .setLabel('Which life categories? (comma-separated)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('💡 Which areas of life does this affect? e.g. mental health, productivity, fitness')
+      .setPlaceholder('e.g. mental health, productivity, fitness, relationships')
       .setMaxLength(200)
       .setRequired(true);
 
@@ -406,7 +406,7 @@ export class HabitFlowManager {
       .setCustomId('context')
       .setLabel('When and where will you do it?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('💡 Pick time where you feel most energized. Consider when you have most willpower & what aligns with your energy levels. e.g. Morning at 7am in my bedroom, after waking up')
+      .setPlaceholder('e.g. Every morning at 7am in my bedroom, right after waking up')
       .setMaxLength(1000)
       .setRequired(true);
 
@@ -415,7 +415,7 @@ export class HabitFlowManager {
       .setCustomId('difficulty')
       .setLabel('Difficulty level? (easy/medium/hard)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('💡 Easy: minimal effort | Medium: some discipline | Hard: strong commitment. Type: easy, medium, or hard')
+      .setPlaceholder('easy, medium, or hard')
       .setMaxLength(10)
       .setRequired(true);
 
@@ -697,7 +697,7 @@ export class HabitFlowManager {
       .setCustomId('smartGoal')
       .setLabel('Enter a clear SMART goal')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('💡 Make it Specific, Measurable, Achievable, Relevant, Time-bound. Balance challenge with skill. e.g. Meditate 10 min daily for better focus in 66 days')
+      .setPlaceholder('e.g. Meditate 10 min daily for better focus in 66 days')
       .setMaxLength(1000)
       .setRequired(true);
 
@@ -706,7 +706,7 @@ export class HabitFlowManager {
       .setCustomId('why')
       .setLabel('What is your epic meaning?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('💡 Connect to deeper values & long-term vision. What identity does this habit help you become? Why this truly matters to you.')
+      .setPlaceholder('Why does this matter? What identity will you become?')
       .setMaxLength(1000)
       .setRequired(true);
 
@@ -715,7 +715,7 @@ export class HabitFlowManager {
       .setCustomId('minimalDose')
       .setLabel('Minimal dose (0.8 rule)')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('💡 Smallest version for tough days (80% of goal). e.g. 2 min meditation, 5 push-ups, 1 page read')
+      .setPlaceholder('e.g. 2 min meditation, 5 push-ups, 1 page read')
       .setMaxLength(200)
       .setRequired(true);
 
@@ -724,7 +724,7 @@ export class HabitFlowManager {
       .setCustomId('habitLoop')
       .setLabel('Habit loop (cue→craving→routine→reward)')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('Cue: Alarm rings → Craving: Want calm & focus → Routine: 10min meditation → Reward: Coffee & feeling peaceful. Format: Cue → Craving → Routine → Reward')
+      .setPlaceholder('Cue: Alarm rings → Craving: Want focus → Routine: Meditate → Reward: Coffee')
       .setMaxLength(1000)
       .setRequired(true);
 
@@ -733,7 +733,7 @@ export class HabitFlowManager {
       .setCustomId('consequences')
       .setLabel('Consequences of not committing?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('💡 Understanding cost of inaction increases commitment. What happens if you don\'t do this? What will you lose or miss out on?')
+      .setPlaceholder('What happens if you don\'t do this? What will you lose?')
       .setMaxLength(1000)
       .setRequired(true);
 
@@ -800,7 +800,7 @@ export class HabitFlowManager {
       .setCustomId('curiosityPassionPurpose')
       .setLabel('Curiosity, passion & purpose?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('💡 Connect to intrinsic motivation: curiosity, passion, higher purpose drive long-term commitment. What makes you curious? Which passion? What higher purpose?')
+      .setPlaceholder('What makes you curious? Which passion drives you? What higher purpose?')
       .setMaxLength(1000)
       .setRequired(true);
 
@@ -809,7 +809,7 @@ export class HabitFlowManager {
       .setCustomId('autonomy')
       .setLabel('How does this give you control?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('💡 Autonomy increases motivation. How does this habit give you more control over your life and choices? Describe your perfect vision of this habit autonomously integrated')
+      .setPlaceholder('How does this habit give you more control over your life?')
       .setMaxLength(1000)
       .setRequired(true);
 
@@ -818,7 +818,7 @@ export class HabitFlowManager {
       .setCustomId('hurdles')
       .setLabel('What hurdles might get in the way?')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('💡 Anticipating obstacles helps you prepare. Think about time, energy, environment, social factors. e.g. Too tired mornings, time pressure, forgetfulness, family interruptions')
+      .setPlaceholder('e.g. Too tired mornings, time pressure, forgetfulness')
       .setMaxLength(1000)
       .setRequired(true);
 
@@ -827,7 +827,7 @@ export class HabitFlowManager {
       .setCustomId('reminderType')
       .setLabel('How to be reminded?')
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('💡 Choose: phone alarms, calendar, habit stacking, visual cues, accountability partners. e.g. Discord DM, Calendar, Phone Alarm')
+      .setPlaceholder('e.g. Discord DM, Calendar, Phone Alarm')
       .setMaxLength(200)
       .setRequired(true);
 

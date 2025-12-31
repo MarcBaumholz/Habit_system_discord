@@ -69,9 +69,16 @@ mock_data/
 *.sh
 !docker-start.sh
 
-# Python virtual environments (for mentor_agent)
+# Python virtual environments
+**/venv/
+venv/
+python-agents/venv/
 mentor_agent/venv/
-mentor_agent/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 
 # Misc
 .editorconfig
