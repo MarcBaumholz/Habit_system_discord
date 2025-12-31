@@ -71,7 +71,11 @@ fi
 
 # Start new container
 print_status "Starting new container..."
-docker-compose up -d
+docker run -d \
+    --name habit-discord-bot \
+    --env-file .env \
+    --restart unless-stopped \
+    habit-discord-bot:optimized
 
 if [ $? -eq 0 ]; then
     print_success "Container started successfully"
@@ -95,8 +99,8 @@ if docker ps -q -f name=habit-discord-bot | grep -q .; then
     echo "----------------------------------------"
 
     print_status "To view live logs: docker logs -f habit-discord-bot"
-    print_status "To stop container: docker-compose down"
-    print_status "To restart: docker-compose restart"
+    print_status "To stop container: docker stop habit-discord-bot"
+    print_status "To restart: docker restart habit-discord-bot"
 
 else
     print_error "Container failed to start"
