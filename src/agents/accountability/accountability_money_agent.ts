@@ -687,23 +687,26 @@ export class AccountabilityMoneyAgent extends BaseAgent {
   }
 
   private buildRiskAlerts(userCompliance: UserCompliance[]): RiskAlert[] {
-    const alerts: RiskAlert[] = userCompliance.map(user => {
-      const habitsBelow50 = user.habits.filter(habit => habit.completionRate < 50).length;
-      let reason = '';
+    const alerts: RiskAlert[] = userCompliance
+      .map(user => {
+        const habitsBelow50 = user.habits.filter(habit => habit.completionRate < 50).length;
+        let reason = '';
 
-      if (habitsBelow50 >= 2) {
-        reason = `${habitsBelow50} habits below 50%`;
-      } else if (user.overallCompletionRate < 60) {
-        reason = 'overall below 60%';
-      } else if (user.totalCharge >= 2) {
-        reason = `charges €${user.totalCharge.toFixed(2)}`;
-      }
+        // Priority: multiple struggling habits > low overall rate > high charges
+        if (habitsBelow50 >= 2) {
+          reason = `${habitsBelow50} habits below 50%`;
+        } else if (user.overallCompletionRate < 60) {
+          reason = 'overall below 60%';
+        } else if (user.totalCharge >= 2) {
+          reason = `charges €${user.totalCharge.toFixed(2)}`;
+        }
 
-      return {
-        name: user.name,
-        reason
-      };
-    }).filter(alert => alert.reason.length > 0);
+        return reason.length > 0 ? {
+          name: user.name,
+          reason
+        } : null;
+      })
+      .filter((alert): alert is RiskAlert => alert !== null);
 
     return alerts
       .sort((a, b) => {
@@ -732,20 +735,25 @@ export class AccountabilityMoneyAgent extends BaseAgent {
 
     userCompliance.forEach(user => {
       user.habits.forEach(habit => {
-        if (habit.completionRate >= 70) {
+        // Only suggest reduction if completion rate is below 70% and target is > 1
+        if (habit.completionRate >= 70 || habit.targetFrequency <= 1) {
           return;
         }
 
+        // More aggressive reduction for very low completion rates
         const reduction = habit.completionRate < 50 ? 2 : 1;
         const recommendedTarget = Math.max(1, habit.targetFrequency - reduction);
 
-        recommendations.push({
-          name: user.name,
-          habitName: habit.habitName,
-          currentRate: habit.completionRate,
-          targetFrequency: habit.targetFrequency,
-          recommendedTarget
-        });
+        // Only add if there's an actual reduction
+        if (recommendedTarget < habit.targetFrequency) {
+          recommendations.push({
+            name: user.name,
+            habitName: habit.habitName,
+            currentRate: habit.completionRate,
+            targetFrequency: habit.targetFrequency,
+            recommendedTarget
+          });
+        }
       });
     });
 

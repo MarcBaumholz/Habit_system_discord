@@ -171,10 +171,11 @@ export class AccountabilityReportFormatter {
       .join('\n');
 
     if (paymentRequests) {
+      const paymentText = `Please pay your amount into the pool:\n${this.PAYPAL_POOL_URL}\n\n${paymentRequests}`;
       embed.addFields([
         {
-          name: 'Pay This Week',
-          value: `Please pay your amount into the pool:\n${this.PAYPAL_POOL_URL}\n\n${paymentRequests}`.substring(0, 1024),
+          name: '💳 Pay This Week',
+          value: paymentText.substring(0, 1024),
           inline: false
         }
       ]);

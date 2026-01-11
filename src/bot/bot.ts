@@ -83,7 +83,7 @@ export class HabitBot {
     this.weeklyReflectionScheduler = new WeeklyReflectionScheduler(this.client, notion, this.logger);
     this.accountabilityScheduler = new AccountabilityScheduler(this.client, notion, this.logger);
     this.allUsersWeeklyScheduler = new AllUsersWeeklyScheduler(this.client, notion, this.logger);
-    this.adminCommandHandler = new AdminCommandHandler(notion, this.buddyRotationScheduler);
+    this.adminCommandHandler = new AdminCommandHandler(notion, this.buddyRotationScheduler, this.accountabilityScheduler);
     this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager, this.logger, this.personalAssistant);
     this.habitFlow = new HabitFlowManager(notion, this.personalAssistant);
     this.reflectionFlow = new ReflectionFlowManager(notion);
@@ -348,6 +348,7 @@ export class HabitBot {
     this.commands.set('pause', { execute: this.commandHandler.handlePause.bind(this.commandHandler) });
     this.commands.set('activate', { execute: this.commandHandler.handleActivate.bind(this.commandHandler) });
     this.commands.set('batch', { execute: this.adminCommandHandler.handleBatchCommand.bind(this.adminCommandHandler) });
+    this.commands.set('weekly-report', { execute: this.adminCommandHandler.handleWeeklyReportCommand.bind(this.adminCommandHandler) });
 
     return commands;
   }

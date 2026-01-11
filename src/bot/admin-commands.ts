@@ -16,18 +16,25 @@ import {
   isBatchActive
 } from '../utils/batch-manager';
 import { BuddyRotationScheduler } from './buddy-rotation-scheduler';
+import { AccountabilityScheduler } from './accountability-scheduler';
 
 export class AdminCommandHandler {
   private notionClient: NotionClient;
   private adminChannelId: string;
   private accountabilityChannelId: string;
   private buddyScheduler: BuddyRotationScheduler | null;
+  private accountabilityScheduler: AccountabilityScheduler | null;
 
-  constructor(notionClient: NotionClient, buddyScheduler?: BuddyRotationScheduler) {
+  constructor(
+    notionClient: NotionClient,
+    buddyScheduler?: BuddyRotationScheduler,
+    accountabilityScheduler?: AccountabilityScheduler
+  ) {
     this.notionClient = notionClient;
     this.adminChannelId = process.env.DISCORD_ADMIN || '';
     this.accountabilityChannelId = process.env.DISCORD_ACCOUNTABILITY_GROUP || '';
     this.buddyScheduler = buddyScheduler || null;
+    this.accountabilityScheduler = accountabilityScheduler || null;
   }
 
   /**
@@ -62,7 +69,10 @@ export class AdminCommandHandler {
         .addSubcommand(subcommand =>
           subcommand
             .setName('info')
-            .setDescription('Show current batch information'))
+            .setDescription('Show current batch information')),
+      new SlashCommandBuilder()
+        .setName('weekly-report')
+        .setDescription('Manually trigger weekly accountability report (Admin only)')
     ];
   }
 
@@ -85,6 +95,54 @@ export class AdminCommandHandler {
       await this.handleBatchStart(interaction);
     } else if (subcommand === 'info') {
       await this.handleBatchInfo(interaction);
+    }
+  }
+
+  /**
+   * Handle /weekly-report command
+   */
+  async handleWeeklyReportCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+    // Check if in admin channel
+    if (!this.isAdminChannel(interaction.channelId)) {
+      await interaction.reply({
+        content: '❌ This command can only be used in the admin channel.',
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Guard against duplicate handling
+    if (interaction.replied || interaction.deferred) {
+      console.warn('⚠️ Interaction already acknowledged, skipping duplicate weekly-report');
+      return;
+    }
+
+    await interaction.deferReply();
+
+    try {
+      if (!this.accountabilityScheduler) {
+        await interaction.editReply({
+          content: '❌ Accountability scheduler not initialized. Please check bot configuration.'
+        });
+        return;
+      }
+
+      await interaction.editReply({
+        content: '⏳ **Triggering Weekly Accountability Report...**\n\nThis will take about 30 seconds. Check the accountability channel for the report.'
+      });
+
+      // Trigger the weekly report
+      await this.accountabilityScheduler.triggerAccountabilityCheck();
+
+      await interaction.editReply({
+        content: '✅ **Weekly Accountability Report triggered!**\n\nCheck the accountability channel to see the report.'
+      });
+
+    } catch (error) {
+      console.error('❌ Error triggering weekly report:', error);
+      await interaction.editReply({
+        content: `❌ Error triggering weekly report: ${error instanceof Error ? error.message : 'Unknown error'}\n\nCheck logs for details.`
+      });
     }
   }
 
