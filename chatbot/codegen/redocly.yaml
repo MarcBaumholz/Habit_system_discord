@@ -1,0 +1,19 @@
+plugins:
+  - './plugins/flip.js'
+
+apis:
+  merged:
+    root: "./tmp/merged.yaml"
+    decorators:
+      flip/multi-filter:
+        filters:
+          - property: x-flip-resource-name
+            value:
+              - ask-ai-triggers
+          - property: operationId
+            value: generate-assignment-rules
+      flip/unused-components: on
+  askai:
+    root: "../../../api/spec/v4/development/ask-ai-admin.yml"
+  user-group-rules:
+    root: "../../../api/spec/v4/development/users-admin-user-group-rules.yml"

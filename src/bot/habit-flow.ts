@@ -13,13 +13,16 @@ import {
 } from 'discord.js';
 import { NotionClient } from '../notion/client';
 import { Habit, User } from '../types';
-import { getCurrentBatch } from '../utils/batch-manager';
+import { getCurrentBatch, getActiveBatches } from '../utils/batch-manager';
 
 type SendableChannel = TextBasedChannel & { send: TextChannel['send'] };
 
 interface HabitModalCache {
   // Day selector data
   selectedDays: string[];
+
+  // Batch selection data
+  selectedBatch?: string; // Batch name
 
   // Modal 1 data
   name: string;
@@ -53,6 +56,7 @@ export class HabitFlowManager {
   private modalCache: Map<string, HabitModalCache> = new Map();
   private readonly CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
   private personalAssistant?: any; // Optional - will be set if available
+  private processedMessageIds: Set<string> = new Set(); // Track processed message IDs to prevent duplicates
   private readonly CELEBRATION_GIFS = [
     'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExMG01NmZneXMybmx5c2pjOTgweXk3MTZxZWdtOWFhY243dXR6NG9xcyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3orieSQLr3L6lYpSo0/giphy.gif',
     'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExcjBzemNhZW5pemF6OTd1OG8wdDhjNTB4bHJzenVzemlmaXN5bjFqYSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/l4FGI8GoTL7N4DsyI/giphy.gif',
@@ -84,6 +88,13 @@ export class HabitFlowManager {
       console.log(`🧹 Cleaning up stale habit modal cache for user: ${key}`);
       this.modalCache.delete(key);
     });
+
+    // Clean up processed message IDs to prevent memory leaks (keep last 1000)
+    if (this.processedMessageIds.size > 1000) {
+      const idsArray = Array.from(this.processedMessageIds);
+      const toRemove = idsArray.slice(0, idsArray.length - 1000);
+      toRemove.forEach(id => this.processedMessageIds.delete(id));
+    }
   }
 
   async handleMessage(message: Message): Promise<boolean> {
@@ -103,6 +114,15 @@ export class HabitFlowManager {
 
     // Check if message triggers keystone habit flow
     if (this.matchesTrigger(content)) {
+      // Prevent duplicate processing of the same message
+      if (this.processedMessageIds.has(message.id)) {
+        console.log(`⏭️ Skipping duplicate keystone habit trigger for message ID: ${message.id}`);
+        return true; // Return true to indicate we "handled" it (by skipping)
+      }
+
+      // Mark message as processed before starting the flow
+      this.processedMessageIds.add(message.id);
+
       await this.startFlow(message);
       return true;
     }
@@ -169,7 +189,7 @@ export class HabitFlowManager {
 
     try {
       await textChannel.send({
-        content: `🔥 **Keystone Habit Builder**\n\nHabits compound small actions into big outcomes. Defining a clear keystone habit helps you:\n• Focus on what really moves the needle\n• Stay accountable to your group\n• Build momentum for the full 66-day challenge\n\nClick the button below to start creating your keystone habit.`,
+        content: `🔥 **Keystone Habit Builder**\n\nHabits compound small actions into big outcomes. Defining a clear keystone habit helps you:\n• Focus on what really moves the needle\n• Stay accountable to your group\n• Build momentum for the full 90-day challenge\n\nClick the button below to start creating your keystone habit.`,
         components: [row]
       });
     } catch (error) {
@@ -258,6 +278,162 @@ export class HabitFlowManager {
     }
   }
 
+  private async showBatchSelector(interaction: ButtonInteraction) {
+    const discordId = interaction.user.id;
+    const cachedData = this.modalCache.get(discordId);
+
+    if (!cachedData) {
+      await interaction.reply({
+        content: '❌ Session expired. Please type "keystone habit" again.',
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Get all active batches
+    const activeBatches = getActiveBatches();
+
+    if (activeBatches.length === 0) {
+      console.error(`❌ ERROR: No active batches found when user ${discordId} tried to create habit`);
+      console.error(`   This should not happen if batches exist. Check logs above for batch loading details.`);
+      
+      await interaction.update({
+        content: '❌ **No active batches found!**\n\nPlease contact an admin to create a batch first.',
+        components: []
+      }).catch(async (error) => {
+        console.error('❌ Error updating interaction:', error);
+        // Try to reply if update fails
+        try {
+          await interaction.reply({
+            content: '❌ **No active batches found!**\n\nPlease contact an admin to create a batch first.',
+            ephemeral: true
+          });
+        } catch (replyError) {
+          console.error('❌ Error replying to interaction:', replyError);
+        }
+      });
+      return;
+    }
+
+    const selectedBatch = cachedData.selectedBatch;
+
+    // Create batch buttons (max 5 buttons per row)
+    const batchButtons = activeBatches.map(batch => {
+      const isSelected = selectedBatch === batch.name;
+      const statusEmoji = batch.status === 'active' ? '🟢' : '🟡';
+      const button = new ButtonBuilder()
+        .setCustomId(`batch_${batch.name}`)
+        .setLabel(`${isSelected ? '✅' : statusEmoji} ${batch.name}`)
+        .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
+      return button;
+    });
+
+    // Create action rows (max 5 buttons per row)
+    const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+    for (let i = 0; i < batchButtons.length; i += 5) {
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(batchButtons.slice(i, i + 5));
+      rows.push(row);
+    }
+
+    // Continue button
+    const continueButton = new ButtonBuilder()
+      .setCustomId('batch_selector_continue')
+      .setLabel('Step 2/4: Continue to Goals & Motivation')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(!selectedBatch);
+
+    const continueRow = new ActionRowBuilder<ButtonBuilder>().addComponents(continueButton);
+    rows.push(continueRow);
+
+    const selectedText = selectedBatch
+      ? `**Selected Batch:** ${selectedBatch}`
+      : '**Select a batch to join**';
+
+    const batchInfo = activeBatches
+      .map(b => `• ${b.name} (${b.status === 'active' ? '🟢 Active' : '🟡 Pre-phase'}) - Starts: ${b.startDate}`)
+      .join('\n');
+
+    const content = `📦 **Select a Batch for Your Habit**\n\n${selectedText}\n\n**Available Batches:**\n${batchInfo}\n\n*Click a batch to select it, then continue.*`;
+
+    try {
+      await interaction.update({
+        content,
+        components: rows
+      });
+    } catch (error) {
+      console.error('Failed to send batch selector:', error);
+    }
+  }
+
+  private async updateBatchSelectorMessage(interaction: ButtonInteraction, cachedData: HabitModalCache) {
+    // Get all active batches
+    const activeBatches = getActiveBatches();
+
+    if (activeBatches.length === 0) {
+      await interaction.update({
+        content: '❌ **No active batches found!**',
+        components: []
+      });
+      return;
+    }
+
+    const selectedBatch = cachedData.selectedBatch;
+
+    // Create batch buttons
+    const batchButtons = activeBatches.map(batch => {
+      const isSelected = selectedBatch === batch.name;
+      const statusEmoji = batch.status === 'active' ? '🟢' : '🟡';
+      const button = new ButtonBuilder()
+        .setCustomId(`batch_${batch.name}`)
+        .setLabel(`${isSelected ? '✅' : statusEmoji} ${batch.name}`)
+        .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
+      return button;
+    });
+
+    // Create action rows (max 5 buttons per row)
+    const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+    for (let i = 0; i < batchButtons.length; i += 5) {
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(batchButtons.slice(i, i + 5));
+      rows.push(row);
+    }
+
+    // Continue button
+    const continueButton = new ButtonBuilder()
+      .setCustomId('batch_selector_continue')
+      .setLabel('Step 2/4: Continue to Goals & Motivation')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(!selectedBatch);
+
+    const continueRow = new ActionRowBuilder<ButtonBuilder>().addComponents(continueButton);
+    rows.push(continueRow);
+
+    const selectedText = selectedBatch
+      ? `**Selected Batch:** ${selectedBatch}`
+      : '**Select a batch to join**';
+
+    const batchInfo = activeBatches
+      .map(b => `• ${b.name} (${b.status === 'active' ? '🟢 Active' : '🟡 Pre-phase'}) - Starts: ${b.startDate}`)
+      .join('\n');
+
+    try {
+      await interaction.update({
+        content: `✅ **Days selected!**\n\n📦 **Now select a batch:**\n\n${selectedText}\n\n**Available Batches:**\n${batchInfo}\n\n*You can change your selection anytime before continuing.*`,
+        components: rows
+      });
+    } catch (error) {
+      console.error('Failed to update batch selector:', error);
+      // If update fails, try to reply instead (in case interaction was already acknowledged)
+      try {
+        await interaction.reply({
+          content: `✅ **Batch selected: ${selectedBatch}**\n\nPlease continue with the next step.`,
+          ephemeral: true
+        });
+      } catch (replyError) {
+        console.error('Failed to reply to batch selection:', replyError);
+      }
+    }
+  }
+
   async handleButtonInteraction(interaction: ButtonInteraction): Promise<void> {
     const discordId = interaction.user.id;
     const cachedData = this.modalCache.get(discordId);
@@ -267,6 +443,42 @@ export class HabitFlowManager {
         content: '❌ Session abgelaufen. Bitte schreibe "keystone habit" um neu zu starten.',
         ephemeral: true
       });
+      return;
+    }
+
+    // Handle batch selector buttons
+    if (interaction.customId.startsWith('batch_')) {
+      if (interaction.customId === 'batch_selector_continue') {
+        if (!cachedData.selectedBatch) {
+          await interaction.reply({
+            content: '❌ Please select a batch before continuing.',
+            ephemeral: true
+          });
+          return;
+        }
+        // After batch selection, show button to continue to Modal 2
+        const button = new ButtonBuilder()
+          .setCustomId('keystone_modal_2_trigger')
+          .setLabel('Step 2/4: Goals & Motivation')
+          .setStyle(ButtonStyle.Primary);
+
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+
+        await interaction.update({
+          content: `✅ **Batch selected: ${cachedData.selectedBatch}**\n\nContinue to the next step:`,
+          components: [row]
+        });
+        return;
+      }
+
+      // Handle batch selection
+      const batchName = interaction.customId.replace('batch_', '');
+      cachedData.selectedBatch = batchName;
+      cachedData.timestamp = Date.now();
+      this.modalCache.set(discordId, cachedData);
+
+      // Update the message with new selection
+      await this.updateBatchSelectorMessage(interaction, cachedData);
       return;
     }
 
@@ -280,18 +492,8 @@ export class HabitFlowManager {
           });
           return;
         }
-        // After day selection, show button to continue to Modal 2
-        const button = new ButtonBuilder()
-          .setCustomId('keystone_modal_2_trigger')
-          .setLabel('Step 2/4: Goals & Motivation')
-          .setStyle(ButtonStyle.Primary);
-
-        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
-
-        await interaction.update({
-          content: `✅ **Days selected!** Continue to the next step:`,
-          components: [row]
-        });
+        // After day selection, show batch selector
+        await this.showBatchSelector(interaction);
         return;
       }
 
@@ -495,7 +697,7 @@ export class HabitFlowManager {
 • **Hurdles:** ${truncate(cachedData.hurdles, 150)}
 • **Reminder:** ${truncate(cachedData.reminderType, 100)}
 
-**Ready to commit to 66 days?**`;
+**Ready to commit to 90 days?**`;
 
     // Ensure summary doesn't exceed Discord's 2000 character limit
     const maxSummaryLength = 1950; // Leave buffer
@@ -505,7 +707,7 @@ export class HabitFlowManager {
 
     const confirmButton = new ButtonBuilder()
       .setCustomId('keystone_summary_confirm')
-      .setLabel('Step 4/4: Sign 66-Day Commitment')
+      .setLabel('Step 4/4: Sign 90-Day Commitment')
       .setStyle(ButtonStyle.Success);
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(confirmButton);
@@ -520,7 +722,7 @@ export class HabitFlowManager {
   private async showModal4(interaction: ButtonInteraction) {
     const modal = new ModalBuilder()
       .setCustomId('keystone_modal_4')
-      .setTitle('Step 4/4: 66-Day Commitment');
+      .setTitle('Step 4/4: 90-Day Commitment');
 
     const commitmentInput = new TextInputBuilder()
       .setCustomId('commitmentSignature')
@@ -542,7 +744,7 @@ export class HabitFlowManager {
     // Validate commitment signature
     if (commitmentSignature.trim().toLowerCase() !== 'i commit') {
       await interaction.reply({
-        content: '❌ Please type exactly "I commit" (case-insensitive) to confirm your 66-day commitment.',
+        content: '❌ Please type exactly "I commit" (case-insensitive) to confirm your 90-day commitment.',
         ephemeral: true
       });
       return;
@@ -557,6 +759,10 @@ export class HabitFlowManager {
       });
       return;
     }
+
+    // Defer reply immediately to prevent interaction timeout (Discord 3-second limit)
+    // This gives us time to save the habit to Notion
+    await interaction.deferReply({ ephemeral: false });
 
     // Update cache with commitment
     cachedData.commitmentSignature = commitmentSignature;
@@ -586,10 +792,8 @@ export class HabitFlowManager {
         ? cachedData.selectedDays.join(', ') 
         : 'Not selected';
 
-      const successMessage = await interaction.reply({
-        content: `🎉 **Keystone Habit Created!**\n\n**${habit.name}** has been successfully saved!\n\n✨ **Domains:** ${habit.domains.join(', ')}\n📅 **Days:** ${selectedDaysText} (${habit.frequency}x/week)\n💪 **Minimal Dose:** ${habit.minimalDose}\n✅ **66-Day Commitment:** Signed\n\nUse \`/proof\` to track your daily proofs!`,
-        ephemeral: false,
-        fetchReply: true
+      const successMessage = await interaction.editReply({
+        content: `🎉 **Keystone Habit Created!**\n\n**${habit.name}** has been successfully saved!\n\n✨ **Domains:** ${habit.domains.join(', ')}\n📅 **Days:** ${selectedDaysText} (${habit.frequency}x/week)\n💪 **Minimal Dose:** ${habit.minimalDose}\n✅ **90-Day Commitment:** Signed\n\nUse \`/proof\` to track your daily proofs!`
       }) as Message;
 
       await this.addConfettiReaction(successMessage);
@@ -599,9 +803,8 @@ export class HabitFlowManager {
       this.modalCache.delete(discordId);
     } catch (error) {
       console.error('Failed to save keystone habit:', error);
-      await interaction.reply({
-        content: '⚠️ Es gab einen Fehler beim Speichern deines Habits. Bitte versuche es erneut oder kontaktiere den Support.',
-        ephemeral: true
+      await interaction.editReply({
+        content: '⚠️ Es gab einen Fehler beim Speichern deines Habits. Bitte versuche es erneut oder kontaktiere den Support.'
       });
 
       // Clear cache on error too
@@ -697,7 +900,7 @@ export class HabitFlowManager {
       .setCustomId('smartGoal')
       .setLabel('Enter a clear SMART goal')
       .setStyle(TextInputStyle.Paragraph)
-      .setPlaceholder('e.g. Meditate 10 min daily for better focus in 66 days')
+      .setPlaceholder('e.g. Meditate 10 min daily for better focus in 90 days')
       .setMaxLength(1000)
       .setRequired(true);
 
@@ -890,9 +1093,8 @@ export class HabitFlowManager {
     // Calculate frequency from selected days
     const frequency = Math.max(1, Math.min(7, cache.selectedDays?.length || 1));
 
-    // Get current active batch
-    const currentBatch = getCurrentBatch();
-    const batchName = currentBatch?.name;
+    // Use selected batch from cache (user manually selected it)
+    const batchName = cache.selectedBatch;
 
     return {
       userId: cache.userId,
@@ -945,13 +1147,69 @@ export class HabitFlowManager {
     }
   }
 
-  private getRandomCelebrationGif(): string {
+  /**
+   * Check if a GIF/image URL is accessible and returns valid content
+   * Uses HEAD request with timeout to verify the resource exists
+   */
+  private async isGifAccessible(url: string): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+      const response = await fetch(url, {
+        method: 'HEAD',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; HabitSystemBot/1.0)'
+        }
+      });
+
+      clearTimeout(timeoutId);
+
+      // Check if response is successful (2xx status) and content type is image/gif
+      const contentType = response.headers.get('content-type') || '';
+      const isValid = response.ok && (
+        contentType.includes('image/gif') ||
+        contentType.includes('image/') ||
+        url.includes('.gif')
+      );
+
+      if (!isValid) {
+        console.log(`⚠️ GIF validation failed for ${url}: Status ${response.status}, Content-Type: ${contentType}`);
+      }
+
+      return isValid;
+    } catch (error) {
+      // Network errors, timeouts, or invalid URLs
+      console.log(`⚠️ GIF validation error for ${url}:`, error instanceof Error ? error.message : 'Unknown error');
+      return false;
+    }
+  }
+
+  /**
+   * Get a random celebration GIF that is verified to be accessible
+   * Tries multiple GIFs until finding one that works, or returns empty string if none work
+   */
+  private async getRandomCelebrationGif(): Promise<string> {
     if (!this.CELEBRATION_GIFS.length) {
       return '';
     }
 
-    const index = Math.floor(Math.random() * this.CELEBRATION_GIFS.length);
-    return this.CELEBRATION_GIFS[index];
+    // Shuffle the array to try GIFs in random order
+    const shuffled = [...this.CELEBRATION_GIFS].sort(() => Math.random() - 0.5);
+
+    // Try each GIF until we find one that's accessible
+    for (const gifUrl of shuffled) {
+      const isAccessible = await this.isGifAccessible(gifUrl);
+      if (isAccessible) {
+        console.log(`✅ Found accessible celebration GIF: ${gifUrl}`);
+        return gifUrl;
+      }
+    }
+
+    // If no GIFs are accessible, log warning and return empty string
+    console.warn('⚠️ No accessible celebration GIFs found. Sending message without GIF.');
+    return '';
   }
 
   private async addConfettiReaction(message: Message) {
@@ -963,11 +1221,12 @@ export class HabitFlowManager {
   }
 
   private async sendCelebrationFollowUp(interaction: ModalSubmitInteraction, habitName: string) {
-    const gifUrl = this.getRandomCelebrationGif();
+    // Get validated GIF (async now)
+    const gifUrl = await this.getRandomCelebrationGif();
     const mention = `<@${interaction.user.id}>`;
     const messageLines = [
       `🎊 ${mention} Yeah, you started this new habit **${habitName}**!`,
-      'Keep showing up — the 66-day streak begins right now! 🚀'
+      'Keep showing up — the 90-day streak begins right now! 🚀'
     ];
 
     const content = gifUrl ? `${messageLines.join('\n')}\n${gifUrl}` : messageLines.join('\n');

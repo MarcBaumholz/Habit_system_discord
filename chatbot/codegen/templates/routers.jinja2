@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+from abc import ABC, abstractmethod
+from typing import Annotated
+from starlette.requests import Request
+from ..dependencies import *
+
+{% if tag %}
+class {{ tag | capitalize | replace("-", "") }}Service(ABC):
+{% for operation in operations %}
+{% if operation.tags[0] == tag %}
+    @abstractmethod
+    async def {{operation.function_name}}(self, request: Request{% if operation.arguments %}, {{operation.arguments}}{% endif %}) -> {{operation.return_type}}:
+        ...
+{% endif %}
+{% endfor %}
+{% endif %}
+
+router = APIRouter(
+    tags=['{{tag}}']
+    )
+
+async def provide_service_impl() -> {{ tag | capitalize | replace("-", "") }}Service:
+    from chatbot.openapi.impl.{{ tag | replace("-", "") }}_service_impl import {{ tag | capitalize | replace("-", "") }}ServiceImpl
+
+    return {{ tag | capitalize | replace("-", "") }}ServiceImpl()
+
+{% for operation in operations %}
+{% if operation.tags[0] == tag %}
+@router.{{operation.type}}('{{operation.path}}', response_model={{operation.response}}
+    {% if operation.additional_responses %}
+        , responses={
+            {% for status_code, models in operation.additional_responses.items() %}
+                '{{ status_code }}': {
+                {% for key, model in models.items() %}
+                    '{{ key }}': {{ model }}{% if not loop.last %},{% endif %}
+                {% endfor %}
+                }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        }
+        {% if '201' in operation.additional_responses %}
+        , status_code=201
+        {% endif %}
+    {% endif %}
+    {% if operation.tags%}
+    , tags={{operation.tags}}
+    {% endif %})
+async def {{operation.function_name}}(request: Request, service: Annotated[{{ tag | capitalize | replace("-", "") }}Service, Depends(provide_service_impl)]{% if operation.snake_case_arguments %}, {{operation.snake_case_arguments}}{% endif %}) -> {{operation.return_type}}:
+
+    {%- if operation.summary %}
+    """
+    {{ operation.summary }}
+    """
+    {%- endif %}
+    return await service.{{operation.function_name}}(request{% if call_expressions[operation.function_name] %}, {{call_expressions[operation.function_name]}}{% endif %})
+{% endif %}
+{% endfor %}

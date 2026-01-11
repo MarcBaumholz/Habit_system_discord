@@ -44,8 +44,20 @@ export class ProofProcessor {
       content: message.content.substring(0, 50)
     });
 
+    // Skip bot messages that are not webhooks
     if (!isWebhookMessage && message.author.bot) {
       return;
+    }
+
+    // IMPORTANT: Skip bot's own webhook messages (Habit System webhook)
+    // Only process webhooks from users, not from the bot itself
+    if (isWebhookMessage && message.author.bot) {
+      const isBotWebhook = message.author.username.toLowerCase().includes('habit system') ||
+                          message.author.username.toLowerCase() === 'habit system';
+      if (isBotWebhook) {
+        console.log('⏭️ PROOF_PROCESSOR: Skipping bot\'s own webhook message:', message.author.username);
+        return;
+      }
     }
 
     if (!this.perplexityApiKey) {

@@ -26,6 +26,39 @@ export class PerplexityClient {
     this.apiKey = apiKey;
   }
 
+  /**
+   * Build system prompt based on user's response style preference
+   */
+  private buildSystemPrompt(responseStyle: string): string {
+    const basePrompt = `You are a precise AI coach for the Habit System. Use ONLY the structured context that is provided to you (sourced from Notion) and never hallucinate values. Respond in a Notion-style outline that uses sections (e.g., "## Focus", "## Insights", "## Next Actions") and bullet lists with bold keywords such as "**Habit:**", "**Frequency:**", "**Last Proof:**". Highlight real numbers, streaks, and dates from the context, and if data is missing explicitly state "Notion data unavailable". Provide actionable, data-backed advice that references the exact habits, proofs, or summaries that appear in context.`;
+
+    // Map response styles to tone descriptions
+    const styleInstructions: Record<string, string> = {
+      'Friendly': 'Use a warm, empathetic, and supportive tone. Be encouraging and understanding.',
+      'Friendly & Supportive': 'Use a warm, empathetic, and supportive tone. Be encouraging and understanding.',
+      'Direct': 'Be concise, action-oriented, and straight to the point. Focus on clear next steps.',
+      'Direct & Motivational': 'Be concise, action-oriented, and straight to the point. Focus on clear next steps with motivational language.',
+      'Calm': 'Use a gentle, reassuring tone. Be patient and measured in your responses.',
+      'Calm & Encouraging': 'Use a gentle, reassuring tone. Be patient and measured in your responses while providing encouragement.',
+      'Enthusiastic': 'Use an upbeat, energetic, and positive tone. Show excitement and energy.',
+      'Enthusiastic & Energetic': 'Use an upbeat, energetic, and positive tone. Show excitement and energy.',
+      'Professional': 'Use a data-driven, structured, and analytical tone. Focus on facts and metrics.',
+      'Professional & Analytical': 'Use a data-driven, structured, and analytical tone. Focus on facts and metrics.',
+      'Casual': 'Use a relaxed, informal, and conversational tone. Be approachable and friendly.',
+      'Casual & Conversational': 'Use a relaxed, informal, and conversational tone. Be approachable and friendly.'
+    };
+
+    // Find matching style instruction (case-insensitive)
+    const normalizedStyle = responseStyle.trim();
+    let styleInstruction = styleInstructions[normalizedStyle] || 
+                          Object.entries(styleInstructions).find(([key]) => 
+                            normalizedStyle.toLowerCase().includes(key.toLowerCase())
+                          )?.[1] ||
+                          'Use a balanced, helpful tone.';
+
+    return `${basePrompt}\n\nTONE AND STYLE: ${styleInstruction}`;
+  }
+
   async generateResponse(
     prompt: string,
     context?: string,
@@ -51,12 +84,24 @@ export class PerplexityClient {
         console.log('🤖 Calling Perplexity API with model:', currentModel);
         console.log('📝 Prompt length:', fullPrompt.length);
 
+        // Extract response style from context if present
+        let responseStyle = 'Friendly & Supportive'; // Default style
+        if (context) {
+          const styleMatch = context.match(/Response Style Preference\s*User prefers:\s*([^\n]+)/);
+          if (styleMatch && styleMatch[1]) {
+            responseStyle = styleMatch[1].trim();
+          }
+        }
+
+        // Build system prompt based on response style
+        const systemPrompt = this.buildSystemPrompt(responseStyle);
+
         const requestBody = {
           model: currentModel,
           messages: [
             {
               role: 'system',
-              content: `You are a precise AI coach for the Habit System. Use ONLY the structured context that is provided to you (sourced from Notion) and never hallucinate values. Respond in a Notion-style outline that uses sections (e.g., "## Focus", "## Insights", "## Next Actions") and bullet lists with bold keywords such as "**Habit:**", "**Frequency:**", "**Last Proof:**". Highlight real numbers, streaks, and dates from the context, and if data is missing explicitly state "Notion data unavailable". Provide actionable, data-backed advice that references the exact habits, proofs, or summaries that appear in context.`
+              content: systemPrompt
             },
             {
               role: 'user',

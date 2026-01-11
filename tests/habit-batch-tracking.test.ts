@@ -51,7 +51,7 @@ test.test('should include current batch when creating habit', async () => {
     name: 'test batch january 2026',
     createdDate: '2026-01-01',
     startDate: '2026-01-01',
-    endDate: '2026-03-07', // 66 days after start
+    endDate: '2026-03-31', // 90 days after start
     status: 'active' as const
   };
 
@@ -76,7 +76,7 @@ test.test('should include current batch when creating habit', async () => {
     selectedDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
     context: 'Right after waking up',
     difficulty: 'Medium',
-    smartGoal: 'Meditate 10 min daily for 66 days',
+    smartGoal: 'Meditate 10 min daily for 90 days',
     why: 'Start day grounded and focused',
     minimalDose: '2 minutes breathing',
     habitLoop: 'Alarm → sit → feel calm',
@@ -155,7 +155,7 @@ test.test('should get current batch day correctly', async () => {
   const startDate = sevenDaysAgo.toISOString().split('T')[0]; // YYYY-MM-DD
 
   const endDate = new Date(sevenDaysAgo);
-  endDate.setDate(endDate.getDate() + 65); // 66 days total
+  endDate.setDate(endDate.getDate() + 89); // 90 days total
   const endDateStr = endDate.toISOString().split('T')[0];
 
   saveCurrentBatch({

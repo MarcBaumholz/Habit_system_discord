@@ -32,8 +32,8 @@ export class NotionClient {
       const properties: any = {
         // Discord ID should be rich_text field (as per Notion database schema)
         'DiscordID': { rich_text: [{ text: { content: user.discordId } }] },
-        // Name should be rich_text field (as per Notion database schema)
-        'Name': { rich_text: [{ text: { content: user.name } }] },
+        // Name should be title field (as per Notion database schema)
+        'Name': { title: [{ text: { content: user.name } }] },
         'Timezone': { rich_text: [{ text: { content: user.timezone } }] },
         'Best Time': { rich_text: [{ text: { content: user.bestTime } }] },
         'Trust Count': { number: user.trustCount },
@@ -316,7 +316,16 @@ export class NotionClient {
 
       // Add Discord ID field (it's the title property in this database)
       if (week.discordId) {
-        properties['DiscordID'] = { title: [{ text: { content: week.discordId } }] };
+        properties['Discord ID'] = { title: [{ text: { content: week.discordId } }] };
+      }
+      if (week.reflectionResponses) {
+        properties['Reflection Responses'] = { rich_text: [{ text: { content: week.reflectionResponses } }] };
+      }
+      if (typeof week.reflectionCompleted === 'boolean') {
+        properties['Reflection Completed'] = { checkbox: week.reflectionCompleted };
+      }
+      if (week.reflectionDate) {
+        properties['Reflection Date'] = { date: { start: week.reflectionDate } };
       }
 
       const response = await this.client.pages.create({
@@ -333,6 +342,75 @@ export class NotionClient {
       console.error('❌ Error creating week in Notion:', error);
       const message = error instanceof Error ? error.message : 'Unknown error';
       throw new Error(`Failed to create week: ${message}`);
+    }
+  }
+
+  async getWeekByUserAndStartDate(userId: string, startDate: string): Promise<Week | null> {
+    try {
+      const response = await this.client.databases.query({
+        database_id: this.databases.weeks,
+        filter: {
+          and: [
+            {
+              property: 'User',
+              relation: {
+                contains: userId
+              }
+            },
+            {
+              property: 'Start Date',
+              date: {
+                equals: startDate
+              }
+            }
+          ]
+        },
+        page_size: 1
+      });
+
+      if (response.results.length === 0) {
+        return null;
+      }
+
+      const page: any = response.results[0];
+      const props = page.properties;
+      return {
+        id: page.id,
+        userId: props['User']?.relation?.[0]?.id || userId,
+        discordId: props['Discord ID']?.title?.[0]?.text?.content,
+        weekNum: props['Week Num']?.number || 0,
+        startDate: props['Start Date']?.date?.start || startDate,
+        summary: props['Summary']?.rich_text?.[0]?.text?.content,
+        score: props['Score']?.number || 0,
+        reflectionResponses: props['Reflection Responses']?.rich_text?.[0]?.text?.content,
+        reflectionCompleted: props['Reflection Completed']?.checkbox,
+        reflectionDate: props['Reflection Date']?.date?.start
+      };
+    } catch (error) {
+      console.error('Error getting week by user and start date:', error);
+      return null;
+    }
+  }
+
+  async updateWeekReflection(weekId: string, data: {
+    reflectionResponses: string;
+    reflectionCompleted: boolean;
+    reflectionDate: string;
+  }): Promise<void> {
+    try {
+      const properties: any = {
+        'Reflection Responses': { rich_text: [{ text: { content: data.reflectionResponses } }] },
+        'Reflection Completed': { checkbox: data.reflectionCompleted },
+        'Reflection Date': { date: { start: data.reflectionDate } }
+      };
+
+      await this.client.pages.update({
+        page_id: weekId,
+        properties
+      });
+    } catch (error) {
+      console.error('Error updating week reflection:', error);
+      throw error;
     }
   }
 
@@ -1462,6 +1540,9 @@ export class NotionClient {
     if (profile.openSpace) {
       properties['Open Space'] = { rich_text: [{ text: { content: profile.openSpace } }] };
     }
+    if (profile.responseStyle) {
+      properties['Response Style'] = { select: { name: profile.responseStyle } };
+    }
 
     // Validate configuration before creating the page to produce clearer errors
     if (!this.databases || !this.databases.personality) {
@@ -1522,7 +1603,8 @@ export class NotionClient {
         lifeDomains: properties['Life domains']?.multi_select?.map((item: any) => item.name) || [],
         lifePhase: this.extractTextFromProperty(properties['Life Phase']),
         desiredIdentity: this.extractTextFromProperty(properties['Desired Identity']),
-        openSpace: this.extractTextFromProperty(properties['Open Space'])
+        openSpace: this.extractTextFromProperty(properties['Open Space']),
+        responseStyle: properties['Response Style']?.select?.name
       };
     } catch (error) {
       console.error('Error getting user profile:', error);
@@ -1573,6 +1655,9 @@ export class NotionClient {
       }
       if (updates.openSpace !== undefined && updates.openSpace !== null) {
         properties['Open Space'] = { rich_text: [{ text: { content: updates.openSpace || '' } }] };
+      }
+      if (updates.responseStyle !== undefined && updates.responseStyle !== null) {
+        properties['Response Style'] = { select: { name: updates.responseStyle } };
       }
 
       // Check if we have any properties to update
@@ -1837,11 +1922,14 @@ export class NotionClient {
         return {
           id: page.id,
           userId: props['User']?.relation?.[0]?.id || '',
-          discordId: props['DiscordID']?.rich_text?.[0]?.text?.content,
+          discordId: props['Discord ID']?.title?.[0]?.text?.content,
           weekNum: props['Week Num']?.number || 0,
           startDate: props['Start Date']?.date?.start || '',
           summary: props['Summary']?.rich_text?.[0]?.text?.content,
-          score: props['Score']?.number || 0
+          score: props['Score']?.number || 0,
+          reflectionResponses: props['Reflection Responses']?.rich_text?.[0]?.text?.content,
+          reflectionCompleted: props['Reflection Completed']?.checkbox,
+          reflectionDate: props['Reflection Date']?.date?.start
         };
       });
     } catch (error) {

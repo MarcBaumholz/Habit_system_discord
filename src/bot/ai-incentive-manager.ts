@@ -1,9 +1,9 @@
 import { Client, TextChannel, AttachmentBuilder } from 'discord.js';
 import { NotionClient } from '../notion/client';
-import { User, Habit, Proof } from '../types';
+import { User, Habit, Proof, UserProfile } from '../types';
 import { DiscordLogger } from './discord-logger';
-import { generateTrendGraph } from '../utils/trend-graph-generator';
 import { getCurrentBatch, isBatchActive } from '../utils/batch-manager';
+import { MindmapGenerator } from '../utils/mindmap-generator';
 
 // Enhanced habit analysis type for Notion-style weekly report
 interface EnhancedHabitAnalysis {
@@ -14,8 +14,8 @@ interface EnhancedHabitAnalysis {
   completionRate: number;
   needsImprovement: boolean;
   aiAnalysis: string;
-  // 66-day journey tracking
-  journey66: {
+  // 90-day journey tracking
+  journey90: {
     dayNumber: number;
     daysRemaining: number;
     progressPercent: number;
@@ -38,14 +38,6 @@ interface EnhancedHabitAnalysis {
     best: number;
     average: number;
   };
-  // Weekly trend data for graph generation
-  weeklyTrendData?: {
-    weeks: number[];
-    proofCounts: number[];
-    hasMinimumData: boolean;
-  };
-  // All proofs for this habit (for graph generation)
-  allProofs?: Proof[];
 }
 
 export class AIIncentiveManager {
@@ -125,12 +117,24 @@ export class AIIncentiveManager {
     try {
       console.log(`🔍 Analyzing weekly progress for user: ${user.name}`);
 
-      // Get user's habits
-      const habits = await this.notion.getHabitsByUserId(user.id);
-      if (habits.length === 0) {
-        console.log(`⚠️ No habits found for user ${user.name}`);
+      // Get current batch
+      const batch = getCurrentBatch();
+      if (!batch) {
+        console.log(`⚠️ No current batch found`);
         return;
       }
+
+      // Get user's habits and filter by current batch
+      const allHabits = await this.notion.getHabitsByUserId(user.id);
+      const habits = allHabits.filter(h => h.batch === batch.name);
+
+      if (habits.length === 0) {
+        console.log(`⚠️ No habits found for user ${user.name} in batch ${batch.name}`);
+        return;
+      }
+
+      // Get user's personality profile for personalized feedback
+      const personalityProfile = await this.notion.getUserProfileByDiscordId(user.discordId);
 
       // Get current and last week's info for trend comparison
       const weekInfo = this.getCurrentWeekInfo();
@@ -150,19 +154,34 @@ export class AIIncentiveManager {
         lastWeekInfo.weekEnd.toISOString().split('T')[0]
       );
 
-      // Fetch all proofs for 66-day calculation and streak analytics
+      // Fetch all proofs for 90-day calculation and streak analytics
       const allProofs = await this.notion.getProofsByUserId(user.id);
 
       // Analyze each habit with enhanced data
       const habitAnalysis = await this.analyzeHabitsProgressEnhanced(
+        user,
         habits,
         currentWeekProofs,
         lastWeekProofs,
-        allProofs
+        allProofs,
+        personalityProfile,
+        batch.startDate
       );
 
+      // Get buddy analysis if user has a buddy
+      let buddyAnalysis: {
+        name: string;
+        proofsThisWeek: number;
+        completionRate: number;
+        habitCount: number;
+        habits: Array<{ name: string; completion: number; proofCount: number; target: number }>;
+      } | null = null;
+      if (user.buddy) {
+        buddyAnalysis = await this.getBuddyAnalysis(user.buddy, batch.name, weekInfo);
+      }
+
       // Always send weekly analysis (removed 80% threshold)
-      await this.sendAIIncentiveMessage(user, habitAnalysis, weekInfo);
+      await this.sendAIIncentiveMessage(user, habitAnalysis, weekInfo, buddyAnalysis);
       console.log(`✅ Weekly analysis sent to user ${user.name}`);
 
     } catch (error) {
@@ -177,7 +196,14 @@ export class AIIncentiveManager {
   private async sendAIIncentiveMessage(
     user: User,
     habitAnalysis: EnhancedHabitAnalysis[],
-    weekInfo: { weekStart: Date; weekEnd: Date }
+    weekInfo: { weekStart: Date; weekEnd: Date },
+    buddyAnalysis: {
+      name: string;
+      proofsThisWeek: number;
+      completionRate: number;
+      habitCount: number;
+      habits: Array<{ name: string; completion: number; proofCount: number; target: number }>;
+    } | null
   ): Promise<void> {
     try {
       if (!user.personalChannelId) {
@@ -191,11 +217,26 @@ export class AIIncentiveManager {
         return;
       }
 
-      // Create the AI incentive message with attachments
-      const { message, attachments } = await this.createAIIncentiveMessage(user, habitAnalysis, weekInfo);
-      
-      // Send message with proper splitting if too long, including attachments
-      await this.sendLongMessage(channel, message, attachments);
+      // Generate and send personalized mindmap first
+      try {
+        const mindmapImage = await this.generateWeeklyMindmap(user, habitAnalysis, weekInfo);
+        if (mindmapImage) {
+          const attachment = new AttachmentBuilder(mindmapImage, { name: 'weekly-mindmap.png' });
+          await channel.send({
+            content: '# 🗺️ Deine Wöchentliche Übersicht\n\n_Hier ist deine visuelle Zusammenfassung der Woche auf einen Blick:_',
+            files: [attachment]
+          });
+        }
+      } catch (error) {
+        console.error(`⚠️ Error generating mindmap for ${user.name}:`, error);
+        // Continue even if mindmap fails
+      }
+
+      // Create the AI incentive message
+      const message = await this.createAIIncentiveMessage(user, habitAnalysis, weekInfo, buddyAnalysis);
+
+      // Send message with proper splitting if too long
+      await this.sendLongMessage(channel, message);
 
       console.log(`✅ AI incentive sent to user ${user.name}`);
 
@@ -218,47 +259,37 @@ export class AIIncentiveManager {
 
   /**
    * Send a long message by splitting it into multiple Discord messages if needed
-   * Attachments are sent with the first message
    */
   private async sendLongMessage(
-    channel: TextChannel, 
-    message: string, 
-    attachments: AttachmentBuilder[] = []
+    channel: TextChannel,
+    message: string
   ): Promise<void> {
     const maxLength = 1950; // Leave some buffer for Discord's 2000 char limit
-    
+
     if (message.length <= maxLength) {
-      // Message is short enough, send as is with attachments
-      await channel.send({ content: message, files: attachments });
+      // Message is short enough, send as is
+      await channel.send({ content: message });
       return;
     }
 
     console.log(`📝 Message too long (${message.length} chars), splitting into multiple parts...`);
-    
+
     // Split message into logical chunks
     const chunks = this.splitMessageIntoChunks(message, maxLength);
-    
+
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       const partIndicator = chunks.length > 1 ? `\n\n*Teil ${i + 1}/${chunks.length}*\n` : '';
-      
-      // Send attachments with the first message only
-      if (i === 0 && attachments.length > 0) {
-        await channel.send({ 
-          content: partIndicator + chunk, 
-          files: attachments 
-        });
-      } else {
-        await channel.send(partIndicator + chunk);
-      }
-      
+
+      await channel.send(partIndicator + chunk);
+
       // Small delay between messages to avoid rate limiting
       if (i < chunks.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
-    
-    console.log(`✅ Sent message in ${chunks.length} parts${attachments.length > 0 ? ' with attachments' : ''}`);
+
+    console.log(`✅ Sent message in ${chunks.length} parts`);
   }
 
   /**
@@ -316,13 +347,19 @@ export class AIIncentiveManager {
 
   /**
    * Create Notion-style AI incentive message with enhanced analytics
-   * Returns message text and graph attachments
    */
   private async createAIIncentiveMessage(
     user: User,
     habitAnalysis: EnhancedHabitAnalysis[],
-    weekInfo: { weekStart: Date; weekEnd: Date }
-  ): Promise<{ message: string; attachments: AttachmentBuilder[] }> {
+    weekInfo: { weekStart: Date; weekEnd: Date },
+    buddyAnalysis: {
+      name: string;
+      proofsThisWeek: number;
+      completionRate: number;
+      habitCount: number;
+      habits: Array<{ name: string; completion: number; proofCount: number; target: number }>;
+    } | null
+  ): Promise<string> {
     const weekRange = `${weekInfo.weekStart.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} - ${weekInfo.weekEnd.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
 
     // Calculate overall stats
@@ -333,22 +370,21 @@ export class AIIncentiveManager {
     const successfulHabits = habitAnalysis.filter(h => h.completionRate >= 80);
     const needsWorkHabits = habitAnalysis.filter(h => h.completionRate < 80);
 
-    let message = `# Wöchentliche Analyse\n`;
+    // === 1. HEADER ===
+    let message = `# 📊 Wöchentliche Analyse\n`;
     message += `📅 ${weekRange}\n\n`;
     message += `---\n\n`;
 
-    // Overall summary
-    message += `## Übersicht\n`;
+    // === 2. OVERVIEW ===
+    message += `## 🎯 Übersicht\n`;
     message += `• **Gesamt:** ${totalCompletion}% Abschlussrate\n`;
-    message += `• **Stark:** ${successfulHabits.length}/${habitAnalysis.length} Gewohnheiten\n`;
-    message += `• **Fokus:** ${needsWorkHabits.length} brauchen Aufmerksamkeit\n\n`;
-    message += `---\n\n`;
+    message += `• **Stark:** ${successfulHabits.length}/${habitAnalysis.length} Gewohnheiten on track\n`;
+    if (needsWorkHabits.length > 0) {
+      message += `• **Fokus:** ${needsWorkHabits.length} ${needsWorkHabits.length === 1 ? 'braucht' : 'brauchen'} Aufmerksamkeit\n`;
+    }
+    message += `\n---\n\n`;
 
-    // Generate graphs and collect attachments
-    const attachments: AttachmentBuilder[] = [];
-    let graphIndex = 0;
-
-    // Each habit section
+    // === 3. HABITS SECTION ===
     for (const habit of habitAnalysis) {
       const statusEmoji = habit.completionRate >= 80 ? '✅' : habit.completionRate >= 50 ? '🔶' : '🔴';
       const trendEmoji = habit.trend.direction === '↑' ? '📈' : habit.trend.direction === '↓' ? '📉' : '➡️';
@@ -356,92 +392,46 @@ export class AIIncentiveManager {
 
       message += `## ${statusEmoji} ${habit.habitName}\n\n`;
 
-      // 66-day progress bar
-      const progressBar = this.generateProgressBar(habit.journey66.dayNumber, 66);
-      message += `**66-Tage-Reise:** ${progressBar} Tag ${habit.journey66.dayNumber}/66\n\n`;
+      // 90-day progress
+      const progressBar = this.generateProgressBar(habit.journey90.dayNumber, 90);
+      message += `${progressBar} **Tag ${habit.journey90.dayNumber}/90**\n\n`;
 
-      // Stats table (simplified for Discord)
-      message += `| Diese Woche | Trend |\n`;
-      message += `|-------------|-------|\n`;
-      message += `| ${habit.actualFrequency}/${habit.targetFrequency} (${habit.completionRate}%) | ${habit.trend.direction} ${habit.trend.percentChange > 0 ? '+' : ''}${habit.trend.percentChange}% ${trendEmoji} |\n\n`;
+      // This week's performance
+      message += `**Diese Woche:** ${habit.actualFrequency}/${habit.targetFrequency} Proofs (${habit.completionRate}%)\n`;
+      message += `**Streak:** ${habit.streaks.current} Tage ${streakEmoji} | Best: ${habit.streaks.best}\n`;
+      message += `**Trend:** ${habit.trend.direction} ${habit.trend.percentChange > 0 ? '+' : ''}${habit.trend.percentChange}% ${trendEmoji}\n\n`;
 
-      // Streak info
-      message += `**Streak:** ${habit.streaks.current} Tage ${streakEmoji} | **Best:** ${habit.streaks.best} Tage\n`;
-
-      // Best/worst days
-      const bestDaysStr = habit.weekdayAnalysis.bestDays.length > 0
-        ? habit.weekdayAnalysis.bestDays.join(', ')
-        : '—';
-      const worstDaysStr = habit.weekdayAnalysis.worstDays.length > 0
-        ? habit.weekdayAnalysis.worstDays.slice(0, 3).join(', ')
-        : '—';
-
-      message += `**Stärkste Tage:** ${bestDaysStr}\n`;
-      message += `**Schwächste Tage:** ${worstDaysStr}\n\n`;
-
-      // Generate trend graph if we have at least 4 weeks of data
-      if (habit.weeklyTrendData?.hasMinimumData && habit.allProofs) {
-        try {
-          const graphBuffer = await generateTrendGraph(habit.habitId, habit.allProofs, habit.habitName);
-          
-          if (graphBuffer) {
-            graphIndex++;
-            const attachment = new AttachmentBuilder(graphBuffer, {
-              name: `trend-${habit.habitId}-${graphIndex}.png`,
-              description: `Wochen-Trend für ${habit.habitName}`
-            });
-            attachments.push(attachment);
-            
-            message += `📊 **Wochen-Trend**\n`;
-            message += `*Siehe angehängtes Diagramm*\n\n`;
-          }
-        } catch (error) {
-          console.error(`❌ Error generating graph for habit ${habit.habitName}:`, error);
-          // Continue without graph
-        }
-      }
-
-      // AI tip (quoted for emphasis)
-      message += `> 🤖 ${habit.aiAnalysis}\n\n`;
+      // AI feedback
+      message += `> 💡 **AI Feedback:** ${habit.aiAnalysis}\n\n`;
       message += `---\n\n`;
     }
 
-    // Next steps section
-    message += `## Nächste Schritte\n`;
+    // === 4. BUDDY CHECK-IN ===
+    if (buddyAnalysis) {
+      const buddyEmoji = buddyAnalysis.completionRate >= 80 ? '🔥' : buddyAnalysis.completionRate >= 50 ? '💪' : '🤝';
+      message += `## ${buddyEmoji} Buddy Check-In: ${buddyAnalysis.name}\n\n`;
 
-    // Generate actionable next steps based on analysis
-    const nextSteps: string[] = [];
+      // Show buddy's habits
+      for (const buddyHabit of buddyAnalysis.habits) {
+        const emoji = buddyHabit.completion >= 80 ? '✅' : buddyHabit.completion >= 50 ? '🔶' : '🔴';
+        message += `${emoji} **${buddyHabit.name}:** ${buddyHabit.proofCount}/${buddyHabit.target} (${buddyHabit.completion}%)\n`;
+      }
 
-    // Find the habit that needs most attention
-    const lowestHabit = [...habitAnalysis].sort((a, b) => a.completionRate - b.completionRate)[0];
-    if (lowestHabit && lowestHabit.completionRate < 80) {
-      nextSteps.push(`**${lowestHabit.habitName}:** Fokussiere auf 1 Tag diese Woche`);
+      // Dynamic message suggestion based on buddy's performance
+      const buddyMessageHint = this.getBuddyMessageHint(buddyAnalysis);
+      message += `\n💬 **${buddyMessageHint}**\n\n`;
+      message += `---\n\n`;
     }
 
-    // Find habit with declining trend
-    const decliningHabit = habitAnalysis.find(h => h.trend.direction === '↓');
-    if (decliningHabit) {
-      nextSteps.push(`**${decliningHabit.habitName}:** Identifiziere den Blocker`);
-    }
+    // === 5. NEXT STEPS (AI-POWERED ADAPTIVE GOAL COACHING) ===
+    const personalityProfile = await this.notion.getUserProfileByDiscordId(user.discordId);
+    const nextStepsAdvice = await this.getAdaptiveGoalCoaching(user, habitAnalysis, totalCompletion, personalityProfile);
+    message += `## 🚀 Nächste Schritte\n\n`;
+    message += `${nextStepsAdvice}\n\n`;
+    message += `---\n\n`;
+    message += `💬 _Antworte hier, um über deine Gewohnheiten zu sprechen!_`;
 
-    // Encourage streak building
-    const nearStreakHabit = habitAnalysis.find(h => h.streaks.current >= 2 && h.streaks.current < 7);
-    if (nearStreakHabit) {
-      nextSteps.push(`**${nearStreakHabit.habitName}:** ${7 - nearStreakHabit.streaks.current} Tage bis zur Wochenstreak!`);
-    }
-
-    // Default encouragement
-    if (nextSteps.length === 0) {
-      nextSteps.push('Halte dein Momentum – du bist auf Kurs!');
-    }
-
-    for (let i = 0; i < Math.min(nextSteps.length, 3); i++) {
-      message += `${i + 1}. ${nextSteps[i]}\n`;
-    }
-
-    message += `\n💬 *Antworte hier, um über deine Gewohnheiten zu sprechen!*`;
-
-    return { message, attachments };
+    return message;
   }
 
   /**
@@ -506,13 +496,16 @@ export class AIIncentiveManager {
   }
 
   /**
-   * Enhanced habit analysis with 66-day journey, trends, and analytics
+   * Enhanced habit analysis with 90-day journey, trends, and analytics
    */
   private async analyzeHabitsProgressEnhanced(
+    user: User,
     habits: Habit[],
     currentWeekProofs: Proof[],
     lastWeekProofs: Proof[],
-    allProofs: Proof[]
+    allProofs: Proof[],
+    personalityProfile: UserProfile | null,
+    batchStartDate: string
   ): Promise<EnhancedHabitAnalysis[]> {
     const analysis: EnhancedHabitAnalysis[] = [];
 
@@ -527,8 +520,8 @@ export class AIIncentiveManager {
       const completionRate = Math.round((actualFrequency / habit.frequency) * 100);
       const needsImprovement = completionRate < 80;
 
-      // Calculate 66-day journey
-      const journey66 = this.calculate66DayProgress(habitAllProofs);
+      // Calculate 90-day journey from batch start date
+      const journey90 = this.calculate90DayProgress(habitAllProofs, batchStartDate);
 
       // Calculate trend
       const lastWeekRate = Math.round((habitLastProofs.length / habit.frequency) * 100);
@@ -540,17 +533,16 @@ export class AIIncentiveManager {
       // Calculate streak analytics
       const streaks = this.calculateStreakAnalytics(habitAllProofs);
 
-      // Calculate weekly trend data for graph
-      const weeklyTrendData = this.calculateWeeklyTrendData(habitAllProofs);
-
-      // Get AI analysis with enhanced context
+      // Get AI analysis with enhanced context including personality
       const aiAnalysis = await this.getEnhancedPerplexityAnalysis(
+        user,
         habit,
         habitCurrentProofs,
         actualFrequency,
-        journey66,
+        journey90,
         trend,
-        streaks
+        streaks,
+        personalityProfile
       );
 
       analysis.push({
@@ -561,12 +553,10 @@ export class AIIncentiveManager {
         completionRate,
         needsImprovement,
         aiAnalysis,
-        journey66,
+        journey90,
         trend,
         weekdayAnalysis,
-        streaks,
-        weeklyTrendData,
-        allProofs: habitAllProofs
+        streaks
       });
     }
 
@@ -574,38 +564,33 @@ export class AIIncentiveManager {
   }
 
   /**
-   * Calculate 66-day journey progress from first proof date
+   * Calculate 90-day journey progress from batch start date
+   * All habits in the same batch will have the same day number
    */
-  private calculate66DayProgress(proofs: Proof[]): {
+  private calculate90DayProgress(proofs: Proof[], batchStartDate: string): {
     dayNumber: number;
     daysRemaining: number;
     progressPercent: number;
-    startDate: string | null;
+    startDate: string;
   } {
-    if (proofs.length === 0) {
-      return { dayNumber: 0, daysRemaining: 66, progressPercent: 0, startDate: null };
-    }
-
-    // Sort proofs by date and find the earliest
-    const sortedProofs = [...proofs].sort((a, b) =>
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-
-    const firstProofDate = new Date(sortedProofs[0].date);
+    const startDate = new Date(batchStartDate);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    firstProofDate.setHours(0, 0, 0, 0);
+    startDate.setHours(0, 0, 0, 0);
 
-    const dayNumber = Math.floor((today.getTime() - firstProofDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    const cappedDayNumber = Math.min(dayNumber, 66);
-    const daysRemaining = Math.max(66 - dayNumber, 0);
-    const progressPercent = Math.round((cappedDayNumber / 66) * 100);
+    // Calculate days since batch started
+    const dayNumber = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+    // Cap between 1 and 90
+    const cappedDayNumber = Math.min(Math.max(dayNumber, 1), 90);
+    const daysRemaining = Math.max(90 - dayNumber, 0);
+    const progressPercent = Math.round((cappedDayNumber / 90) * 100);
 
     return {
       dayNumber: cappedDayNumber,
       daysRemaining,
       progressPercent,
-      startDate: sortedProofs[0].date
+      startDate: batchStartDate
     };
   }
 
@@ -807,7 +792,7 @@ export class AIIncentiveManager {
   }
 
   /**
-   * Generate visual progress bar for 66-day journey
+   * Generate visual progress bar for 90-day journey
    */
   private generateProgressBar(current: number, total: number, width: number = 15): string {
     const filledCount = Math.round((current / total) * width);
@@ -820,15 +805,17 @@ export class AIIncentiveManager {
   }
 
   /**
-   * Enhanced Perplexity AI analysis with 66-day context and research-backed tips
+   * Enhanced Perplexity AI analysis with 90-day context, personality, and habit details
    */
   private async getEnhancedPerplexityAnalysis(
+    user: User,
     habit: Habit,
     proofs: Proof[],
     actualFrequency: number,
-    journey66: { dayNumber: number; progressPercent: number },
+    journey90: { dayNumber: number; progressPercent: number },
     trend: { direction: string; percentChange: number },
-    streaks: { current: number; best: number }
+    streaks: { current: number; best: number },
+    personalityProfile: UserProfile | null
   ): Promise<string> {
     try {
       if (!process.env.PERPLEXITY_API_KEY) {
@@ -837,25 +824,71 @@ export class AIIncentiveManager {
 
       const completionRate = Math.round((actualFrequency / habit.frequency) * 100);
 
-      const prompt = `Du bist ein Gewohnheitscoach. Gib einen SEHR kurzen Tipp (max 40 Wörter) basierend auf:
+      // Determine performance context
+      let performanceContext = '';
+      if (completionRate >= 80) {
+        performanceContext = 'STARK - Nutzer performt sehr gut';
+      } else if (completionRate >= 50) {
+        performanceContext = 'OK - Nutzer ist auf dem Weg, braucht aber Schub';
+      } else {
+        performanceContext = 'SCHWACH - Nutzer braucht fundamentale Hilfe';
+      }
 
-Gewohnheit: ${habit.name}
-66-Tage-Reise: Tag ${journey66.dayNumber}/66 (${journey66.progressPercent}%)
+      // Build personality context (if available)
+      let personalityContext = '';
+      if (personalityProfile) {
+        const parts: string[] = [];
+        if (personalityProfile.personalityType) parts.push(`Typ: ${personalityProfile.personalityType}`);
+        if (personalityProfile.coreValues && personalityProfile.coreValues.length > 0) {
+          parts.push(`Werte: ${personalityProfile.coreValues.join(', ')}`);
+        }
+        if (personalityProfile.lifeVision) parts.push(`Vision: ${personalityProfile.lifeVision}`);
+        personalityContext = parts.length > 0 ? parts.join(' | ') : '';
+      }
+
+      // Build habit context from creation data
+      const habitDetails: string[] = [];
+      if (habit.why) habitDetails.push(`Why: ${habit.why}`);
+      if (habit.context) habitDetails.push(`Kontext: ${habit.context}`);
+      if (habit.smartGoal) habitDetails.push(`SMART Goal: ${habit.smartGoal}`);
+      if (habit.selectedDays && habit.selectedDays.length > 0) {
+        habitDetails.push(`Gewählte Tage: ${habit.selectedDays.join(', ')}`);
+      }
+      if (habit.domains && habit.domains.length > 0) {
+        habitDetails.push(`Bereiche: ${habit.domains.join(', ')}`);
+      }
+      if (habit.hurdles) habitDetails.push(`Hürden: ${habit.hurdles}`);
+
+      const prompt = `Du bist ein personalisierter Gewohnheitscoach. Gib einen SEHR kurzen, spezifischen Tipp (max 40 Wörter):
+
+=== NUTZER-PROFIL ===
+Name: ${user.name}
+${personalityContext ? `Persönlichkeit: ${personalityContext}` : ''}
+
+=== GEWOHNHEIT ===
+Name: ${habit.name}
+${habitDetails.join('\n')}
+Minimal Dose: ${habit.minimalDose || '—'}
+
+=== PERFORMANCE ===
+Level: ${performanceContext}
+Tag: ${journey90.dayNumber}/90
 Diese Woche: ${actualFrequency}/${habit.frequency} (${completionRate}%)
 Trend: ${trend.direction} ${trend.percentChange > 0 ? '+' : ''}${trend.percentChange}%
-Aktueller Streak: ${streaks.current} Tage | Best: ${streaks.best} Tage
-Ziel: ${habit.smartGoal || 'Nicht definiert'}
-Kontext: ${habit.context || 'Nicht definiert'}
+Streak: ${streaks.current} (Best: ${streaks.best})
 
-Regeln:
-1. MAX 40 Wörter - extrem kurz!
-2. Nur EINEN konkreten, umsetzbaren Tipp
-3. Beziehe dich auf die Daten (Streak, Tag im 66-Tage-Zyklus, Trend)
-4. Bei gutem Fortschritt: Lob + nächste Herausforderung
-5. Bei schwachem Fortschritt: Tiny Habit Ansatz (2-Min-Regel)
-6. Deutsch, direkt, motivierend
+=== COACHING-REGELN ===
+1. MAX 40 Wörter - extrem präzise
+2. Nutze PERSÖNLICHKEIT (Werte/Vision) wenn vorhanden
+3. Beziehe WHY & KONTEXT der Gewohnheit ein
+4. Erwähne GEWÄHLTE TAGE wenn relevant
+5. Adressiere bekannte HÜRDEN wenn vorhanden
+6. Performance-spezifisch:
+   - STARK (≥80%): Herausforderung steigern, an Vision koppeln
+   - OK (50-79%): Optimierung basierend auf Kontext & gewählten Tagen
+   - SCHWACH (<50%): Radikal vereinfachen, zurück zum Why, Minimal Dose
 
-Antworte nur mit dem Tipp, keine Einleitung:`;
+Direkt, persönlich, umsetzbar. Tipp:`;
 
       const response = await fetch('https://api.perplexity.ai/chat/completions', {
         method: 'POST',
@@ -868,7 +901,12 @@ Antworte nur mit dem Tipp, keine Einleitung:`;
           messages: [
             {
               role: 'system',
-              content: 'Du bist ein Gewohnheitsexperte. Basiere deine Tipps auf Forschung: 66-Tage-Regel (Phillippa Lally), Tiny Habits (BJ Fogg), Atomic Habits (James Clear). Sei extrem kurz und konkret.'
+              content: `Du bist ein hochgradig personalisierter Gewohnheitsexperte. Du kennst den Nutzer (${user.name}) ${personalityProfile ? 'und seine Persönlichkeit' : ''} und basierst deine Tipps auf:
+- Wissenschaftliche Prinzipien: 90-Tage-Regel, Tiny Habits (BJ Fogg), Atomic Habits (James Clear)
+- Persönliche Motivation (Why) und Kontext der Gewohnheit
+- Nutzerprofil und Persönlichkeit
+- Konkrete Hürden und gewählte Tage
+Sei extrem kurz, präzise und spreche den Nutzer direkt an.`
             },
             { role: 'user', content: prompt }
           ]
@@ -882,5 +920,363 @@ Antworte nur mit dem Tipp, keine Einleitung:`;
       console.error('❌ Error getting Perplexity analysis:', error);
       return 'Bleib dran - jeder Tag zählt!';
     }
+  }
+
+  /**
+   * Get actionable hint based on habit performance
+   */
+  private getActionableHint(habit: EnhancedHabitAnalysis): string {
+    // Very low completion rate (< 30%)
+    if (habit.completionRate < 30) {
+      return `Starte minimal: ${habit.journey90.dayNumber < 14 ? 'Gewöhne dich erst an die Routine' : 'Reduziere auf Minimal Dose'} (${habit.targetFrequency} → 1-2 Tage/Woche)`;
+    }
+
+    // Low completion rate (30-50%)
+    if (habit.completionRate < 50) {
+      return `Nutze deine stärksten Tage: Fokus auf ${habit.weekdayAnalysis.bestDays.slice(0, 2).join(' & ') || 'feste Wochentage'}`;
+    }
+
+    // Medium completion rate (50-79%)
+    if (habit.completionRate < 80) {
+      if (habit.trend.direction === '↓') {
+        return `Trend stoppen: Was lief letzte Woche anders? Blocker identifizieren`;
+      }
+      return `Fast geschafft: +${habit.targetFrequency - habit.actualFrequency} Proof${habit.targetFrequency - habit.actualFrequency > 1 ? 's' : ''} für 100%`;
+    }
+
+    // High completion rate (80%+)
+    if (habit.streaks.current < 3) {
+      return `Streak aufbauen: ${3 - habit.streaks.current} Tag${3 - habit.streaks.current > 1 ? 'e' : ''} bis zur 3-Tage-Streak`;
+    }
+
+    if (habit.streaks.current < 7) {
+      return `Streak Challenge: ${7 - habit.streaks.current} Tag${7 - habit.streaks.current > 1 ? 'e' : ''} bis zur Wochen-Streak 🔥`;
+    }
+
+    return 'Behalte dein Level – du machst es großartig! 💪';
+  }
+
+  /**
+   * Get buddy's performance analysis for the week
+   */
+  private async getBuddyAnalysis(
+    buddyNickname: string,
+    batchName: string,
+    weekInfo: { weekStart: Date; weekEnd: Date }
+  ): Promise<{
+    name: string;
+    proofsThisWeek: number;
+    completionRate: number;
+    habitCount: number;
+    habits: Array<{ name: string; completion: number; proofCount: number; target: number }>;
+  } | null> {
+    try {
+      // Get buddy user by nickname
+      const buddyUser = await this.notion.getUserByNickname(buddyNickname);
+      if (!buddyUser) {
+        console.log(`⚠️ Buddy not found: ${buddyNickname}`);
+        return null;
+      }
+
+      // Get buddy's habits filtered by current batch
+      const allBuddyHabits = await this.notion.getHabitsByUserId(buddyUser.id);
+      const buddyHabits = allBuddyHabits.filter(h => h.batch === batchName);
+
+      if (buddyHabits.length === 0) {
+        return null;
+      }
+
+      // Get buddy's proofs for the week
+      const buddyProofs = await this.notion.getProofsByUserId(
+        buddyUser.id,
+        weekInfo.weekStart.toISOString().split('T')[0],
+        weekInfo.weekEnd.toISOString().split('T')[0]
+      );
+
+      // Calculate per-habit performance
+      const habitsDetails = buddyHabits.map(habit => {
+        const habitProofs = buddyProofs.filter(p => p.habitId === habit.id);
+        const proofCount = habitProofs.length;
+        const completion = Math.round((proofCount / habit.frequency) * 100);
+
+        return {
+          name: habit.name,
+          completion,
+          proofCount,
+          target: habit.frequency
+        };
+      });
+
+      // Calculate overall stats
+      const totalTarget = buddyHabits.reduce((sum, h) => sum + h.frequency, 0);
+      const actualProofs = buddyProofs.length;
+      const completionRate = totalTarget > 0 ? Math.round((actualProofs / totalTarget) * 100) : 0;
+
+      return {
+        name: buddyUser.nickname || buddyUser.name,
+        proofsThisWeek: actualProofs,
+        completionRate,
+        habitCount: buddyHabits.length,
+        habits: habitsDetails
+      };
+    } catch (error) {
+      console.error(`❌ Error getting buddy analysis for ${buddyNickname}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get dynamic message hint based on buddy's performance
+   */
+  private getBuddyMessageHint(buddyAnalysis: {
+    name: string;
+    completionRate: number;
+    habits: Array<{ name: string; completion: number }>;
+  }): string {
+    const name = buddyAnalysis.name;
+
+    // Great performance (≥80%)
+    if (buddyAnalysis.completionRate >= 80) {
+      const topHabit = buddyAnalysis.habits.sort((a, b) => b.completion - a.completion)[0];
+      return `Sag ${name} Glückwunsch zu ${topHabit?.name || 'der starken Woche'}! 🔥`;
+    }
+
+    // Decent performance (50-79%)
+    if (buddyAnalysis.completionRate >= 50) {
+      return `Frag ${name}, was diese Woche gut lief und wo du helfen kannst 💪`;
+    }
+
+    // Struggling (<50%)
+    const worstHabit = buddyAnalysis.habits.sort((a, b) => a.completion - b.completion)[0];
+    return `Check bei ${name} ein – ${worstHabit?.name || 'diese Woche'} war schwierig. Was ist passiert? 🤝`;
+  }
+
+  /**
+   * Get AI-powered adaptive goal coaching based on overall performance and personality
+   */
+  private async getAdaptiveGoalCoaching(
+    user: User,
+    habitAnalysis: EnhancedHabitAnalysis[],
+    totalCompletion: number,
+    personalityProfile: UserProfile | null
+  ): Promise<string> {
+    try {
+      if (!process.env.PERPLEXITY_API_KEY) {
+        return this.getFallbackCoaching(habitAnalysis, totalCompletion);
+      }
+
+      // Prepare performance context
+      const habitsContext = habitAnalysis.map(h =>
+        `${h.habitName}: ${h.completionRate}% (Trend: ${h.trend.direction}, Tag ${h.journey90.dayNumber}/90)`
+      ).join('\n');
+
+      const performanceLevel = totalCompletion >= 80 ? 'EXZELLENT' :
+                               totalCompletion >= 60 ? 'GUT' :
+                               totalCompletion >= 40 ? 'AUSBAUFÄHIG' : 'KRITISCH';
+
+      // Build personality context
+      let personalityContext = '';
+      if (personalityProfile) {
+        const parts: string[] = [];
+        if (personalityProfile.personalityType) parts.push(`Typ: ${personalityProfile.personalityType}`);
+        if (personalityProfile.coreValues && personalityProfile.coreValues.length > 0) {
+          parts.push(`Werte: ${personalityProfile.coreValues.join(', ')}`);
+        }
+        if (personalityProfile.lifeVision) parts.push(`Vision: ${personalityProfile.lifeVision}`);
+        if (personalityProfile.mainGoals && personalityProfile.mainGoals.length > 0) {
+          parts.push(`Hauptziele: ${personalityProfile.mainGoals.join(', ')}`);
+        }
+        if (personalityProfile.desiredIdentity) parts.push(`Identität: ${personalityProfile.desiredIdentity}`);
+        personalityContext = parts.length > 0 ? `\n\nNutzer-Profil (${user.name}):\n${parts.join('\n')}` : '';
+      }
+
+      const prompt = `Du bist ein hochgradig personalisierter Gewohnheitsexperte (Atomic Habits, Tiny Habits, 90-Day Rule). Gib adaptive Ziel-Coaching (max 80 Wörter):
+
+Performance-Level: ${performanceLevel} (${totalCompletion}% Gesamt-Abschluss)
+${personalityContext}
+
+Gewohnheiten:
+${habitsContext}
+
+Coaching-Regeln:
+- EXZELLENT (≥80%): Herausforderung steigern an VISION & WERTE koppeln, nächstes Level, Habit Stacking
+- GUT (60-79%): Optimieren basierend auf PERSÖNLICHKEIT, Blocker beseitigen, Konsistenz
+- AUSBAUFÄHIG (40-59%): Ziele an WERTE anpassen, Minimal Dose, zurück zum Why
+- KRITISCH (<40%): Radikal vereinfachen, 1 Habit priorisieren das zu VISION passt
+
+Nutze Persönlichkeitsdaten wenn vorhanden. Gib 2-3 konkrete Schritte. Deutsch, direkt, persönlich. Keine Einleitung:`;
+
+      const response = await fetch('https://api.perplexity.ai/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'sonar',
+          messages: [
+            {
+              role: 'system',
+              content: `Du bist ein hochgradig personalisierter Gewohnheits-Coach für ${user.name}${personalityProfile ? ' und kennst sein Profil, seine Werte und Vision' : ''}. Basiere Coaching auf:
+- Wissenschaft: 90-Tage-Regel, Tiny Habits (BJ Fogg), Atomic Habits (James Clear)
+- Persönlichkeit: Nutze Werte, Vision, Motivatoren wenn verfügbar
+- Individuelle Gewohnheits-Details: Why, Kontext, Hürden
+Sei extrem konkret, persönlich und umsetzbar.`
+            },
+            { role: 'user', content: prompt }
+          ]
+        })
+      });
+
+      const data = await response.json();
+      return data.choices[0].message.content.trim();
+
+    } catch (error) {
+      console.error('❌ Error getting adaptive goal coaching:', error);
+      return this.getFallbackCoaching(habitAnalysis, totalCompletion);
+    }
+  }
+
+  /**
+   * Fallback coaching when AI is unavailable
+   */
+  private getFallbackCoaching(habitAnalysis: EnhancedHabitAnalysis[], totalCompletion: number): string {
+    if (totalCompletion >= 80) {
+      return `🚀 **Starke Woche!** Du bist auf Kurs. Nächster Schritt: Erhöhe die Messlatte oder stacke eine neue Gewohnheit.`;
+    }
+
+    if (totalCompletion >= 60) {
+      const decliningHabit = habitAnalysis.find(h => h.trend.direction === '↓');
+      if (decliningHabit) {
+        return `📊 **Solide Performance.** Fokus: ${decliningHabit.habitName} – Identifiziere den Blocker der letzten Woche.`;
+      }
+      return `📊 **Guter Start!** Baue Konsistenz auf – kleine Verbesserungen diese Woche bringen dich näher an 80%.`;
+    }
+
+    const lowestHabit = [...habitAnalysis].sort((a, b) => a.completionRate - b.completionRate)[0];
+    if (lowestHabit) {
+      return `🔧 **Zeit für Anpassung:** Fokus auf **${lowestHabit.habitName}** – reduziere das Ziel auf Minimal Dose und baue von dort auf.`;
+    }
+
+    return `💪 Jeder Tag zählt – bleib dran!`;
+  }
+
+  /**
+   * Generate personalized weekly mindmap image
+   */
+  private async generateWeeklyMindmap(
+    user: User,
+    habitAnalysis: EnhancedHabitAnalysis[],
+    weekInfo: { weekStart: Date; weekEnd: Date }
+  ): Promise<Buffer | null> {
+    try {
+      // Calculate overall metrics
+      const totalCompletion = habitAnalysis.length > 0
+        ? Math.round(habitAnalysis.reduce((sum, h) => sum + h.completionRate, 0) / habitAnalysis.length)
+        : 0;
+
+      // Calculate days completed (count unique proof dates this week)
+      const habits = habitAnalysis.map(h => ({
+        targetFrequency: h.targetFrequency,
+        actualFrequency: h.actualFrequency
+      }));
+      const daysCompleted = habitAnalysis.reduce((sum, h) => sum + h.actualFrequency, 0);
+      const totalDays = habitAnalysis.reduce((sum, h) => sum + h.targetFrequency, 0);
+
+      // Get strongest and weakest habits
+      const sortedByRate = [...habitAnalysis].sort((a, b) => b.completionRate - a.completionRate);
+      const strongest = sortedByRate[0]
+        ? { name: sortedByRate[0].habitName, rate: sortedByRate[0].completionRate }
+        : null;
+      const weakest = sortedByRate[sortedByRate.length - 1]
+        ? { name: sortedByRate[sortedByRate.length - 1].habitName, rate: sortedByRate[sortedByRate.length - 1].completionRate }
+        : null;
+
+      // Extract key insight from AI analysis
+      const keyInsight = this.extractKeyInsightFromAnalysis(habitAnalysis);
+
+      // Extract main action from analysis
+      const mainAction = this.extractMainActionFromAnalysis(habitAnalysis, totalCompletion);
+
+      // Calculate overall trend
+      const avgTrendChange = habitAnalysis.length > 0
+        ? habitAnalysis.reduce((sum, h) => sum + h.trend.percentChange, 0) / habitAnalysis.length
+        : 0;
+      const trend: '↑' | '↓' | '→' = avgTrendChange > 5 ? '↑' : avgTrendChange < -5 ? '↓' : '→';
+
+      // Format week range
+      const weekRange = `${weekInfo.weekStart.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} - ${weekInfo.weekEnd.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+
+      // Generate mindmap
+      const mindmapGenerator = new MindmapGenerator();
+      const mindmapData = {
+        userName: user.nickname || user.name,
+        weekRange,
+        overallScore: totalCompletion,
+        daysCompleted,
+        totalDays,
+        strongestHabit: strongest,
+        weakestHabit: weakest,
+        keyInsight,
+        mainAction,
+        trend
+      };
+
+      return await mindmapGenerator.generateMindmap(mindmapData);
+    } catch (error) {
+      console.error('❌ Error generating mindmap:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Extract key insight from habit analysis
+   */
+  private extractKeyInsightFromAnalysis(habitAnalysis: EnhancedHabitAnalysis[]): string {
+    // Find habits with best streaks or declining trends
+    const bestStreak = habitAnalysis.reduce((max, h) => Math.max(max, h.streaks.current), 0);
+    const decliningHabits = habitAnalysis.filter(h => h.trend.direction === '↓');
+
+    if (bestStreak >= 7) {
+      return `${bestStreak}-Tage-Streak aktiv!`;
+    }
+
+    if (decliningHabits.length > 0) {
+      return `${decliningHabits.length} ${decliningHabits.length === 1 ? 'Gewohnheit' : 'Gewohnheiten'} im Abwärtstrend`;
+    }
+
+    const improvingHabits = habitAnalysis.filter(h => h.trend.direction === '↑');
+    if (improvingHabits.length > 0) {
+      return `${improvingHabits.length} ${improvingHabits.length === 1 ? 'Gewohnheit verbessert' : 'Gewohnheiten verbessern'} sich`;
+    }
+
+    return 'Konstante Performance';
+  }
+
+  /**
+   * Extract main action from analysis
+   */
+  private extractMainActionFromAnalysis(habitAnalysis: EnhancedHabitAnalysis[], totalCompletion: number): string {
+    // High performers: challenge them
+    if (totalCompletion >= 80) {
+      return 'Level erhöhen oder neue Gewohnheit stacken';
+    }
+
+    // Medium performers: focus on consistency
+    if (totalCompletion >= 60) {
+      const decliningHabit = habitAnalysis.find(h => h.trend.direction === '↓');
+      if (decliningHabit) {
+        return `Blocker bei "${decliningHabit.habitName}" identifizieren`;
+      }
+      return 'Konsistenz aufbauen - kleine Verbesserungen';
+    }
+
+    // Low performers: simplify
+    const lowestHabit = [...habitAnalysis].sort((a, b) => a.completionRate - b.completionRate)[0];
+    if (lowestHabit) {
+      return `"${lowestHabit.habitName}" auf Minimal Dose reduzieren`;
+    }
+
+    return 'Dranbleiben - jeder Tag zählt!';
   }
 }

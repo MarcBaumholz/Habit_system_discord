@@ -9,6 +9,7 @@ import { NotionClient } from '../notion/client';
 import { ToolsAssistant } from './tools-assistant';
 import { DailyMessageScheduler } from './daily-message-scheduler';
 import { WeeklyAgentScheduler } from './weekly-agent-scheduler';
+import { WeeklyReflectionScheduler } from './weekly-reflection-scheduler';
 import { AccountabilityScheduler } from './accountability-scheduler';
 import { BuddyRotationScheduler } from './buddy-rotation-scheduler';
 import { AllUsersWeeklyScheduler } from './all-users-weekly-scheduler';
@@ -25,6 +26,7 @@ import { ChallengeScheduler } from './challenge-scheduler';
 import { ChallengeProofProcessor } from './challenge-proof-processor';
 import { MidWeekScheduler } from './midweek-scheduler';
 import { AdminCommandHandler } from './admin-commands';
+import { ReflectionFlowManager } from './reflection-flow';
 
 export class HabitBot {
   private client: Client;
@@ -38,6 +40,7 @@ export class HabitBot {
   private toolsAssistant: ToolsAssistant;
   private dailyMessageScheduler: DailyMessageScheduler;
   private weeklyAgentScheduler: WeeklyAgentScheduler;
+  private weeklyReflectionScheduler: WeeklyReflectionScheduler;
   private accountabilityScheduler: AccountabilityScheduler;
   private buddyRotationScheduler: BuddyRotationScheduler;
   private allUsersWeeklyScheduler: AllUsersWeeklyScheduler;
@@ -54,6 +57,7 @@ export class HabitBot {
   private challengeProofProcessor: ChallengeProofProcessor;
   private midWeekScheduler?: MidWeekScheduler;
   private adminCommandHandler: AdminCommandHandler;
+  private reflectionFlow: ReflectionFlowManager;
 
   constructor(notion: NotionClient) {
     console.log('🔍 DEBUG: HabitBot constructor called');
@@ -76,11 +80,13 @@ export class HabitBot {
     this.buddyRotationScheduler = new BuddyRotationScheduler(this.client, notion, this.logger);
     this.dailyMessageScheduler = new DailyMessageScheduler(this.client, notion, this.logger, this.buddyRotationScheduler);
     this.weeklyAgentScheduler = new WeeklyAgentScheduler(this.client, notion, this.logger);
+    this.weeklyReflectionScheduler = new WeeklyReflectionScheduler(this.client, notion, this.logger);
     this.accountabilityScheduler = new AccountabilityScheduler(this.client, notion, this.logger);
     this.allUsersWeeklyScheduler = new AllUsersWeeklyScheduler(this.client, notion, this.logger);
     this.adminCommandHandler = new AdminCommandHandler(notion, this.buddyRotationScheduler);
     this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager, this.logger, this.personalAssistant);
     this.habitFlow = new HabitFlowManager(notion, this.personalAssistant);
+    this.reflectionFlow = new ReflectionFlowManager(notion);
     this.proofProcessor = new ProofProcessor(notion);
     this.messageAnalyzer = new MessageAnalyzer(notion, this.client, this.logger);
     this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
@@ -166,6 +172,11 @@ export class HabitBot {
         .setName('proof')
         .setDescription('Submit daily proof')
         .addStringOption(option =>
+          option.setName('habit')
+            .setDescription('Select the habit for this proof')
+            .setRequired(true)
+            .setAutocomplete(true))
+        .addStringOption(option =>
           option.setName('unit')
             .setDescription('Measurement unit (e.g., 30 min, 1 km)')
             .setRequired(true))
@@ -193,6 +204,14 @@ export class HabitBot {
           option.setName('week')
             .setDescription('Week number (optional)')
             .setRequired(false)),
+
+      new SlashCommandBuilder()
+        .setName('reflection')
+        .setDescription('Start your weekly reflection'),
+
+      new SlashCommandBuilder()
+        .setName('patch-notes')
+        .setDescription('Post patch notes to #new-features'),
 
       new SlashCommandBuilder()
         .setName('learning')
@@ -313,6 +332,8 @@ export class HabitBot {
     this.commands.set('join', { execute: this.commandHandler.handleJoin.bind(this.commandHandler) });
     this.commands.set('proof', { execute: this.commandHandler.handleProof.bind(this.commandHandler) });
     this.commands.set('summary', { execute: this.commandHandler.handleSummary.bind(this.commandHandler) });
+    this.commands.set('reflection', { execute: this.commandHandler.handleReflection.bind(this.commandHandler) });
+    this.commands.set('patch-notes', { execute: this.commandHandler.handlePatchNotes.bind(this.commandHandler) });
     this.commands.set('learning', { execute: this.commandHandler.handleLearning.bind(this.commandHandler) });
     this.commands.set('hurdles', { execute: this.commandHandler.handleHurdles.bind(this.commandHandler) });
     this.commands.set('tools', { execute: this.commandHandler.handleTools.bind(this.commandHandler) });
@@ -401,9 +422,9 @@ export class HabitBot {
       */
       console.log('ℹ️ Multi-Agent System temporarily disabled for daily message fix');
 
-      // Start the daily message scheduler for 66-day challenge
+      // Start the daily message scheduler for 90-day challenge
       this.dailyMessageScheduler.startScheduler();
-      console.log('🗓️ Daily message scheduler started - 66-day challenge begins tomorrow at 6 AM!');
+      console.log('🗓️ Daily message scheduler started - 90-day challenge begins tomorrow at 6 AM!');
       
       // Start the webhook poller for accountability channel
       if (this.webhookPoller) {
@@ -492,7 +513,15 @@ export class HabitBot {
           
           const finalIsWebhook = isWebhookMessage || isWebhookByUsername;
           
-          if (finalIsWebhook) {
+          // IMPORTANT: Skip bot's own webhook messages (Habit System webhook)
+          // Only process webhooks from users, not from the bot itself
+          const isBotWebhook = message.author.bot && (
+            message.author.username.toLowerCase().includes('habit system') ||
+            message.author.username.toLowerCase() === 'habit system' ||
+            (this.client.user && message.author.id === this.client.user.id)
+          );
+          
+          if (finalIsWebhook && !isBotWebhook) {
             await this.logger.info(
               'WEBHOOK_DETECTION',
               'Webhook Message Detected',
@@ -501,7 +530,8 @@ export class HabitBot {
                 webhookId: message.webhookId,
                 authorNames: authorNames,
                 nameWithWebhook: nameWithWebhook,
-                isWebhookByUsername: isWebhookByUsername
+                isWebhookByUsername: isWebhookByUsername,
+                isBotWebhook: isBotWebhook
               },
               {
                 channelId: message.channelId,
@@ -513,6 +543,10 @@ export class HabitBot {
             // Process webhook message directly
             await this.proofProcessor.handleAccountabilityMessage(message);
             return; // Exit early if webhook was processed
+          } else if (finalIsWebhook && isBotWebhook) {
+            // Log that we're skipping bot's own webhook
+            console.log('⏭️ Skipping bot\'s own webhook message:', message.author.username);
+            return; // Skip bot's own webhook messages
           }
         }
 
@@ -631,6 +665,16 @@ export class HabitBot {
             await this.habitFlow.handleModalSubmit(interaction);
             return;
           }
+          // Weekly reflection modal
+          if (interaction.customId.startsWith('weekly_reflection_modal')) {
+            await this.reflectionFlow.handleModalSubmit(interaction);
+            return;
+          }
+          // Patch notes modal
+          if (interaction.customId === 'patch_notes_modal') {
+            await this.commandHandler.handlePatchNotesModalSubmit(interaction);
+            return;
+          }
           return;
         }
 
@@ -651,10 +695,23 @@ export class HabitBot {
             await this.commandHandler.handleSecondOnboardModal(interaction);
             return;
           }
-          // Keystone habit buttons (including day selector)
-          if (interaction.customId.startsWith('keystone_') || interaction.customId.startsWith('day_')) {
+          // Keystone habit buttons (including day selector and batch selector)
+          if (interaction.customId.startsWith('keystone_') || interaction.customId.startsWith('day_') || interaction.customId.startsWith('batch_')) {
             await this.habitFlow.handleButtonInteraction(interaction);
             return;
+          }
+          // Weekly reflection start button
+          if (interaction.customId.startsWith('weekly_reflection_start')) {
+            await this.reflectionFlow.handleButtonInteraction(interaction);
+            return;
+          }
+          return;
+        }
+
+        // Handle Autocomplete Interactions
+        if (interaction.isAutocomplete()) {
+          if (interaction.commandName === 'proof') {
+            await this.commandHandler.handleProofAutocomplete(interaction);
           }
           return;
         }
@@ -702,20 +759,45 @@ export class HabitBot {
             }
           );
           console.error('Error executing command:', error);
-          if (interaction.replied || interaction.deferred) {
-            await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
-          } else {
-            await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+          
+          // Only send error message if interaction hasn't been handled yet
+          // Command handlers should handle their own errors, so this is a fallback
+          try {
+            if (interaction.replied || interaction.deferred) {
+              // Check if we can still followUp (not all interactions support it)
+              if (!interaction.isRepliable()) {
+                console.log('⚠️ Interaction is not repliable, skipping error message');
+                return;
+              }
+              await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
+            } else {
+              await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+            }
+          } catch (replyError: any) {
+            // If error message sending fails (e.g., already acknowledged), just log it
+            if (replyError.code !== 40060) { // 40060 = Interaction has already been acknowledged
+              console.error('Failed to send error message to user:', replyError);
+            }
           }
         }
       } catch (error) {
+        // Enhanced error logging with full interaction details
+        const errorDetails: any = {
+          interactionType: interaction.isButton() ? 'button' :
+                          interaction.isModalSubmit() ? 'modal' :
+                          interaction.isChatInputCommand() ? 'chatInputCommand' : 'unknown',
+          customId: (interaction.isButton() || interaction.isModalSubmit()) ? interaction.customId : undefined,
+          commandName: interaction.isChatInputCommand() ? interaction.commandName : undefined,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : undefined
+        };
+
+        console.error('❌ Detailed Interaction Processing Error:', errorDetails);
+
         await this.logger.logError(
           error as Error,
           'Interaction Processing',
-          {
-            interactionType: 'chatInputCommand',
-            commandName: interaction.isChatInputCommand() ? interaction.commandName : undefined
-          },
+          errorDetails,
           {
             channelId: interaction.channelId || undefined,
             userId: interaction.user.id,
@@ -937,6 +1019,20 @@ export class HabitBot {
         error as Error,
         'Weekly Agent Scheduler Initialization',
         { component: 'WeeklyAgentScheduler' }
+      );
+    }
+
+    // Start weekly reflection scheduler (Sunday 8 PM)
+    try {
+      console.log('📝 Initializing Weekly Reflection Scheduler...');
+      this.weeklyReflectionScheduler.startScheduler();
+      console.log('✅ Weekly Reflection Scheduler started successfully (Sunday 8 PM)');
+    } catch (error) {
+      console.error('❌ Failed to initialize Weekly Reflection Scheduler:', error);
+      await this.logger.logError(
+        error as Error,
+        'Weekly Reflection Scheduler Initialization',
+        { component: 'WeeklyReflectionScheduler' }
       );
     }
 

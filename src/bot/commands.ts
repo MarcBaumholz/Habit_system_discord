@@ -21,12 +21,21 @@ interface FirstModalData {
   timestamp: number;
 }
 
+interface PatchNotesData {
+  version: string;
+  changes: string;
+  usage: string;
+  mindmap: string;
+  timestamp: number;
+}
+
 export class CommandHandler {
   private notion: NotionClient;
   private channelHandlers: ChannelHandlers;
   private personalChannelManager: PersonalChannelManager;
   private logger: DiscordLogger;
   private firstModalDataCache: Map<string, FirstModalData> = new Map();
+  private patchNotesCache: Map<string, PatchNotesData> = new Map();
   private personalAssistant?: any; // Optional - will be set if available
 
   constructor(notion: NotionClient, channelHandlers: ChannelHandlers, personalChannelManager: PersonalChannelManager, logger: DiscordLogger, personalAssistant?: any) {
@@ -50,6 +59,13 @@ export class CommandHandler {
       if (now - data.timestamp > fiveMinutes) {
         this.firstModalDataCache.delete(discordId);
         console.log(`🧹 Cleaned up stale modal data for user: ${discordId}`);
+      }
+    }
+
+    for (const [discordId, data] of this.patchNotesCache.entries()) {
+      if (now - data.timestamp > fiveMinutes) {
+        this.patchNotesCache.delete(discordId);
+        console.log(`🧹 Cleaned up stale patch notes data for user: ${discordId}`);
       }
     }
   }
@@ -288,7 +304,7 @@ export class CommandHandler {
         `👤 **User:** ${user.name}\n` +
         `🏠 **Personal Channel:** \`personal-${user.name.toLowerCase()}\`\n` +
         `📝 **Profile:** Created in Notion\n` +
-        `🚀 **Status:** Ready for 66-day challenge!`
+        `🚀 **Status:** Ready for 90-day challenge!`
       );
 
       // Create welcome message for new user
@@ -303,7 +319,7 @@ export class CommandHandler {
                             `• Use \`/summary\` to track your progress\n` +
                             `• Use \`/learning\` to share insights with the community\n` +
                             `• Check your personal channel for private habit management!\n\n` +
-                            `💪 **Ready for your 66-day habit challenge!**`;
+                            `💪 **Ready for your 90-day habit challenge!**`;
 
       await interaction.editReply({
         content: welcomeMessage
@@ -352,23 +368,69 @@ export class CommandHandler {
         userFacingMessage = '❌ **Permission Error**\n\nSorry, the bot doesn\'t have the required permissions. Please contact an administrator.';
       }
 
-      if (interaction.deferred) {
-        await interaction.editReply({
-          content: userFacingMessage
-        });
-      } else {
-        await interaction.reply({
-          content: userFacingMessage,
-          ephemeral: true
-        });
+      // Safely handle interaction reply - check if already replied/deferred
+      try {
+        if (interaction.deferred && !interaction.replied) {
+          await interaction.editReply({
+            content: userFacingMessage
+          });
+        } else if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({
+            content: userFacingMessage,
+            ephemeral: true
+          });
+        } else if (interaction.deferred && interaction.replied) {
+          // Already replied, use followUp instead
+          await interaction.followUp({
+            content: userFacingMessage,
+            ephemeral: true
+          });
+        }
+      } catch (replyError) {
+        // If reply fails, log but don't throw - prevents double error handling
+        console.error('❌ Failed to send error message to user:', replyError);
+        // Don't rethrow - let the error be handled by the global handler if needed
       }
     }
   }
 
 
+  async handleProofAutocomplete(interaction: any) {
+    try {
+      const focusedValue = interaction.options.getFocused();
+      const user = await this.notion.getUserByDiscordId(interaction.user.id);
+
+      if (!user) {
+        await interaction.respond([]);
+        return;
+      }
+
+      // Get all user habits and filter by current batch
+      const allHabits = await this.notion.getHabitsByUserId(user.id);
+      const habits = filterHabitsByCurrentBatch(allHabits);
+
+      // Filter habits based on user input
+      const filtered = habits.filter(habit =>
+        habit.name.toLowerCase().includes(focusedValue.toLowerCase())
+      ).slice(0, 25); // Discord autocomplete limit is 25 choices
+
+      // Return autocomplete choices
+      await interaction.respond(
+        filtered.map(habit => ({
+          name: habit.name,
+          value: habit.id
+        }))
+      );
+    } catch (error) {
+      console.error('Error in proof autocomplete:', error);
+      await interaction.respond([]);
+    }
+  }
+
   async handleProof(interaction: CommandInteraction) {
     if (!interaction.isChatInputCommand()) return;
-    
+
+    const habitId = interaction.options.getString('habit', true);
     const unit = interaction.options.getString('unit') || '';
     const note = interaction.options.getString('note') || '';
     const isMinimalDose = interaction.options.getBoolean('minimal_dose') || false;
@@ -377,7 +439,7 @@ export class CommandHandler {
 
     try {
       console.log('🔍 Starting proof submission for user:', interaction.user.id);
-      
+
       const user = await this.notion.getUserByDiscordId(interaction.user.id);
       if (!user) {
         console.log('❌ User not found, redirecting to join');
@@ -390,17 +452,33 @@ export class CommandHandler {
 
       console.log('✅ User found:', user.name);
 
-      // For MVP, we'll create a simple proof without habit relation
-      // This avoids the Notion relation requirement for now
+      // Validate that habit exists and belongs to user's current batch
+      const allHabits = await this.notion.getHabitsByUserId(user.id);
+      const currentBatchHabits = filterHabitsByCurrentBatch(allHabits);
+      const habit = currentBatchHabits.find(h => h.id === habitId);
+
+      if (!habit) {
+        console.log('❌ Habit not found or not in current batch');
+        await interaction.reply({
+          content: 'Selected habit not found or not part of the current batch. Please select a valid habit.',
+          ephemeral: true
+        });
+        return;
+      }
+
+      console.log('✅ Habit validated:', habit.name);
+
+      // Create proof with proper habit relation
       const proofData = {
         userId: user.id,
-        habitId: user.id, // Using user ID as placeholder for now
+        habitId: habit.id,
         date: new Date().toISOString().split('T')[0],
         unit,
         note,
         attachmentUrl: attachment?.url,
         isMinimalDose,
-        isCheatDay
+        isCheatDay,
+        batch: habit.batch // Inherit batch from habit
       };
 
       console.log('📝 Creating proof with data:', proofData);
@@ -411,10 +489,13 @@ export class CommandHandler {
       await this.logger.success(
         'COMMAND',
         'Proof Command Completed',
-        `User ${interaction.user.username} submitted proof via command`,
+        `User ${interaction.user.username} submitted proof for habit: ${habit.name}`,
         {
           proofId: proof.id,
           userId: user.id,
+          habitId: habit.id,
+          habitName: habit.name,
+          batch: habit.batch,
           unit: unit,
           isMinimalDose: isMinimalDose,
           isCheatDay: isCheatDay,
@@ -429,11 +510,12 @@ export class CommandHandler {
 
       const emoji = isMinimalDose ? '⭐' : isCheatDay ? '🎯' : '✅';
       const typeText = isMinimalDose ? 'Minimal Dose' : isCheatDay ? 'Cheat Day' : 'Full Proof';
-      
+
       await interaction.reply({
         content: `${emoji} **${typeText} Submitted!**
 
 📊 **Proof Details:**
+• Habit: ${habit.name}
 • Unit: ${unit}
 • Note: ${note || 'No additional notes'}
 • Type: ${typeText}
@@ -589,6 +671,183 @@ Use \`/proof\` daily to maintain your momentum!`
             ephemeral: true
           });
         }
+    }
+  }
+
+  async handlePatchNotes(interaction: ChatInputCommandInteraction) {
+    if (!interaction.isChatInputCommand()) return;
+
+    const modal = new ModalBuilder()
+      .setCustomId('patch_notes_modal')
+      .setTitle('Patch Notes');
+
+    const versionInput = new TextInputBuilder()
+      .setCustomId('patch_notes_version')
+      .setLabel('Version / label')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('v1.4.0 or 2025-02-12')
+      .setRequired(true)
+      .setMaxLength(50);
+
+    const changesInput = new TextInputBuilder()
+      .setCustomId('patch_notes_changes')
+      .setLabel('What changed (bullet list)')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('- Added weekly reflection\\n- Improved question flow')
+      .setRequired(true)
+      .setMaxLength(1500);
+
+    const usageInput = new TextInputBuilder()
+      .setCustomId('patch_notes_usage')
+      .setLabel('How to use (short)')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Run /reflection to start the weekly reflection')
+      .setRequired(true)
+      .setMaxLength(800);
+
+    const mindmapInput = new TextInputBuilder()
+      .setCustomId('patch_notes_mindmap')
+      .setLabel('Mindmap (text tree)')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Feature\\n  ├─ Trigger\\n  ├─ Flow\\n  └─ Storage')
+      .setRequired(true)
+      .setMaxLength(1500);
+
+    modal.addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(versionInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(changesInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(usageInput),
+      new ActionRowBuilder<TextInputBuilder>().addComponents(mindmapInput)
+    );
+
+    await interaction.showModal(modal);
+  }
+
+  async handlePatchNotesModalSubmit(interaction: any) {
+    try {
+      const version = interaction.fields.getTextInputValue('patch_notes_version');
+      const changes = interaction.fields.getTextInputValue('patch_notes_changes');
+      const usage = interaction.fields.getTextInputValue('patch_notes_usage');
+      const mindmap = interaction.fields.getTextInputValue('patch_notes_mindmap');
+
+      this.patchNotesCache.set(interaction.user.id, {
+        version,
+        changes,
+        usage,
+        mindmap,
+        timestamp: Date.now()
+      });
+
+      const channelId = process.env.DISCORD_NEWFEATURES;
+      if (!channelId) {
+        await interaction.reply({
+          content: '❌ DISCORD_NEWFEATURES is not set in .env.',
+          ephemeral: true
+        });
+        return;
+      }
+
+      const channel = await interaction.client.channels.fetch(channelId);
+      if (!channel || !('send' in channel)) {
+        await interaction.reply({
+          content: '❌ Could not reach the #new-features channel.',
+          ephemeral: true
+        });
+        return;
+      }
+
+      const formattedChanges = this.normalizeBullets(changes);
+
+      await channel.send({
+        content:
+          `🧭 **Patch Notes — ${version}**\\n\\n` +
+          `**What changed**\\n${formattedChanges}\\n\\n` +
+          `**How to use**\\n${usage}\\n\\n` +
+          '**Mindmap**\\n' +
+          '```\\n' +
+          `${mindmap}\\n` +
+          '```'
+      });
+
+      await interaction.reply({
+        content: '✅ Patch notes posted to #new-features.',
+        ephemeral: true
+      });
+    } catch (error) {
+      console.error('Error posting patch notes:', error);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: '❌ Failed to post patch notes.',
+          ephemeral: true
+        });
+      }
+    }
+  }
+
+  private normalizeBullets(text: string): string {
+    const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      return '• No changes listed.';
+    }
+    return lines.map(line => (line.startsWith('-') || line.startsWith('•')) ? `• ${line.replace(/^[-•]\s?/, '')}` : `• ${line}`).join('\n');
+  }
+
+  async handleReflection(interaction: ChatInputCommandInteraction) {
+    if (!interaction.isChatInputCommand()) return;
+
+    try {
+      await interaction.deferReply({ ephemeral: true });
+      const user = await this.notion.getUserByDiscordId(interaction.user.id);
+      if (!user) {
+        await interaction.editReply('Please use `/join` first to register in the system.');
+        return;
+      }
+
+      if (!user.personalChannelId) {
+        await interaction.editReply('Your personal channel is not set yet. Please run `/join` again or contact support.');
+        return;
+      }
+
+      const weekInfo = this.notion.getCurrentWeekInfo();
+      const weekStartDate = weekInfo.weekStart.toISOString().split('T')[0];
+      const existingWeek = await this.notion.getWeekByUserAndStartDate(user.id, weekStartDate);
+
+      if (existingWeek?.reflectionCompleted) {
+        await interaction.editReply('✅ You already completed this week’s reflection.');
+        return;
+      }
+
+      const channel = await interaction.client.channels.fetch(user.personalChannelId);
+      if (!channel || !('send' in channel)) {
+        await interaction.editReply('Could not reach your personal channel. Please try again later.');
+        return;
+      }
+
+      const button = new ButtonBuilder()
+        .setCustomId(`weekly_reflection_start_${weekStartDate}`)
+        .setLabel('Start Reflection')
+        .setStyle(ButtonStyle.Primary);
+
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+
+      await channel.send({
+        content:
+          '📝 **Weekly Reflection**\n\n' +
+          'Four questions, one clear plan for next week.',
+        components: [row]
+      });
+
+      await interaction.editReply('📝 Reflection sent to your personal channel.');
+    } catch (error) {
+      console.error('Error triggering weekly reflection manually:', error);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply('❌ Something went wrong while sending your reflection. Please try again.');
+      } else {
+        await interaction.reply({
+          content: '❌ Something went wrong while sending your reflection. Please try again.',
+          ephemeral: true
+        });
+      }
     }
   }
 
@@ -892,7 +1151,7 @@ Others can help you find strategies to overcome this hurdle!`,
       // Main Goals
       const mainGoalsInput = new TextInputBuilder()
         .setCustomId('main_goals')
-        .setLabel('Deine 3 Hauptziele (66 Tage)')
+        .setLabel('Deine 3 Hauptziele (90 Tage)')
         .setStyle(TextInputStyle.Paragraph)
         .setPlaceholder('Ein Ziel pro Zeile')
         .setRequired(true);
@@ -1188,13 +1447,22 @@ Viel Erfolg auf deinem Habit-Tracking Journey! 🚀`,
         .setPlaceholder('Zusätzliche Notizen / Additional notes')
         .setRequired(false);
 
+      // Response Style
+      const responseStyleInput = new TextInputBuilder()
+        .setCustomId('response_style')
+        .setLabel('AI Antwort-Stil / Response Style')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Friendly, Direct, Calm, Enthusiastic, Professional, Casual')
+        .setRequired(false);
+
       // Add all inputs to modal
       const firstRow = new ActionRowBuilder<TextInputBuilder>().addComponents(lifeDomainsInput);
       const secondRow = new ActionRowBuilder<TextInputBuilder>().addComponents(lifePhaseInput);
       const thirdRow = new ActionRowBuilder<TextInputBuilder>().addComponents(desiredIdentityInput);
       const fourthRow = new ActionRowBuilder<TextInputBuilder>().addComponents(openSpaceInput);
+      const fifthRow = new ActionRowBuilder<TextInputBuilder>().addComponents(responseStyleInput);
 
-      modal.addComponents(firstRow, secondRow, thirdRow, fourthRow);
+      modal.addComponents(firstRow, secondRow, thirdRow, fourthRow, fifthRow);
 
       // Verify modal is constructed properly before showing
       console.log('📋 Second modal constructed with components:', {
@@ -1261,6 +1529,7 @@ There was a problem loading the second form. Please try the onboarding process a
       const lifePhase = interaction.fields.getTextInputValue('life_phase') || undefined;
       const desiredIdentity = interaction.fields.getTextInputValue('desired_identity') || undefined;
       const openSpace = interaction.fields.getTextInputValue('open_space') || undefined;
+      const responseStyle = interaction.fields.getTextInputValue('response_style')?.trim() || undefined;
 
       // Retrieve stored first modal data
       const firstModalData = this.firstModalDataCache.get(discordId);
@@ -1350,7 +1619,8 @@ You can view your profile with \`/profile\` or edit it with \`/profile-edit\` an
           lifeDomains,
           lifePhase,
           desiredIdentity,
-          openSpace
+          openSpace,
+          responseStyle
         });
         
         // Clear cached data after successful save
@@ -1734,7 +2004,7 @@ Use \`/onboard\` to create your profile.`
 • **Lebensvision (5 Jahre) / Life Vision (5 years):**
   ${lifeVision.substring(0, 300)}${lifeVision.length > 300 ? '...' : ''}
 
-• **Hauptziele (66 Tage) / Main Goals (66 days):**
+• **Hauptziele (90 Tage) / Main Goals (90 days):**
 ${mainGoals}
 
 **🧠 Persönlichkeitsmerkmale / Personality Traits:**
@@ -1887,13 +2157,13 @@ There was an error loading your profile. Please try again.`,
         .setValue(profile ? truncateForModal(profile.mainGoals?.join('\n') || '', 4000) : '')
         .setRequired(true);
 
-      // Big Five Traits
-      const bigFiveInput = new TextInputBuilder()
-        .setCustomId('big_five')
-        .setLabel('Big Five Traits')
+      // Response Style
+      const responseStyleInput = new TextInputBuilder()
+        .setCustomId('response_style')
+        .setLabel('AI Antwort-Stil / Response Style')
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Offenheit:7, Gewissenhaftigkeit:8, etc.')
-        .setValue(profile ? truncateForModal(profile.bigFiveTraits || '', 4000) : '')
+        .setPlaceholder('Friendly, Direct, Calm, Enthusiastic, Professional, Casual')
+        .setValue(profile ? truncateForModal(profile.responseStyle || '', 4000) : '')
         .setRequired(false);
 
       // Add all inputs to modal (Discord limit: 5 inputs per modal)
@@ -1901,7 +2171,7 @@ There was an error loading your profile. Please try again.`,
       const secondRow = new ActionRowBuilder<TextInputBuilder>().addComponents(coreValuesInput);
       const thirdRow = new ActionRowBuilder<TextInputBuilder>().addComponents(lifeVisionInput);
       const fourthRow = new ActionRowBuilder<TextInputBuilder>().addComponents(mainGoalsInput);
-      const fifthRow = new ActionRowBuilder<TextInputBuilder>().addComponents(bigFiveInput);
+      const fifthRow = new ActionRowBuilder<TextInputBuilder>().addComponents(responseStyleInput);
 
       modal.addComponents(firstRow, secondRow, thirdRow, fourthRow, fifthRow);
 
@@ -1995,7 +2265,7 @@ Use \`/join\` to register in the habit tracking system.`
         .split('\n')
         .map((g: string) => g.trim())
         .filter((g: string) => g.length > 0);
-      const bigFiveTraits = interaction.fields.getTextInputValue('big_five') || undefined;
+      const responseStyle = interaction.fields.getTextInputValue('response_style')?.trim() || undefined;
 
       // Validate required fields
       if (coreValues.length === 0) {
@@ -2048,7 +2318,7 @@ Your profile was not found. Please create it with \`/onboard\`.`
           coreValues,
           lifeVision,
           mainGoals,
-          bigFiveTraits,
+          responseStyle,
           // Keep existing values for fields not in this modal
           lifeDomains: existingProfile.lifeDomains,
           lifePhase: existingProfile.lifePhase,

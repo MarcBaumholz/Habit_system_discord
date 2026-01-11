@@ -1,0 +1,51 @@
+📊 Full Results:
+{
+  "testUser": {
+    "discordId": "383324294731661312",
+    "userId": "27ed42a1-faf5-81c4-91b4-fc13ebc2e703",
+    "name": "klumpenklarmarc"
+  },
+  "habit_analysis": {
+    "classification": "habit_analysis",
+    "totalTokens": 303,
+    "contextLength": 991,
+    "components": {
+      "compressed": false
+    }
+  },
+  "progress_check": {
+    "classification": "progress_check",
+    "totalTokens": 353,
+    "contextLength": 1116,
+    "components": {}
+  },
+  "personality_advice": {
+    "classification": "personality_advice",
+    "totalTokens": 303,
+    "contextLength": 991,
+    "components": {}
+  },
+  "learning_insight": {
+    "classification": "learning_insight",
+    "totalTokens": 303,
+    "contextLength": 991,
+    "components": {}
+  },
+  "hurdle_help": {
+    "classification": "hurdle_help",
+    "totalTokens": 264,
+    "contextLength": 901,
+    "components": {}
+  },
+  "general": {
+    "classification": "general",
+    "totalTokens": 303,
+    "contextLength": 991,
+    "components": {}
+  },
+  "rawNotionData": {
+    "habits": {
+      "count": 2,
+      "totalTokens": 464,
+      "tokensPerItem": 144
+    },

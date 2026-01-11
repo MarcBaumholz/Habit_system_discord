@@ -15,14 +15,20 @@ import { PerplexityClient } from '../../ai/perplexity-client';
 import { NotionClient } from '../../notion/client';
 import {
   User,
-  Habit,
-  Proof,
   HabitCompliance,
   GroupAnalysis,
   UserCompliance,
+  UserComplianceSummary,
   WeeklyAccountabilityReport,
   LeaderboardEntry,
-  Group
+  Group,
+  WeeklyPoolContributor,
+  ChallengingHabitSummary,
+  BuddyPerformanceSummary,
+  BuddyPerformancePair,
+  RiskAlert,
+  PerfectWeekAchiever,
+  AdaptiveGoalRecommendation
 } from '../../types';
 import { getCurrentBatch, filterHabitsByCurrentBatch, isBatchActive } from '../../utils/batch-manager';
 
@@ -150,8 +156,8 @@ export class AccountabilityMoneyAgent extends BaseAgent {
 
     this.log('info', `Calculated compliance for ${userCompliance.length} users`);
 
-    // Step 3: Generate leaderboard
-    const leaderboard = this.generateLeaderboard(userCompliance);
+    // Step 3: Generate leaderboard (top 5)
+    const leaderboard = this.generateLeaderboard(userCompliance).slice(0, 5);
 
     // Step 4: Save charges to Price Pool
     await this.saveChargesToPricePool(userCompliance, weekStart);
@@ -160,20 +166,42 @@ export class AccountabilityMoneyAgent extends BaseAgent {
     const currentBatch = getCurrentBatch();
     const totalPoolBalance = await this.notionClient.getTotalPricePool(currentBatch?.name);
 
-    // Step 6: Get social insights
-    const socialInsights = await this.generateSocialInsights(allUsers as any);
-
-    // Step 7: Calculate total weekly charges
+    // Step 6: Calculate total weekly charges
     const totalWeeklyCharges = userCompliance.reduce((sum, user) => sum + user.totalCharge, 0);
+
+    // Step 7: Get social insights (structured, validated)
+    const socialInsights = await this.generateSocialInsightsWithRetry(userCompliance, leaderboard);
+
+    // Step 8: Build summaries and limits
+    const summary = {
+      totalUsers: userCompliance.length,
+      perfectWeeks: userCompliance.filter(u => u.perfectWeek).length,
+      usersWithCharges: userCompliance.filter(u => u.totalCharge > 0).length,
+      totalCharges: totalWeeklyCharges,
+      poolBalance: totalPoolBalance,
+    };
+
+    const userComplianceSummary = this.buildUserComplianceSummary(userCompliance);
+    const poolSummary = this.buildPoolSummary(userCompliance, totalWeeklyCharges, totalPoolBalance);
+    const challengingHabits = this.buildChallengingHabits(userCompliance);
+    const buddyPerformance = this.buildBuddyPerformance(allUsers, userCompliance);
+    const riskAlerts = this.buildRiskAlerts(userCompliance);
+    const perfectWeekClub = this.buildPerfectWeekClub(userCompliance);
+    const adaptiveGoals = this.buildAdaptiveGoals(userCompliance);
 
     const report: WeeklyAccountabilityReport = {
       weekStart,
       weekEnd,
-      userCompliance,
+      summary,
       leaderboard,
-      totalWeeklyCharges,
-      totalPoolBalance,
+      userCompliance: userComplianceSummary,
       socialInsights,
+      poolSummary,
+      challengingHabits,
+      buddyPerformance,
+      riskAlerts,
+      perfectWeekClub,
+      adaptiveGoals,
       generatedAt: new Date().toISOString()
     };
 
@@ -195,11 +223,29 @@ export class AccountabilityMoneyAgent extends BaseAgent {
     return {
       weekStart,
       weekEnd,
-      userCompliance: [],
+      summary: {
+        totalUsers: 0,
+        perfectWeeks: 0,
+        usersWithCharges: 0,
+        totalCharges: 0,
+        poolBalance: 0
+      },
       leaderboard: [],
-      totalWeeklyCharges: 0,
-      totalPoolBalance: 0,
-      socialInsights: 'No active batch - accountability tracking paused',
+      userCompliance: [],
+      socialInsights: [],
+      poolSummary: {
+        weeklyCharges: 0,
+        poolBalance: 0,
+        topContributors: []
+      },
+      challengingHabits: [],
+      buddyPerformance: {
+        pairs: [],
+        unpairedCount: 0
+      },
+      riskAlerts: [],
+      perfectWeekClub: [],
+      adaptiveGoals: [],
       generatedAt: new Date().toISOString()
     };
   }
@@ -391,34 +437,333 @@ export class AccountabilityMoneyAgent extends BaseAgent {
   /**
    * Generate social insights using Group Agent logic
    */
-  private async generateSocialInsights(allUsers: User[]): Promise<string> {
-    try {
-      const groups = await this.notionClient.getAllGroups();
+  private async generateSocialInsights(
+    userCompliance: UserCompliance[],
+    leaderboard: LeaderboardEntry[]
+  ): Promise<string[]> {
+    const topPerformers = leaderboard.slice(0, 3);
+    const usersWithCharges = userCompliance.filter(u => u.totalCharge > 0).length;
+    const perfectWeeks = userCompliance.filter(u => u.perfectWeek).length;
+    const totalCharges = userCompliance.reduce((sum, u) => sum + u.totalCharge, 0);
 
-      const prompt = `
-      ROLE: Social dynamics expert analyzing weekly accountability group performance.
+    const prompt = `
+    ROLE: Social dynamics analyst for weekly accountability report.
 
-      TASK: Generate brief social insights for the weekly accountability report.
+    DATA:
+    - Top performers: ${topPerformers.map(u => `${u.name} (${u.overallCompletionRate.toFixed(0)}%)`).join(', ') || 'None'}
+    - Users with charges: ${usersWithCharges}
+    - Perfect weeks: ${perfectWeeks}
+    - Total charges: €${totalCharges.toFixed(2)}
 
-      COMMUNITY DATA:
-      - Total Active Users: ${allUsers.length}
-      - Total Groups: ${groups.length}
+    OUTPUT (STRICT):
+    - 2 bullets max, one sentence each, max 80 chars
+    - Use specific numbers from data
+    - Skip bullet 2 if no clear peer-support opportunity
+    - Return as JSON array: ["bullet1", "bullet2"]
+    `.trim();
 
-      Generate 2-3 concise insights about:
-      1. Overall community engagement and motivation trends
-      2. Peer support opportunities or collaboration suggestions
-      3. Group dynamics observations
+    const response = await this.perplexityClient.generateResponse(prompt);
+    const parsed = this.parseJsonArray(response);
+    return this.normalizeInsights(parsed);
+  }
 
-      Keep it brief (3-4 sentences max) and actionable.
-      `;
+  private async generateSocialInsightsWithRetry(
+    userCompliance: UserCompliance[],
+    leaderboard: LeaderboardEntry[],
+    maxRetries: number = 3
+  ): Promise<string[]> {
+    let lastError: Error | null = null;
 
-      const response = await this.perplexityClient.generateResponse(prompt);
-      return response || 'Community is actively engaged in building healthy habits together!';
-
-    } catch (error) {
-      this.log('error', 'Error generating social insights', { error });
-      return 'Keep supporting each other in your habit journey!';
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const insights = await this.generateSocialInsights(userCompliance, leaderboard);
+        if (insights.length === 0) {
+          throw new Error('No insights returned');
+        }
+        return insights;
+      } catch (error) {
+        lastError = error as Error;
+        this.log('warn', `Social insights attempt ${attempt} failed`, { error: lastError.message });
+      }
     }
+
+    this.log('warn', 'Social insights retries exhausted, using fallback', {
+      error: lastError?.message
+    });
+    return this.generateFallbackInsights(userCompliance, leaderboard);
+  }
+
+  private generateFallbackInsights(
+    userCompliance: UserCompliance[],
+    leaderboard: LeaderboardEntry[]
+  ): string[] {
+    if (userCompliance.length === 0) {
+      return ['No active users tracked this week'];
+    }
+
+    const avgRate = userCompliance.reduce((sum, u) => sum + u.overallCompletionRate, 0) / userCompliance.length;
+    const usersWithCharges = userCompliance.filter(u => u.totalCharge > 0).length;
+    const topPerformer = leaderboard[0];
+
+    const insights: string[] = [];
+    if (topPerformer) {
+      insights.push(`${topPerformer.name} leads at ${topPerformer.overallCompletionRate.toFixed(0)}%`);
+    }
+    insights.push(`Group avg ${avgRate.toFixed(0)}% | ${usersWithCharges} with charges`);
+
+    return this.normalizeInsights(insights);
+  }
+
+  private parseJsonArray(response: string): string[] {
+    const match = response.match(/\[[\s\S]*\]/);
+    if (!match) {
+      throw new Error('No JSON array found in AI response');
+    }
+
+    const parsed = JSON.parse(match[0]);
+    if (!Array.isArray(parsed)) {
+      throw new Error('AI response JSON is not an array');
+    }
+
+    return parsed.map(item => String(item));
+  }
+
+  private normalizeInsights(insights: string[]): string[] {
+    const normalized = insights
+      .map(item => item.trim().replace(/^[-•\s]+/, '').replace(/\s+/g, ' ').replace(/[.!?]\s*$/, ''))
+      .filter(item => item.length > 0)
+      .slice(0, 2)
+      .map(item => this.truncateInsight(item, 80));
+
+    return normalized;
+  }
+
+  private truncateInsight(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, Math.max(0, maxLength - 3)).trim()}...`;
+  }
+
+  private buildUserComplianceSummary(userCompliance: UserCompliance[]): UserComplianceSummary[] {
+    return [...userCompliance]
+      .sort((a, b) => {
+        if (b.totalCharge !== a.totalCharge) return b.totalCharge - a.totalCharge;
+        return b.overallCompletionRate - a.overallCompletionRate;
+      })
+      .slice(0, 10)
+      .map(user => {
+        const sortedHabits = [...user.habits].sort((a, b) => {
+          if (b.missedCount !== a.missedCount) return b.missedCount - a.missedCount;
+          return a.completionRate - b.completionRate;
+        });
+
+        const topHabits = sortedHabits.slice(0, 5);
+        const oneLiner = this.buildUserOneLiner(user);
+
+        return {
+          name: user.name,
+          discordId: user.discordId,
+          completionRate: user.overallCompletionRate,
+          habits: topHabits,
+          totalCharge: user.totalCharge,
+          streak: user.currentStreak,
+          oneLiner
+        };
+      });
+  }
+
+  private buildPoolSummary(
+    userCompliance: UserCompliance[],
+    weeklyCharges: number,
+    poolBalance: number
+  ): { weeklyCharges: number; poolBalance: number; topContributors: WeeklyPoolContributor[] } {
+    const topContributors = [...userCompliance]
+      .filter(user => user.totalCharge > 0)
+      .sort((a, b) => b.totalCharge - a.totalCharge)
+      .slice(0, 3)
+      .map(user => ({
+        name: user.name,
+        amount: user.totalCharge
+      }));
+
+    return {
+      weeklyCharges,
+      poolBalance,
+      topContributors
+    };
+  }
+
+  private buildChallengingHabits(userCompliance: UserCompliance[]): ChallengingHabitSummary[] {
+    const habitMap = new Map<string, { totalRate: number; count: number; struggling: number }>();
+
+    userCompliance.forEach(user => {
+      user.habits.forEach(habit => {
+        const entry = habitMap.get(habit.habitName) || { totalRate: 0, count: 0, struggling: 0 };
+        entry.totalRate += habit.completionRate;
+        entry.count += 1;
+        if (habit.completionRate < 60) {
+          entry.struggling += 1;
+        }
+        habitMap.set(habit.habitName, entry);
+      });
+    });
+
+    const summaries: ChallengingHabitSummary[] = Array.from(habitMap.entries()).map(([habitName, data]) => ({
+      habitName,
+      avgCompletionRate: data.count > 0 ? data.totalRate / data.count : 0,
+      usersStruggling: data.struggling
+    }));
+
+    return summaries
+      .filter(item => item.usersStruggling > 0)
+      .sort((a, b) => a.avgCompletionRate - b.avgCompletionRate)
+      .slice(0, 3);
+  }
+
+  private buildBuddyPerformance(allUsers: User[], userCompliance: UserCompliance[]): BuddyPerformanceSummary {
+    const complianceByDiscord = new Map(userCompliance.map(u => [u.discordId, u]));
+    const userByNickname = new Map<string, User>();
+    const userByName = new Map<string, User>();
+
+    allUsers.forEach(user => {
+      if (user.nickname) {
+        userByNickname.set(user.nickname.toLowerCase(), user);
+      }
+      userByName.set(user.name.toLowerCase(), user);
+    });
+
+    const pairs: BuddyPerformancePair[] = [];
+    const seenPairs = new Set<string>();
+    let unpairedCount = 0;
+
+    allUsers.forEach(user => {
+      if (!user.buddy) {
+        unpairedCount += 1;
+        return;
+      }
+
+      const buddyKey = user.buddy.toLowerCase();
+      const buddyUser = userByNickname.get(buddyKey) || userByName.get(buddyKey);
+      if (!buddyUser) {
+        unpairedCount += 1;
+        return;
+      }
+
+      const userComplianceData = complianceByDiscord.get(user.discordId);
+      const buddyComplianceData = complianceByDiscord.get(buddyUser.discordId);
+
+      if (!userComplianceData || !buddyComplianceData) {
+        unpairedCount += 1;
+        return;
+      }
+
+      const pairKey = [user.id, buddyUser.id].sort().join(':');
+      if (seenPairs.has(pairKey)) {
+        return;
+      }
+      seenPairs.add(pairKey);
+
+      const combinedCompletionRate = userComplianceData.overallCompletionRate + buddyComplianceData.overallCompletionRate;
+      const bothOnTrack = userComplianceData.overallCompletionRate >= 80 && buddyComplianceData.overallCompletionRate >= 80;
+      const bothStruggling = userComplianceData.overallCompletionRate < 60 && buddyComplianceData.overallCompletionRate < 60;
+
+      const status: BuddyPerformancePair['status'] = bothOnTrack
+        ? 'both_on_track'
+        : bothStruggling
+          ? 'both_struggling'
+          : 'mixed';
+
+      pairs.push({
+        userA: user.name,
+        userB: buddyUser.name,
+        combinedCompletionRate,
+        status
+      });
+    });
+
+    return {
+      pairs: pairs.slice(0, 3),
+      unpairedCount
+    };
+  }
+
+  private buildRiskAlerts(userCompliance: UserCompliance[]): RiskAlert[] {
+    const alerts: RiskAlert[] = userCompliance.map(user => {
+      const habitsBelow50 = user.habits.filter(habit => habit.completionRate < 50).length;
+      let reason = '';
+
+      if (habitsBelow50 >= 2) {
+        reason = `${habitsBelow50} habits below 50%`;
+      } else if (user.overallCompletionRate < 60) {
+        reason = 'overall below 60%';
+      } else if (user.totalCharge >= 2) {
+        reason = `charges €${user.totalCharge.toFixed(2)}`;
+      }
+
+      return {
+        name: user.name,
+        reason
+      };
+    }).filter(alert => alert.reason.length > 0);
+
+    return alerts
+      .sort((a, b) => {
+        const aUser = userCompliance.find(u => u.name === a.name);
+        const bUser = userCompliance.find(u => u.name === b.name);
+        if (!aUser || !bUser) return 0;
+        return aUser.overallCompletionRate - bUser.overallCompletionRate;
+      })
+      .slice(0, 3);
+  }
+
+  private buildPerfectWeekClub(userCompliance: UserCompliance[]): PerfectWeekAchiever[] {
+    return userCompliance
+      .filter(user => user.perfectWeek)
+      .sort((a, b) => b.currentStreak - a.currentStreak)
+      .slice(0, 5)
+      .map(user => ({
+        name: user.name,
+        streak: user.currentStreak,
+        totalHabits: user.totalHabits
+      }));
+  }
+
+  private buildAdaptiveGoals(userCompliance: UserCompliance[]): AdaptiveGoalRecommendation[] {
+    const recommendations: AdaptiveGoalRecommendation[] = [];
+
+    userCompliance.forEach(user => {
+      user.habits.forEach(habit => {
+        if (habit.completionRate >= 70) {
+          return;
+        }
+
+        const reduction = habit.completionRate < 50 ? 2 : 1;
+        const recommendedTarget = Math.max(1, habit.targetFrequency - reduction);
+
+        recommendations.push({
+          name: user.name,
+          habitName: habit.habitName,
+          currentRate: habit.completionRate,
+          targetFrequency: habit.targetFrequency,
+          recommendedTarget
+        });
+      });
+    });
+
+    return recommendations
+      .sort((a, b) => a.currentRate - b.currentRate)
+      .slice(0, 3);
+  }
+
+  private buildUserOneLiner(user: UserCompliance): string {
+    let oneLiner: string;
+    if (user.perfectWeek) {
+      oneLiner = `Perfect week across ${user.totalHabits} habits`;
+    } else if (user.totalCharge > 0) {
+      oneLiner = `${user.completedHabits}/${user.totalHabits} habits on track; charges €${user.totalCharge.toFixed(2)}`;
+    } else {
+      oneLiner = `${user.overallCompletionRate.toFixed(0)}% completion with steady progress`;
+    }
+    return this.truncateInsight(oneLiner.replace(/[.!?]\s*$/, ''), 100);
   }
 
   /**

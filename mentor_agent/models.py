@@ -62,6 +62,9 @@ class UserProfile(BaseModel):
     # Open Space
     open_space: Optional[str] = Field(default=None, alias="openSpace")
     
+    # AI Response Style
+    response_style: Optional[str] = Field(default=None, alias="responseStyle")
+    
     class Config:
         use_enum_values = True
         allow_population_by_field_name = True

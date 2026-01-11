@@ -44,11 +44,11 @@ export class AdminCommandHandler {
     return [
       new SlashCommandBuilder()
         .setName('batch')
-        .setDescription('Manage 66-day batches (Admin only)')
+        .setDescription('Manage 90-day batches (Admin only)')
         .addSubcommand(subcommand =>
           subcommand
             .setName('start')
-            .setDescription('Start a new 66-day batch')
+            .setDescription('Start a new 90-day batch')
             .addStringOption(option =>
               option
                 .setName('name')
@@ -92,6 +92,12 @@ export class AdminCommandHandler {
    * Handle /batch start <name>
    */
   private async handleBatchStart(interaction: ChatInputCommandInteraction): Promise<void> {
+    // Guard against duplicate handling - check if interaction already acknowledged
+    if (interaction.replied || interaction.deferred) {
+      console.warn('⚠️ Interaction already acknowledged, skipping duplicate batch start');
+      return;
+    }
+
     await interaction.deferReply();
 
     try {
@@ -170,7 +176,7 @@ export class AdminCommandHandler {
           content: `✅ **Batch "${normalizedName}" created!**\n\n` +
             `📅 **Created:** ${createdDateStr}\n` +
             `📅 **Start Date:** ${startDateStr} (in ${daysUntilStart} days)\n` +
-            `📅 **End Date:** ${endDate} (Day 66)\n` +
+            `📅 **End Date:** ${endDate} (Day 90)\n` +
             `⏳ **Status:** Pre-phase\n\n` +
             `👥 Users can now join the batch using \`/join\` command.\n` +
             `🎯 The batch will automatically start on ${startDateStr}!`
@@ -214,10 +220,10 @@ export class AdminCommandHandler {
         await interaction.editReply({
           content: `✅ **Batch "${normalizedName}" started!**\n\n` +
             `📅 **Start Date:** ${startDateStr}\n` +
-            `📅 **End Date:** ${endDate} (Day 66)\n` +
+            `📅 **End Date:** ${endDate} (Day 90)\n` +
             `👥 **Enrolled Users:** ${enrolledCount} active users\n` +
             `👥 **Buddy Pairs Created:** ${buddyPairsCount}\n\n` +
-            `🎯 Day 1 of 66 begins now for everyone!`
+            `🎯 Day 1 of 90 begins now for everyone!`
         });
 
         // Send welcome message to all enrolled users
@@ -236,6 +242,12 @@ export class AdminCommandHandler {
    * Handle /batch info
    */
   private async handleBatchInfo(interaction: ChatInputCommandInteraction): Promise<void> {
+    // Guard against duplicate handling - check if interaction already acknowledged
+    if (interaction.replied || interaction.deferred) {
+      console.warn('⚠️ Interaction already acknowledged, skipping duplicate batch info');
+      return;
+    }
+
     await interaction.deferReply();
 
     try {
@@ -243,13 +255,16 @@ export class AdminCommandHandler {
 
       if (!batch) {
         await interaction.editReply({
-          content: '📋 **No Active Batch**\n\nUse `/batch start <name> [start-date]` to create a new 66-day batch.'
+          content: '📋 **No Active Batch**\n\nUse `/batch start <name> [start-date]` to create a new 90-day batch.'
         });
         return;
       }
 
       // Get users in batch
       const batchUsers = await this.notionClient.getUsersInBatch(batch.name);
+      // Only count active users (filter out paused users)
+      const activeUsers = batchUsers.filter(user => user.status === 'active');
+      const enrolledCount = activeUsers.length;
 
       if (batch.status === 'pre-phase') {
         // PRE-PHASE: Show countdown and enrollment info
@@ -260,8 +275,8 @@ export class AdminCommandHandler {
             `⏳ **Status:** Pre-phase\n` +
             `📅 **Created:** ${batch.createdDate}\n` +
             `📅 **Start Date:** ${batch.startDate} (in ${daysUntilStart} days)\n` +
-            `📅 **End Date:** ${batch.endDate} (Day 66)\n` +
-            `👥 **Enrolled Users:** ${batchUsers.length}\n\n` +
+            `📅 **End Date:** ${batch.endDate} (Day 90)\n` +
+            `👥 **Enrolled Users:** ${enrolledCount} active participants\n\n` +
             `🎯 Users can join using \`/join\` command.\n` +
             `⏰ Batch will automatically start on ${batch.startDate}.`
         });
@@ -269,28 +284,29 @@ export class AdminCommandHandler {
       } else if (batch.status === 'active') {
         // ACTIVE: Show current day and progress
         const currentDay = getCurrentBatchDay();
-        const daysRemaining = Math.max(0, 66 - (currentDay || 0));
+        const daysRemaining = Math.max(0, 90 - (currentDay || 0));
 
         await interaction.editReply({
           content: `📊 **Current Batch: ${batch.name}**\n\n` +
             `🟢 **Status:** Active\n` +
-            `📅 **Day:** ${currentDay} of 66\n` +
+            `📅 **Day:** ${currentDay} of 90\n` +
             `⏳ **Days Remaining:** ${daysRemaining}\n` +
             `📅 **Start Date:** ${batch.startDate}\n` +
             `📅 **End Date:** ${batch.endDate}\n` +
-            `👥 **Enrolled Users:** ${batchUsers.length}\n\n` +
-            `${currentDay && currentDay >= 66 ? '✅ Batch completed!' : '💪 Keep going!'}`
+            `👥 **Enrolled Users:** ${enrolledCount} active participants\n\n` +
+            `${currentDay && currentDay >= 90 ? '✅ Batch completed!' : '💪 Keep going!'}`
         });
 
       } else if (batch.status === 'completed') {
         // COMPLETED: Show completion info
+        // For completed batches, show active participants (users who were active during the batch)
         await interaction.editReply({
           content: `📊 **Batch: ${batch.name}**\n\n` +
             `✅ **Status:** Completed\n` +
             `📅 **Start Date:** ${batch.startDate}\n` +
             `📅 **End Date:** ${batch.endDate}\n` +
-            `👥 **Participants:** ${batchUsers.length}\n\n` +
-            `🎉 All 66 days completed!\n` +
+            `👥 **Active Participants:** ${enrolledCount}\n\n` +
+            `🎉 All 90 days completed!\n` +
             `Use \`/batch start <name>\` to create a new batch.`
         });
       }

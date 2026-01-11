@@ -6,9 +6,16 @@
  */
 
 import { EmbedBuilder, Colors, ColorResolvable } from 'discord.js';
-import { WeeklyAccountabilityReport, UserCompliance, LeaderboardEntry, HabitCompliance } from '../types';
+import {
+  WeeklyAccountabilityReport,
+  UserComplianceSummary,
+  HabitCompliance,
+  BuddyPerformancePair,
+  AdaptiveGoalRecommendation
+} from '../types';
 
 export class AccountabilityReportFormatter {
+  private readonly PAYPAL_POOL_URL = 'https://www.paypal.com/pool/9lGmrdMzVH?sr=wccr';
 
   /**
    * Create comprehensive Discord embeds for weekly accountability report
@@ -22,18 +29,11 @@ export class AccountabilityReportFormatter {
     // 2. Leaderboard Embed
     embeds.push(this.createLeaderboardEmbed(report));
 
-    // 3. Per-user compliance embeds (one per user)
-    report.userCompliance.forEach(user => {
-      embeds.push(this.createUserComplianceEmbed(user, report.weekStart, report.weekEnd));
-    });
+    // 3. Consolidated user compliance summary (single embed)
+    embeds.push(this.createConsolidatedUserComplianceEmbed(report.userCompliance));
 
-    // 4. Social Insights Embed
-    if (report.socialInsights) {
-      embeds.push(this.createSocialInsightsEmbed(report.socialInsights));
-    }
-
-    // 5. Pool Summary Embed
-    embeds.push(this.createPoolSummaryEmbed(report));
+    // 4. Pool summary + social insights (combined)
+    embeds.push(this.createPoolAndSocialEmbed(report));
 
     return embeds;
   }
@@ -43,14 +43,14 @@ export class AccountabilityReportFormatter {
    */
   private createHeaderEmbed(report: WeeklyAccountabilityReport): EmbedBuilder {
     const weekLabel = this.formatWeekLabel(report.weekStart, report.weekEnd);
-    const totalUsers = report.userCompliance.length;
-    const perfectWeeks = report.userCompliance.filter(u => u.perfectWeek).length;
-    const usersWithCharges = report.userCompliance.filter(u => u.totalCharge > 0).length;
+    const totalUsers = report.summary.totalUsers;
+    const perfectWeeks = report.summary.perfectWeeks;
+    const usersWithCharges = report.summary.usersWithCharges;
 
     // Color based on overall performance
     let color: ColorResolvable = Colors.Green;
-    if (report.totalWeeklyCharges > 5) color = 0xFF6B6B as ColorResolvable; // Red-orange
-    else if (report.totalWeeklyCharges > 2) color = 0xFFD93D as ColorResolvable; // Gold/Yellow
+    if (report.summary.totalCharges > 5) color = 0xFF6B6B as ColorResolvable; // Red-orange
+    else if (report.summary.totalCharges > 2) color = 0xFFD93D as ColorResolvable; // Gold/Yellow
 
     const embed = new EmbedBuilder()
       .setTitle('📊 WEEKLY ACCOUNTABILITY REPORT')
@@ -62,7 +62,8 @@ export class AccountabilityReportFormatter {
           value: [
             `👥 Users tracked: **${totalUsers}**`,
             `✨ Perfect weeks: **${perfectWeeks}**`,
-            `💸 Users with charges: **${usersWithCharges}**`
+            `💸 Users with charges: **${usersWithCharges}**`,
+            `💰 Weekly charges: **€${report.summary.totalCharges.toFixed(2)}**`
           ].join('\n'),
           inline: false
         }
@@ -108,53 +109,34 @@ export class AccountabilityReportFormatter {
   }
 
   /**
-   * Create user compliance embed
+   * Create consolidated user compliance embed
    */
-  private createUserComplianceEmbed(user: UserCompliance, weekStart: string, weekEnd: string): EmbedBuilder {
-    const color = user.perfectWeek ? Colors.Green :
-                  user.overallCompletionRate >= 80 ? Colors.Gold :
-                  user.overallCompletionRate >= 60 ? Colors.Orange : Colors.Red;
-
+  private createConsolidatedUserComplianceEmbed(userCompliance: UserComplianceSummary[]): EmbedBuilder {
     const embed = new EmbedBuilder()
-      .setTitle(`👤 ${user.name}`)
-      .setDescription(`@${user.discordId}`)
-      .setColor(color);
+      .setTitle('👥 USER COMPLIANCE SUMMARY')
+      .setColor(Colors.Blue);
 
-    // Add habit breakdown
-    const habitsText = user.habits.map(habit =>
-      this.formatHabitSummary(habit)
-    ).join('\n');
+    if (userCompliance.length === 0) {
+      embed.setDescription('No compliance data available for this week.');
+      return embed;
+    }
 
-    embed.addFields([
-      {
-        name: 'Habit Breakdown',
-        value: habitsText || 'No habits tracked this week',
-        inline: false
-      }
-    ]);
+    const complianceText = userCompliance.map(user => {
+      const topHabits = user.habits.slice(0, 3);
+      const habitSummary = topHabits.length > 0
+        ? topHabits.map(habit => {
+          const emoji = habit.missedCount === 0 ? '✅' : '❌';
+          return `${emoji} ${habit.habitName} (${habit.completionRate.toFixed(0)}%)`;
+        }).join(' | ')
+        : 'No habits tracked';
 
-    // Add subtotal
-    const subtotalText = user.totalCharge > 0
-      ? `**Subtotal: €${user.totalCharge.toFixed(2)}**`
-      : `**Subtotal: €0.00** 🎉 Perfect week!`;
+      const streakText = user.streak > 0 ? `🔥 ${user.streak}w` : '—';
+      const oneLiner = user.oneLiner ? ` — ${user.oneLiner}` : '';
 
-    embed.addFields([
-      {
-        name: 'This Week',
-        value: subtotalText,
-        inline: true
-      },
-      {
-        name: 'Overall Rate',
-        value: `${user.overallCompletionRate.toFixed(1)}%`,
-        inline: true
-      },
-      {
-        name: 'Streak',
-        value: user.currentStreak > 0 ? `🔥 ${user.currentStreak} weeks` : 'Start now!',
-        inline: true
-      }
-    ]);
+      return `**${user.name}**: ${user.completionRate.toFixed(0)}% | €${user.totalCharge.toFixed(2)} | ${streakText}${oneLiner}\n${habitSummary}`;
+    }).join('\n\n');
+
+    embed.setDescription(complianceText.substring(0, 4096)); // Discord limit
 
     return embed;
   }
@@ -178,26 +160,29 @@ export class AccountabilityReportFormatter {
   /**
    * Create social insights embed
    */
-  private createSocialInsightsEmbed(insights: string): EmbedBuilder {
+  private createPoolAndSocialEmbed(report: WeeklyAccountabilityReport): EmbedBuilder {
     const embed = new EmbedBuilder()
-      .setTitle('🤝 SOCIAL INSIGHTS')
-      .setDescription(insights)
-      .setColor(Colors.Blue);
-
-    return embed;
-  }
-
-  /**
-   * Create pool summary embed
-   */
-  private createPoolSummaryEmbed(report: WeeklyAccountabilityReport): EmbedBuilder {
-    const embed = new EmbedBuilder()
-      .setTitle('💰 PRICE POOL SUMMARY')
+      .setTitle('💰 POOL SUMMARY + INSIGHTS')
       .setColor(Colors.DarkGold);
 
+    const paymentRequests = report.userCompliance
+      .filter(user => user.totalCharge > 0)
+      .map(user => `• ${user.name}: €${user.totalCharge.toFixed(2)}`)
+      .join('\n');
+
+    if (paymentRequests) {
+      embed.addFields([
+        {
+          name: 'Pay This Week',
+          value: `Please pay your amount into the pool:\n${this.PAYPAL_POOL_URL}\n\n${paymentRequests}`.substring(0, 1024),
+          inline: false
+        }
+      ]);
+    }
+
     const summaryText = [
-      `This week's charges: **€${report.totalWeeklyCharges.toFixed(2)}**`,
-      `Total pool balance: **€${report.totalPoolBalance.toFixed(2)}**`
+      `This week's charges: **€${report.poolSummary.weeklyCharges.toFixed(2)}**`,
+      `Total pool balance: **€${report.poolSummary.poolBalance.toFixed(2)}**`
     ].join('\n');
 
     embed.addFields([
@@ -209,10 +194,9 @@ export class AccountabilityReportFormatter {
     ]);
 
     // Add individual contributions if there are charges
-    if (report.totalWeeklyCharges > 0) {
-      const contributionsText = report.userCompliance
-        .filter(u => u.totalCharge > 0)
-        .map(u => `• ${u.name}: €${u.totalCharge.toFixed(2)}`)
+    if (report.poolSummary.weeklyCharges > 0) {
+      const contributionsText = report.poolSummary.topContributors
+        .map(u => `• ${u.name}: €${u.amount.toFixed(2)}`)
         .join('\n');
 
       if (contributionsText) {
@@ -226,9 +210,128 @@ export class AccountabilityReportFormatter {
       }
     }
 
+    const challengingHabitsText = this.formatChallengingHabits(report.challengingHabits);
+    if (challengingHabitsText) {
+      embed.addFields([
+        {
+          name: '⚠️ Challenging Habits',
+          value: challengingHabitsText,
+          inline: false
+        }
+      ]);
+    }
+
+    const buddyPerformanceText = this.formatBuddyPerformance(report.buddyPerformance.pairs, report.buddyPerformance.unpairedCount);
+    if (buddyPerformanceText) {
+      embed.addFields([
+        {
+          name: '👥 Buddy Performance',
+          value: buddyPerformanceText,
+          inline: false
+        }
+      ]);
+    }
+
+    const riskAlertsText = this.formatRiskAlerts(report.riskAlerts);
+    if (riskAlertsText) {
+      embed.addFields([
+        {
+          name: '🚨 Risk Alerts',
+          value: riskAlertsText,
+          inline: false
+        }
+      ]);
+    }
+
+    const perfectWeekText = this.formatPerfectWeekClub(report.perfectWeekClub, report.summary.totalUsers);
+    if (perfectWeekText) {
+      embed.addFields([
+        {
+          name: '✨ Perfect Week Club',
+          value: perfectWeekText,
+          inline: false
+        }
+      ]);
+    }
+
+    const adaptiveGoalsText = this.formatAdaptiveGoals(report.adaptiveGoals);
+    if (adaptiveGoalsText) {
+      embed.addFields([
+        {
+          name: '🔄 Adaptive Goal Cues',
+          value: adaptiveGoalsText,
+          inline: false
+        }
+      ]);
+    }
+
+    if (report.socialInsights.length > 0) {
+      const insightsText = report.socialInsights.map(insight => `• ${insight}`).join('\n');
+      embed.addFields([
+        {
+          name: 'Social Insights',
+          value: insightsText.substring(0, 1024),
+          inline: false
+        }
+      ]);
+    }
+
     embed.setFooter({ text: '€0.50 per missed habit iteration' });
 
     return embed;
+  }
+
+  private formatChallengingHabits(challengingHabits: WeeklyAccountabilityReport['challengingHabits']): string {
+    if (challengingHabits.length === 0) return '';
+
+    return challengingHabits.map(habit =>
+      `• ${habit.habitName}: ${habit.avgCompletionRate.toFixed(0)}% avg (${habit.usersStruggling} users struggling)`
+    ).join('\n').substring(0, 1024);
+  }
+
+  private formatBuddyPerformance(pairs: BuddyPerformancePair[], unpairedCount: number): string {
+    if (pairs.length === 0 && unpairedCount === 0) return '';
+
+    const pairLines = pairs.map(pair => {
+      const status = pair.status === 'both_on_track'
+        ? 'both on track'
+        : pair.status === 'both_struggling'
+          ? 'both struggling'
+          : 'mixed';
+      return `• ${pair.userA} ↔ ${pair.userB}: ${pair.combinedCompletionRate.toFixed(1)}% | ${status}`;
+    });
+
+    if (unpairedCount > 0) {
+      pairLines.push(`• ${unpairedCount} users without buddy pairs`);
+    }
+
+    return pairLines.join('\n').substring(0, 1024);
+  }
+
+  private formatRiskAlerts(riskAlerts: WeeklyAccountabilityReport['riskAlerts']): string {
+    if (riskAlerts.length === 0) return '';
+    return riskAlerts.map(alert => `• ${alert.name}: ${alert.reason}`).join('\n').substring(0, 1024);
+  }
+
+  private formatPerfectWeekClub(achievers: WeeklyAccountabilityReport['perfectWeekClub'], totalUsers: number): string {
+    if (achievers.length === 0) return '';
+
+    const achieverLines = achievers.map(user =>
+      `• ${user.name} (${user.streak}w streak) | ${user.totalHabits} habits`
+    );
+
+    const successRate = totalUsers > 0 ? Math.round((achievers.length / totalUsers) * 100) : 0;
+    achieverLines.push(`• ${achievers.length}/${totalUsers} users | ${successRate}% success rate`);
+
+    return achieverLines.join('\n').substring(0, 1024);
+  }
+
+  private formatAdaptiveGoals(recommendations: AdaptiveGoalRecommendation[]): string {
+    if (recommendations.length === 0) return '';
+
+    return recommendations.map(rec => {
+      return `• ${rec.name} → ${rec.habitName}: ${rec.targetFrequency}→${rec.recommendedTarget} (current ${rec.currentRate.toFixed(0)}%)`;
+    }).join('\n').substring(0, 1024);
   }
 
   /**
@@ -271,28 +374,95 @@ export class AccountabilityReportFormatter {
     });
 
     lines.push('');
-    lines.push('👥 USER COMPLIANCE');
+    lines.push('👥 USER COMPLIANCE SUMMARY');
     lines.push('─'.repeat(50));
 
     report.userCompliance.forEach(user => {
       lines.push(`\n${user.name} (@${user.discordId})`);
+      lines.push(`Rate: ${user.completionRate.toFixed(1)}% | Charge: €${user.totalCharge.toFixed(2)} | Streak: ${user.streak}w`);
+      lines.push(`Summary: ${user.oneLiner}`);
       user.habits.forEach(habit => {
         lines.push(this.formatHabitSummary(habit));
       });
-      lines.push(`Subtotal: €${user.totalCharge.toFixed(2)}`);
     });
 
     lines.push('');
     lines.push('💰 PRICE POOL SUMMARY');
     lines.push('─'.repeat(50));
-    lines.push(`This week's charges: €${report.totalWeeklyCharges.toFixed(2)}`);
-    lines.push(`Total pool balance: €${report.totalPoolBalance.toFixed(2)}`);
+    lines.push(`This week's charges: €${report.poolSummary.weeklyCharges.toFixed(2)}`);
+    lines.push(`Total pool balance: €${report.poolSummary.poolBalance.toFixed(2)}`);
+    lines.push(`Pay pool: ${this.PAYPAL_POOL_URL}`);
 
-    if (report.socialInsights) {
+    const paymentRequests = report.userCompliance
+      .filter(user => user.totalCharge > 0)
+      .map(user => `${user.name}: €${user.totalCharge.toFixed(2)}`);
+    if (paymentRequests.length > 0) {
+      lines.push('Pay this week:');
+      lines.push(...paymentRequests.map(item => `• ${item}`));
+    }
+
+    if (report.challengingHabits.length > 0) {
+      lines.push('');
+      lines.push('⚠️ CHALLENGING HABITS');
+      lines.push('─'.repeat(50));
+      report.challengingHabits.forEach(habit => {
+        lines.push(`• ${habit.habitName}: ${habit.avgCompletionRate.toFixed(0)}% avg (${habit.usersStruggling} users struggling)`);
+      });
+    }
+
+    if (report.buddyPerformance.pairs.length > 0 || report.buddyPerformance.unpairedCount > 0) {
+      lines.push('');
+      lines.push('👥 BUDDY PERFORMANCE');
+      lines.push('─'.repeat(50));
+      report.buddyPerformance.pairs.forEach(pair => {
+        const status = pair.status === 'both_on_track'
+          ? 'both on track'
+          : pair.status === 'both_struggling'
+            ? 'both struggling'
+            : 'mixed';
+        lines.push(`• ${pair.userA} ↔ ${pair.userB}: ${pair.combinedCompletionRate.toFixed(1)}% | ${status}`);
+      });
+      if (report.buddyPerformance.unpairedCount > 0) {
+        lines.push(`• ${report.buddyPerformance.unpairedCount} users without buddy pairs`);
+      }
+    }
+
+    if (report.riskAlerts.length > 0) {
+      lines.push('');
+      lines.push('🚨 RISK ALERTS');
+      lines.push('─'.repeat(50));
+      report.riskAlerts.forEach(alert => {
+        lines.push(`• ${alert.name}: ${alert.reason}`);
+      });
+    }
+
+    if (report.perfectWeekClub.length > 0) {
+      lines.push('');
+      lines.push('✨ PERFECT WEEK CLUB');
+      lines.push('─'.repeat(50));
+      report.perfectWeekClub.forEach(user => {
+        lines.push(`• ${user.name} (${user.streak}w streak) | ${user.totalHabits} habits`);
+      });
+      const successRate = report.summary.totalUsers > 0
+        ? Math.round((report.perfectWeekClub.length / report.summary.totalUsers) * 100)
+        : 0;
+      lines.push(`• ${report.perfectWeekClub.length}/${report.summary.totalUsers} users | ${successRate}% success rate`);
+    }
+
+    if (report.adaptiveGoals.length > 0) {
+      lines.push('');
+      lines.push('🔄 ADAPTIVE GOAL CUES');
+      lines.push('─'.repeat(50));
+      report.adaptiveGoals.forEach(rec => {
+        lines.push(`• ${rec.name} → ${rec.habitName}: ${rec.targetFrequency}→${rec.recommendedTarget} (current ${rec.currentRate.toFixed(0)}%)`);
+      });
+    }
+
+    if (report.socialInsights.length > 0) {
       lines.push('');
       lines.push('🤝 SOCIAL INSIGHTS');
       lines.push('─'.repeat(50));
-      lines.push(report.socialInsights);
+      report.socialInsights.forEach(insight => lines.push(`• ${insight}`));
     }
 
     return lines.join('\n');

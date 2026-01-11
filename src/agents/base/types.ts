@@ -101,6 +101,7 @@ export interface UserProfile {
   lifePhase?: string;
   desiredIdentity?: string;
   openSpace?: string;
+  responseStyle?: string; // AI response style/tone of voice
 }
 
 export interface UserContext {

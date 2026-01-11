@@ -31,7 +31,7 @@ test.test('should only return habits from current batch', async () => {
     name: currentBatchName,
     createdDate: '2026-01-01',
     startDate: '2026-01-01',
-    endDate: '2026-03-07', // 66 days after start
+    endDate: '2026-03-31', // 90 days after start
     status: 'active' as const
   });
 
@@ -197,7 +197,7 @@ test.test('should handle empty habits array gracefully', async () => {
     name: 'test batch',
     createdDate: '2026-01-01',
     startDate: '2026-01-01',
-    endDate: '2026-03-07', // 66 days after start
+    endDate: '2026-03-31', // 90 days after start
     status: 'active' as const
   });
 

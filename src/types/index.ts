@@ -34,7 +34,7 @@ export interface Habit {
   autonomy?: string; // Autonomy reflection
   curiosityPassionPurpose?: string; // Triangle of curiosity, passion, purpose
   consequences?: string; // Consequences of not committing
-  commitmentSignature?: string; // 66-day commitment confirmation
+  commitmentSignature?: string; // 90-day commitment confirmation
   batch?: string; // Current active batch when habit was created (e.g., "january 2026")
 }
 
@@ -78,6 +78,9 @@ export interface Week {
   startDate: string;
   summary?: string;
   score: number;
+  reflectionResponses?: string;
+  reflectionCompleted?: boolean;
+  reflectionDate?: string;
 }
 
 export interface Group {
@@ -93,7 +96,7 @@ export interface BatchMetadata {
   name: string; // e.g., "january 2026"
   createdDate: string; // ISO date string (YYYY-MM-DD) - when batch was created
   startDate: string; // ISO date string (YYYY-MM-DD) - when batch officially starts (Day 1)
-  endDate: string; // ISO date string (YYYY-MM-DD) - when batch ends (Day 66)
+  endDate: string; // ISO date string (YYYY-MM-DD) - when batch ends (Day 90)
   status: BatchStatus; // Current batch status
 }
 
@@ -112,6 +115,7 @@ export interface UserProfile {
   lifePhase?: string;
   desiredIdentity?: string;
   openSpace?: string;
+  responseStyle?: string; // AI response style/tone of voice
 }
 
 // Identity Agent Data
@@ -212,15 +216,91 @@ export interface UserCompliance {
   currentStreak: number; // Consecutive perfect weeks
 }
 
+// Weekly Report Summary
+export interface WeeklyAccountabilitySummary {
+  totalUsers: number;
+  perfectWeeks: number;
+  usersWithCharges: number;
+  totalCharges: number;
+  poolBalance: number;
+}
+
+// Weekly Report Pool Summary
+export interface WeeklyPoolContributor {
+  name: string;
+  amount: number;
+}
+
+export interface WeeklyPoolSummary {
+  weeklyCharges: number;
+  poolBalance: number;
+  topContributors: WeeklyPoolContributor[];
+}
+
+// User Compliance Summary (limited view for report)
+export interface UserComplianceSummary {
+  name: string;
+  discordId: string;
+  completionRate: number;
+  habits: HabitCompliance[];
+  totalCharge: number;
+  streak: number;
+  oneLiner: string;
+}
+
+export interface ChallengingHabitSummary {
+  habitName: string;
+  avgCompletionRate: number;
+  usersStruggling: number;
+}
+
+export type BuddyPerformanceStatus = 'both_on_track' | 'mixed' | 'both_struggling';
+
+export interface BuddyPerformancePair {
+  userA: string;
+  userB: string;
+  combinedCompletionRate: number;
+  status: BuddyPerformanceStatus;
+}
+
+export interface BuddyPerformanceSummary {
+  pairs: BuddyPerformancePair[];
+  unpairedCount: number;
+}
+
+export interface RiskAlert {
+  name: string;
+  reason: string;
+}
+
+export interface PerfectWeekAchiever {
+  name: string;
+  streak: number;
+  totalHabits: number;
+}
+
+export interface AdaptiveGoalRecommendation {
+  name: string;
+  habitName: string;
+  currentRate: number;
+  targetFrequency: number;
+  recommendedTarget: number;
+}
+
 // Weekly Accountability Report
 export interface WeeklyAccountabilityReport {
   weekStart: string; // Monday
   weekEnd: string; // Sunday
-  userCompliance: UserCompliance[];
+  summary: WeeklyAccountabilitySummary;
   leaderboard: LeaderboardEntry[];
-  totalWeeklyCharges: number;
-  totalPoolBalance: number;
-  socialInsights?: string; // From Group Agent
+  userCompliance: UserComplianceSummary[];
+  socialInsights: string[];
+  poolSummary: WeeklyPoolSummary;
+  challengingHabits: ChallengingHabitSummary[];
+  buddyPerformance: BuddyPerformanceSummary;
+  riskAlerts: RiskAlert[];
+  perfectWeekClub: PerfectWeekAchiever[];
+  adaptiveGoals: AdaptiveGoalRecommendation[];
   generatedAt: string;
 }
 

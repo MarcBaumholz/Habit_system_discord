@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Import the agent
-from midweek_agent import MidWeekAnalysisAgent
+# Import the v2 agent
+from midweek_agent_v2 import SecondMeetAnalysisAgent
 
 app = FastAPI(
     title="Habit System CrewAI Agents",
@@ -101,8 +101,8 @@ async def run_midweek_analysis(request: Optional[AnalysisRequest] = None):
         print(f"\n📞 Received mid-week analysis request at {datetime.now().isoformat()}")
 
         # Initialize and run the agent
-        agent = MidWeekAnalysisAgent()
-        result = agent.run_midweek_analysis()
+        agent = SecondMeetAnalysisAgent()
+        result = agent.run_second_meet_analysis()
 
         return AnalysisResponse(
             status=result['status'],
@@ -110,7 +110,7 @@ async def run_midweek_analysis(request: Optional[AnalysisRequest] = None):
             analysis=result.get('analysis'),
             metadata={
                 'day_of_week': result.get('day_of_week'),
-                'agent_type': 'team_dynamics_analyst'
+                'agent_type': 'team_dynamics_analyst_v2'
             }
         )
 

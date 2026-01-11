@@ -430,7 +430,7 @@ export class PersonalAssistant {
       `👋 Hallo ${message.author.username}! Wie geht es dir heute?`,
       `😊 Hey ${message.author.username}! Bereit für deine Gewohnheiten heute?`,
       `🚀 Hi ${message.author.username}! Lass uns an deinen Zielen arbeiten!`,
-      `💪 Hallo ${message.author.username}! Wie läuft deine 66-Tage Challenge?`
+      `💪 Hallo ${message.author.username}! Wie läuft deine 90-Tage Challenge?`
     ];
 
     const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)];

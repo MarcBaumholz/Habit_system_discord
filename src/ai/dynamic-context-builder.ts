@@ -46,6 +46,9 @@ export class DynamicContextBuilder {
     // Get or generate profile
     const profileContent = await this.profileStorage.getOrGenerateProfile(discordId);
     
+    // Get user profile to access responseStyle
+    const userProfile = await this.notion.getUserProfileByDiscordId(discordId);
+    
     // Build context based on intent
     let context: string;
 
@@ -78,6 +81,11 @@ export class DynamicContextBuilder {
       default:
         context = await this.buildGeneralContext(profileContent, userId, classification.mentionedHabits);
         break;
+    }
+
+    // Add response style preference to context if available
+    if (userProfile?.responseStyle) {
+      context = `## Response Style Preference\nUser prefers: ${userProfile.responseStyle}\n\n${context}`;
     }
 
     // Compress context to fit token budget

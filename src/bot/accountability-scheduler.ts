@@ -104,8 +104,8 @@ export class AccountabilityScheduler {
         'Weekly accountability report generated successfully',
         {
           users: report.userCompliance.length,
-          totalCharges: report.totalWeeklyCharges,
-          poolBalance: report.totalPoolBalance
+          totalCharges: report.summary.totalCharges,
+          poolBalance: report.poolSummary.poolBalance
         }
       );
 
@@ -118,8 +118,8 @@ export class AccountabilityScheduler {
         'Weekly accountability check completed successfully',
         {
           users: report.userCompliance.length,
-          weeklyCharges: `€${report.totalWeeklyCharges.toFixed(2)}`,
-          poolBalance: `€${report.totalPoolBalance.toFixed(2)}`
+          weeklyCharges: `€${report.summary.totalCharges.toFixed(2)}`,
+          poolBalance: `€${report.poolSummary.poolBalance.toFixed(2)}`
         }
       );
 

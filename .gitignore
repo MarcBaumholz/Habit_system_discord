@@ -41,3 +41,6 @@ __pycache__/
 .env.test
 .env.production
 .env.backup
+
+# Claude MCP configuration (contains secrets)
+.claude/mcp.json

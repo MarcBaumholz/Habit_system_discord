@@ -3,7 +3,8 @@ import { Challenge } from '../types/index.js';
 /**
  * ChallengeManager
  *
- * Manages the 20 pre-defined weekly challenges.
+ * Manages the 15 user-generated weekly challenges organized by creator.
+ * 3-week rotation: Week 1 (JonesMCL), Week 2 (Marc), Week 3 (JanWilken)
  * Loads challenge definitions and provides rotation logic.
  */
 export class ChallengeManager {
@@ -14,243 +15,199 @@ export class ChallengeManager {
   }
 
   /**
-   * Load all 20 challenges
-   * Hardcoded from challenges/weekly-challenges.md for reliability
+   * Load all 15 challenges organized by user creator
+   * Challenges 1-5: JonesMCL
+   * Challenges 6-10: Marc
+   * Challenges 11-15: JanWilken
    */
   private loadChallenges(): Challenge[] {
     return [
+      // ============================================
+      // JONESMCL CHALLENGES (1-5)
+      // ============================================
       {
         id: 1,
-        name: 'Deep Work Sessions',
-        description: 'Engage in distraction-free, cognitively demanding work for extended periods. Deep work is the ability to focus without distraction on a cognitively demanding task, producing high-quality output in less time.',
-        dailyRequirement: '90 minutes of uninterrupted deep work',
-        minimalDose: '60 minutes',
-        daysRequired: 5,
-        category: 'Productivity',
-        source: 'Cal Newport (Author, Computer Science Professor)',
-        link: 'https://www.calnewport.com/books/deep-work/'
+        name: 'Daily Mobility Stretching',
+        description: 'Improve flexibility, reduce muscle tension, and enhance overall mobility through consistent daily stretching. Regular stretching helps prevent injuries and improves range of motion.',
+        dailyRequirement: '15 minutes of stretching per day',
+        minimalDose: '10 minutes of stretching',
+        daysRequired: 6,
+        category: 'Health',
+        source: 'JonesMCL',
+        link: ''
       },
       {
         id: 2,
-        name: 'Morning Pages Journaling',
-        description: 'Write three pages of longhand, stream-of-consciousness writing first thing in the morning. This practice clears mental clutter and enhances creativity.',
-        dailyRequirement: '3 pages (750 words) of morning journaling',
-        minimalDose: '2 pages (500 words)',
-        daysRequired: 7,
-        category: 'Life Improvement',
-        source: 'Julia Cameron (Author, "The Artist\'s Way")',
-        link: 'https://juliacameronlive.com/basic-tools/morning-pages/'
+        name: '10,000 Steps Daily',
+        description: 'Achieve 10,000 steps per day to improve cardiovascular health, boost energy levels, and maintain an active lifestyle. Walking is one of the most accessible forms of exercise.',
+        dailyRequirement: '10,000 steps per day',
+        minimalDose: '7,500 steps per day',
+        daysRequired: 6,
+        category: 'Health',
+        source: 'JonesMCL',
+        link: ''
       },
       {
         id: 3,
-        name: 'Cold Exposure Therapy',
-        description: 'Deliberate cold exposure through cold showers or ice baths. Increases metabolic rate, improves mood, and builds mental resilience.',
-        dailyRequirement: '3 minutes of cold shower or 2 minutes ice bath',
-        minimalDose: '2 minutes cold shower',
+        name: 'Eat the Frog First',
+        description: 'Complete one unpleasant or challenging task first thing each day before moving to easier tasks. This builds discipline, reduces procrastination, and creates momentum for the rest of the day.',
+        dailyRequirement: 'Complete 1 unpleasant task first thing in the morning',
+        minimalDose: 'Complete 1 unpleasant task before noon',
         daysRequired: 5,
-        category: 'Biohacking',
-        source: 'Wim Hof (Extreme Athlete, "The Iceman")',
-        link: 'https://www.wimhofmethod.com/cold-therapy'
+        category: 'Productivity',
+        source: 'JonesMCL',
+        link: ''
       },
       {
         id: 4,
-        name: 'Reading Sprint',
-        description: 'Consistent daily reading to build knowledge and expand perspectives. Warren Buffett reads 500 pages per day, but starting smaller builds the habit.',
-        dailyRequirement: '30 pages of a non-fiction book',
-        minimalDose: '20 pages',
+        name: 'Screen-Free Before Bed',
+        description: 'Eliminate all screens 60 minutes before sleep to improve sleep quality, reduce blue light exposure, and allow the mind to wind down naturally. Exception: submitting challenge proof is allowed.',
+        dailyRequirement: 'No screens 60 minutes before sleep (exception: proof submission)',
+        minimalDose: 'No screens 30 minutes before sleep',
         daysRequired: 6,
-        category: 'CEO',
-        source: 'Warren Buffett (CEO, Berkshire Hathaway)',
-        link: 'https://fs.blog/warren-buffett-reading/'
+        category: 'Biohacking',
+        source: 'JonesMCL',
+        link: ''
       },
       {
         id: 5,
-        name: 'Intermittent Fasting (16:8)',
-        description: 'Fast for 16 hours, eat within an 8-hour window. Supports metabolic health, cellular repair, and mental clarity.',
-        dailyRequirement: '16-hour fasting window',
-        minimalDose: '14-hour fasting window',
+        name: 'Daily Push-Up Challenge',
+        description: 'Complete 50 push-ups per day to build upper body strength, improve core stability, and develop consistent exercise habits. Push-ups can be distributed throughout the day.',
+        dailyRequirement: '50 push-ups per day (can be distributed throughout the day)',
+        minimalDose: '30 push-ups per day',
         daysRequired: 6,
-        category: 'Biohacking',
-        source: 'Dr. Satchin Panda (Circadian Biology Researcher)',
-        link: 'https://www.salk.edu/scientist/satchidananda-panda/'
+        category: 'Health',
+        source: 'JonesMCL',
+        link: ''
       },
+      // ============================================
+      // MARC CHALLENGES (6-10)
+      // ============================================
       {
         id: 6,
-        name: '5 AM Club',
-        description: 'Wake up at 5 AM to own your morning and start the day with intention. Use the first hour for exercise, reflection, and learning.',
-        dailyRequirement: 'Wake up at 5:00 AM, complete 20-20-20 formula (20 min exercise, 20 min reflection, 20 min learning)',
-        minimalDose: 'Wake up by 5:30 AM, 15 min each activity',
+        name: 'The Scientist',
+        description: 'Read and analyze one scientific paper daily in AI/Tech/Neuroscience or related fields. Document key insights and takeaways to build knowledge and stay current with research.',
+        dailyRequirement: 'Read 1 scientific paper (AI/Tech/Neuroscience) and note key insights (minimum: Abstract + Conclusion)',
+        minimalDose: 'Read Abstract + Conclusion of 1 scientific paper',
         daysRequired: 5,
         category: 'CEO',
-        source: 'Robin Sharma (Leadership Expert, "The 5 AM Club")',
-        link: 'https://www.robinsharma.com/book/the-5am-club'
+        source: 'Marc',
+        link: ''
       },
       {
         id: 7,
-        name: 'Mindfulness Meditation',
-        description: 'Daily meditation practice to reduce stress, improve focus, and increase emotional regulation. Used by top performers across industries.',
-        dailyRequirement: '20 minutes of meditation',
-        minimalDose: '10 minutes',
-        daysRequired: 7,
-        category: 'Life Improvement',
-        source: 'Ray Dalio (Founder, Bridgewater Associates)',
-        link: 'https://www.headspace.com/'
+        name: 'Sleep Wind-Down Ritual',
+        description: 'Create a tech-free evening routine before bed to signal your body for rest. Activities like reading, stretching, or journaling help transition from active day to restful sleep.',
+        dailyRequirement: '20-30 minutes of tech-free evening routine (reading, stretching, journaling) before sleep',
+        minimalDose: '10 minutes of tech-free evening routine',
+        daysRequired: 6,
+        category: 'Biohacking',
+        source: 'Marc',
+        link: ''
       },
       {
         id: 8,
-        name: 'High-Intensity Interval Training (HIIT)',
-        description: 'Short bursts of intense exercise followed by rest periods. Maximizes fitness gains in minimal time, boosts metabolism, and improves cardiovascular health.',
-        dailyRequirement: '20 minutes HIIT workout',
-        minimalDose: '15 minutes',
-        daysRequired: 5,
-        category: 'Health',
-        source: 'Dr. Peter Attia (Longevity Expert)',
-        link: 'https://peterattiamd.com/'
+        name: 'Non-Time Stillness',
+        description: 'Practice intentional stillness and presence by doing nothing for a set period. This could be window gazing, mindful walking, or simply allowing thoughts to flow without engagement.',
+        dailyRequirement: '15 minutes of conscious stillness (window gazing, mindful walking, letting thoughts flow)',
+        minimalDose: '5 minutes of conscious stillness',
+        daysRequired: 6,
+        category: 'Life Improvement',
+        source: 'Marc',
+        link: ''
       },
       {
         id: 9,
-        name: 'Digital Detox Evening',
-        description: 'Eliminate all screens (phone, computer, TV) 2 hours before bed to improve sleep quality and reduce blue light exposure.',
-        dailyRequirement: 'No screens from 8 PM until sleep',
-        minimalDose: 'No screens 1 hour before bed',
+        name: 'The Minimalist Reset',
+        description: 'Declutter your physical space daily by removing at least one item. This practice creates mental clarity, reduces decision fatigue, and maintains an organized environment.',
+        dailyRequirement: 'Remove at least 1 item per day (discard, donate, or organize) and tidy space',
+        minimalDose: 'Remove 1 item per day',
         daysRequired: 6,
-        category: 'Biohacking',
-        source: 'Dr. Andrew Huberman (Neuroscientist, Stanford)',
-        link: 'https://hubermanlab.com/'
+        category: 'Life Improvement',
+        source: 'Marc',
+        link: ''
       },
       {
         id: 10,
-        name: 'Gratitude Practice',
-        description: 'Write down three things you\'re grateful for each day. Scientifically proven to increase happiness and reduce depression.',
-        dailyRequirement: 'Write 3 gratitudes with details (why you\'re grateful)',
-        minimalDose: 'List 3 gratitudes',
-        daysRequired: 7,
-        category: 'Life Improvement',
-        source: 'Tony Robbins (Peak Performance Coach)',
-        link: 'https://www.tonyrobbins.com/'
+        name: 'Vision Manifestation',
+        description: 'Visualize your future vision and annual goals daily with closed eyes. This practice strengthens neural pathways, increases motivation, and aligns actions with desired outcomes.',
+        dailyRequirement: '10 minutes of future vision and annual goals visualization with closed eyes',
+        minimalDose: '5 minutes of visualization',
+        daysRequired: 6,
+        category: 'CEO',
+        source: 'Marc',
+        link: ''
       },
+      // ============================================
+      // JANWILKEN CHALLENGES (11-15)
+      // ============================================
       {
         id: 11,
-        name: 'Zone 2 Cardio',
-        description: 'Low-intensity aerobic exercise where you can still hold a conversation. Builds mitochondrial health and endurance base.',
-        dailyRequirement: '45 minutes of Zone 2 cardio (conversational pace)',
-        minimalDose: '30 minutes',
-        daysRequired: 5,
-        category: 'Health',
-        source: 'Dr. Peter Attia (Longevity Expert)',
-        link: 'https://peterattiamd.com/zone-2-training/'
+        name: 'Daily Compliments',
+        description: 'Give genuine compliments to people in your environment about their clothing, behavior, or positive qualities. This practice strengthens relationships, spreads positivity, and improves social connections.',
+        dailyRequirement: 'Give at least 1 genuine compliment to someone in your environment (clothing, behavior, etc.)',
+        minimalDose: 'Give 1 compliment per day',
+        daysRequired: 6,
+        category: 'Life Improvement',
+        source: 'JanWilken',
+        link: ''
       },
       {
         id: 12,
-        name: 'Creative Hour',
-        description: 'Dedicate one hour daily to creative work without judgment or outcome attachment. Build creative muscle and discover new ideas.',
-        dailyRequirement: '60 minutes of creative activity (writing, art, music, design)',
-        minimalDose: '30 minutes',
-        daysRequired: 6,
-        category: 'Productivity',
-        source: 'James Clear (Author, "Atomic Habits")',
-        link: 'https://jamesclear.com/'
+        name: 'Microdosing Practice',
+        description: 'Engage in microdosing with substances like LSD or mushrooms following safe protocols. This practice is reported to enhance creativity, focus, and emotional well-being when done responsibly.',
+        dailyRequirement: 'Microdose LSD, mushrooms, or similar (following safe protocols)',
+        minimalDose: 'Microdose as per protocol',
+        daysRequired: 5,
+        category: 'Biohacking',
+        source: 'JanWilken',
+        link: ''
       },
       {
         id: 13,
-        name: 'Protein Optimization',
-        description: 'Consume adequate protein (1g per lb bodyweight) to support muscle maintenance, satiety, and metabolic health.',
-        dailyRequirement: '150g+ protein spread across meals',
-        minimalDose: '120g protein',
-        daysRequired: 7,
-        category: 'Biohacking',
-        source: 'Dr. Gabrielle Lyon (Muscle-Centric Medicine)',
-        link: 'https://drgabriellelyon.com/'
+        name: 'Approach Strangers',
+        description: 'Practice social courage by approaching strangers in everyday situations (street, public transport) and asking for recommendations or engaging in brief, positive interactions.',
+        dailyRequirement: 'Approach 1 stranger in daily life (street, public transport) and ask for a recommendation or engage positively',
+        minimalDose: 'Approach 1 stranger per day',
+        daysRequired: 5,
+        category: 'Life Improvement',
+        source: 'JanWilken',
+        link: ''
       },
       {
         id: 14,
-        name: 'No Alcohol Week',
-        description: 'Eliminate all alcohol consumption to improve sleep quality, mental clarity, and metabolic health.',
-        dailyRequirement: 'Zero alcohol consumption',
-        minimalDose: 'Zero alcohol consumption',
-        daysRequired: 7,
-        category: 'Health',
-        source: 'Andrew Huberman (Neuroscientist)',
-        link: 'https://hubermanlab.com/alcohol-and-your-health/'
+        name: 'Mindfulness Labelling',
+        description: 'Practice present-moment awareness by mentally labeling your actions as you perform them. For example, while walking, think "walking, walking, walking" or "step, step, step" to stay fully present.',
+        dailyRequirement: 'Practice mindfulness labeling during daily activities (e.g., "walking, walking" while walking, "brushing, brushing" while brushing teeth)',
+        minimalDose: 'Label 1 activity per day mindfully',
+        daysRequired: 6,
+        category: 'Life Improvement',
+        source: 'JanWilken',
+        link: ''
       },
       {
         id: 15,
-        name: 'Strategic Thinking Time',
-        description: 'Dedicate uninterrupted time to strategic thinking and planning. Separate from execution work to gain clarity on priorities.',
-        dailyRequirement: '30 minutes of strategic thinking/planning',
-        minimalDose: '20 minutes',
-        daysRequired: 5,
-        category: 'CEO',
-        source: 'Bill Gates (Founder, Microsoft - famous for "Think Weeks")',
-        link: 'https://www.gatesnotes.com/'
-      },
-      {
-        id: 16,
-        name: 'Breath Work Practice',
-        description: 'Structured breathing exercises to reduce stress, improve HRV, and enhance mental clarity. Box breathing or Wim Hof method.',
-        dailyRequirement: '15 minutes of breath work',
-        minimalDose: '10 minutes',
-        daysRequired: 6,
-        category: 'Biohacking',
-        source: 'Wim Hof & James Nestor (Author, "Breath")',
-        link: 'https://www.wimhofmethod.com/breathing-exercises'
-      },
-      {
-        id: 17,
-        name: 'Learn Something New',
-        description: 'Commit to learning a new skill or subject for 30 minutes daily. Builds neuroplasticity and keeps the mind sharp.',
-        dailyRequirement: '30 minutes of deliberate learning (course, book, practice)',
-        minimalDose: '20 minutes',
-        daysRequired: 6,
-        category: 'Life Improvement',
-        source: 'Elon Musk (CEO, Tesla/SpaceX - known for rapid learning)',
-        link: 'https://www.tesla.com/'
-      },
-      {
-        id: 18,
-        name: 'Morning Sunlight Exposure',
-        description: 'Get direct sunlight within 30 minutes of waking to optimize circadian rhythm, cortisol timing, and mood.',
-        dailyRequirement: '10 minutes of direct morning sunlight (before 9 AM)',
-        minimalDose: '5 minutes',
+        name: 'Zero Added Sugar',
+        description: 'Eliminate all added sugars from your diet to improve metabolic health, reduce inflammation, stabilize energy levels, and break sugar dependency patterns.',
+        dailyRequirement: 'Zero added sugar consumption',
+        minimalDose: 'Zero added sugar consumption',
         daysRequired: 7,
-        category: 'Biohacking',
-        source: 'Dr. Andrew Huberman (Neuroscientist)',
-        link: 'https://hubermanlab.com/light-and-health/'
-      },
-      {
-        id: 19,
-        name: 'Weekly Planning & Review',
-        description: 'Dedicate time each day to plan the next day and review progress. Clarity of action leads to better execution.',
-        dailyRequirement: '20 minutes of planning (evening) and 10 minutes review (morning)',
-        minimalDose: '15 minutes total planning',
-        daysRequired: 6,
-        category: 'Productivity',
-        source: 'David Allen (Author, "Getting Things Done")',
-        link: 'https://gettingthingsdone.com/'
-      },
-      {
-        id: 20,
-        name: 'Acts of Kindness',
-        description: 'Perform intentional acts of kindness daily. Increases happiness, strengthens relationships, and creates positive momentum.',
-        dailyRequirement: 'Perform 2 meaningful acts of kindness and document them',
-        minimalDose: '1 act of kindness',
-        daysRequired: 7,
-        category: 'Life Improvement',
-        source: 'Shawn Achor (Positive Psychology Researcher)',
-        link: 'https://www.shawnachor.com/'
+        category: 'Health',
+        source: 'JanWilken',
+        link: ''
       }
     ];
   }
 
   /**
-   * Get all 20 challenges
+   * Get all 15 challenges
    */
   getAllChallenges(): Challenge[] {
     return this.challenges;
   }
 
   /**
-   * Get challenge by index (0-19)
+   * Get challenge by index (0-14)
    */
   getChallengeByIndex(index: number): Challenge | undefined {
     if (index < 0 || index >= this.challenges.length) {
@@ -260,14 +217,36 @@ export class ChallengeManager {
   }
 
   /**
-   * Get challenge by ID (1-20)
+   * Get challenge by ID (1-15)
    */
   getChallengeById(id: number): Challenge | undefined {
     return this.challenges.find(c => c.id === id);
   }
 
   /**
-   * Get next challenge index (rotates 0→1→2→...→19→0)
+   * Get challenges by user creator
+   * @param user 'JonesMCL' | 'Marc' | 'JanWilken'
+   */
+  getChallengesByUser(user: 'JonesMCL' | 'Marc' | 'JanWilken'): Challenge[] {
+    return this.challenges.filter(c => c.source === user);
+  }
+
+  /**
+   * Get challenge indices for a specific user (for 3-week rotation)
+   * @param user 'JonesMCL' | 'Marc' | 'JanWilken'
+   * @returns Array of challenge indices (0-14)
+   */
+  getChallengeIndicesByUser(user: 'JonesMCL' | 'Marc' | 'JanWilken'): number[] {
+    const userRanges = {
+      'JonesMCL': [0, 1, 2, 3, 4],      // IDs 1-5
+      'Marc': [5, 6, 7, 8, 9],           // IDs 6-10
+      'JanWilken': [10, 11, 12, 13, 14] // IDs 11-15
+    };
+    return userRanges[user];
+  }
+
+  /**
+   * Get next challenge index (rotates 0→1→2→...→14→0)
    */
   getNextChallengeIndex(currentIndex: number): number {
     return (currentIndex + 1) % this.challenges.length;

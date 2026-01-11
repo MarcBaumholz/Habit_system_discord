@@ -1,9 +1,9 @@
 /**
  * Buddy Assignment Manager
  *
- * Assigns buddy pairs at the start of each batch (66-day cycle)
+ * Assigns buddy pairs at the start of each batch (90-day cycle)
  * Pairs active users in the current batch randomly and updates their buddy assignments in Notion
- * Buddies stay together for the entire 66-day batch
+ * Buddies stay together for the entire 90-day batch
  */
 
 import { Client, TextChannel } from 'discord.js';
@@ -155,11 +155,11 @@ export class BuddyRotationScheduler {
         return;
       }
 
-      const message = `👥 **Buddy Assignment for 66-Day Challenge!**
+      const message = `👥 **Buddy Assignment for 90-Day Challenge!**
 
 Your accountability buddy is **${buddy.name}**!
 
-You'll be paired together for the **entire 66-day batch** (from Day 1 to Day 66). Support each other, share your progress, and help each other stay accountable throughout the journey!
+You'll be paired together for the **entire 90-day batch** (from Day 1 to Day 90). Support each other, share your progress, and help each other stay accountable throughout the journey!
 
 💪 **Remember:** Check in with your buddy regularly and celebrate each other's wins!
 
@@ -198,4 +198,3 @@ You'll be paired together for the **entire 66-day batch** (from Day 1 to Day 66)
     }
   }
 }
-

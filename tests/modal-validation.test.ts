@@ -42,7 +42,7 @@ describe('Modal Validation', () => {
         'Persönlichkeitstyp (z.B. INTJ, ENFP)',
         'Deine 3 wichtigsten Werte',
         'Deine Lebensvision (5 Jahre)',
-        'Deine 3 Hauptziele (66 Tage)',
+        'Deine 3 Hauptziele (90 Tage)',
         'Big Five Traits (optional)',
         'Lebensbereiche / Life Domains',
         'Lebensphase / Life Phase',

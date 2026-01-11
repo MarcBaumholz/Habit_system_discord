@@ -2,6 +2,7 @@
 
 # Discord Habit System - Deployment Script
 # This script builds and deploys the latest version of the bot
+# Uses docker compose to ensure all configuration from docker-compose.yml is applied
 
 set -e  # Exit on any error
 
@@ -48,19 +49,35 @@ fi
 
 print_status "Docker is running ✓"
 
-# Stop existing container if running
-print_status "Stopping existing container..."
-if docker ps -q -f name=habit-discord-bot | grep -q .; then
-    docker stop habit-discord-bot
-    docker rm habit-discord-bot
-    print_success "Existing container stopped and removed"
+# Check if docker compose is available (v2 plugin version)
+if ! docker compose version > /dev/null 2>&1; then
+    print_error "docker compose (v2) is not available! Please install Docker Compose v2."
+    print_status "Alternatively, install docker-compose: sudo apt-get install docker-compose"
+    exit 1
+fi
+
+print_status "Docker Compose is available ✓"
+
+# Stop and remove existing container using docker compose
+print_status "Stopping and removing existing container (if running)..."
+# First try docker compose down (for containers managed by docker-compose)
+if docker compose down 2>/dev/null; then
+    print_status "Container stopped via docker compose"
+else
+    print_status "No container managed by docker-compose found"
+fi
+
+# Force remove container by name if it still exists (handles containers created outside docker-compose)
+if docker ps -a --format '{{.Names}}' | grep -q "^habit-discord-bot$"; then
+    print_status "Found existing container 'habit-discord-bot', force removing it..."
+    docker rm -f habit-discord-bot 2>/dev/null && print_status "Container removed successfully" || print_warning "Could not remove container (may not exist)"
 else
     print_status "No existing container found"
 fi
 
-# Build new image
+# Build new image using docker compose (this ensures all docker-compose.yml settings are applied)
 print_status "Building new Docker image..."
-docker build -t habit-discord-bot:optimized .
+docker compose build --no-cache
 
 if [ $? -eq 0 ]; then
     print_success "Docker image built successfully"
@@ -69,13 +86,10 @@ else
     exit 1
 fi
 
-# Start new container
-print_status "Starting new container..."
-docker run -d \
-    --name habit-discord-bot \
-    --env-file .env \
-    --restart unless-stopped \
-    habit-discord-bot:optimized
+# Start container using docker compose (this applies all configuration from docker-compose.yml)
+print_status "Starting container with docker compose..."
+print_status "This will apply all configuration: resource limits, volumes, health checks, networks, etc."
+docker compose up -d
 
 if [ $? -eq 0 ]; then
     print_success "Container started successfully"
@@ -89,23 +103,25 @@ sleep 5
 
 # Check container status
 print_status "Checking container status..."
-if docker ps -q -f name=habit-discord-bot | grep -q .; then
+if docker compose ps | grep -q "Up"; then
     print_success "Container is running"
 
     # Show container logs
     print_status "Container logs (last 20 lines):"
     echo "----------------------------------------"
-    docker logs --tail 20 habit-discord-bot
+    docker compose logs --tail 20 habit-discord-bot
     echo "----------------------------------------"
 
-    print_status "To view live logs: docker logs -f habit-discord-bot"
-    print_status "To stop container: docker stop habit-discord-bot"
-    print_status "To restart: docker restart habit-discord-bot"
+    print_status "Useful commands:"
+    print_status "  • View live logs: docker compose logs -f habit-discord-bot"
+    print_status "  • Stop container: docker compose stop"
+    print_status "  • Restart container: docker compose restart"
+    print_status "  • View status: docker compose ps"
 
 else
     print_error "Container failed to start"
     print_status "Checking logs for errors:"
-    docker logs habit-discord-bot
+    docker compose logs habit-discord-bot
     exit 1
 fi
 
