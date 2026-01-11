@@ -1,4 +1,3 @@
-# ... existing content ...
 .env
 node_modules/
 dist/
@@ -44,6 +43,16 @@ __pycache__/
 
 # Claude MCP configuration (contains secrets)
 .claude/mcp.json
+.claude/rules/
+
+# IDE and development tool configurations
+.agent-os/
+
+# Logs directory
+logs/
+
+# Archive directories
+_ARCHIVE_OLD_CODE/
 
 # Image files
 *.png
