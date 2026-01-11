@@ -159,7 +159,7 @@ export class MindmapGenerator {
     ctx.fillText('📊 Diese Woche', x, y - 15);
 
     ctx.font = 'bold 24px Arial';
-    ctx.fillText(`${data.daysCompleted}/${data.totalDays} Tage`, x, y + 15);
+    ctx.fillText(`${data.daysCompleted}/${data.totalDays} Nachweise`, x, y + 15);
   }
 
   /**

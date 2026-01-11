@@ -44,3 +44,11 @@ __pycache__/
 
 # Claude MCP configuration (contains secrets)
 .claude/mcp.json
+
+# Image files
+*.png
+*.PNG
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG

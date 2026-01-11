@@ -1175,11 +1175,8 @@ Sei extrem konkret, persönlich und umsetzbar.`
         ? Math.round(habitAnalysis.reduce((sum, h) => sum + h.completionRate, 0) / habitAnalysis.length)
         : 0;
 
-      // Calculate days completed (count unique proof dates this week)
-      const habits = habitAnalysis.map(h => ({
-        targetFrequency: h.targetFrequency,
-        actualFrequency: h.actualFrequency
-      }));
+      // Calculate proofs completed (sum of all actual frequencies = total proofs submitted)
+      // Note: This counts total proofs, not days (e.g., if 2 habits with frequency 7 and 4 = 11 total proofs)
       const daysCompleted = habitAnalysis.reduce((sum, h) => sum + h.actualFrequency, 0);
       const totalDays = habitAnalysis.reduce((sum, h) => sum + h.targetFrequency, 0);
 
