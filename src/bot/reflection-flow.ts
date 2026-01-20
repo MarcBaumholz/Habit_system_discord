@@ -7,6 +7,7 @@ import {
   ActionRowBuilder
 } from 'discord.js';
 import { NotionClient } from '../notion/client';
+import { formatLocalDate, parseDateString, getISOWeekNumber } from '../utils/date-utils';
 
 const REFLECTION_BUTTON_ID_PREFIX = 'weekly_reflection_start';
 const REFLECTION_MODAL_ID_PREFIX = 'weekly_reflection_modal';
@@ -61,9 +62,12 @@ export class ReflectionFlowManager {
 
       const fallbackWeekInfo = this.notion.getCurrentWeekInfo();
       const parsedWeekStartDate = this.extractWeekStartDate(interaction.customId, REFLECTION_MODAL_ID_PREFIX);
-      const weekStartDate = parsedWeekStartDate || fallbackWeekInfo.weekStart.toISOString().split('T')[0];
-      const reflectionDate = new Date().toISOString().split('T')[0];
-      const weekNumber = this.getISOWeekNumber(new Date(weekStartDate));
+      const weekStartDate = parsedWeekStartDate || formatLocalDate(fallbackWeekInfo.weekStart);
+      const reflectionDate = formatLocalDate(new Date());
+      
+      // Parse date explicitly to avoid timezone issues
+      const weekStartDateObj = parseDateString(weekStartDate);
+      const weekNumber = getISOWeekNumber(weekStartDateObj);
 
       const reflectionResponses = this.buildReflectionResponses({
         wins,
@@ -74,14 +78,24 @@ export class ReflectionFlowManager {
 
       const existingWeek = await this.notion.getWeekByUserAndStartDate(user.id, weekStartDate);
 
+      console.log('🔍 Reflection Save:', {
+        userId: user.id,
+        discordId: user.discordId,
+        weekStartDate,
+        existingWeek: existingWeek ? existingWeek.id : 'new',
+        reflectionCompleted: true,
+        reflectionDate
+      });
+
       if (existingWeek) {
         await this.notion.updateWeekReflection(existingWeek.id, {
           reflectionResponses,
           reflectionCompleted: true,
           reflectionDate
         });
+        console.log('✅ Updated existing week reflection:', existingWeek.id);
       } else {
-        await this.notion.createWeek({
+        const newWeek = await this.notion.createWeek({
           userId: user.id,
           discordId: user.discordId,
           weekNum: weekNumber,
@@ -92,6 +106,7 @@ export class ReflectionFlowManager {
           reflectionCompleted: true,
           reflectionDate
         });
+        console.log('✅ Created new week with reflection:', newWeek.id);
       }
 
       const actionLabel = existingWeek ? 'Updated' : 'Saved';
@@ -203,15 +218,4 @@ export class ReflectionFlowManager {
     return datePart || null;
   }
 
-  private getISOWeekNumber(date: Date): number {
-    const target = new Date(date.valueOf());
-    const dayNr = (date.getDay() + 6) % 7;
-    target.setDate(target.getDate() - dayNr + 3);
-    const firstThursday = target.valueOf();
-    target.setMonth(0, 1);
-    if (target.getDay() !== 4) {
-      target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
-    }
-    return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
-  }
 }

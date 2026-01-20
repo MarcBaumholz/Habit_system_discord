@@ -1,4 +1,21 @@
 services:
+  habit-tools-website:
+    build:
+      context: ./habit-tools-website
+      dockerfile: Dockerfile
+    image: habit-tools-website:latest
+    container_name: habit-tools-website
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    networks:
+      - habit-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   habit-discord-bot:
     build:
       context: .
@@ -147,6 +164,25 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # Optional: Ngrok for public URL. Start with: docker compose --profile ngrok up -d
+  # Requires NGROK_AUTHTOKEN in .env. Free plan: URL changes each start – then update WEBSITE_URL and restart habit-discord-bot.
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: habit-ngrok
+    restart: unless-stopped
+    profiles:
+      - ngrok
+    command: ["http", "habit-tools-website:3000"]
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+      - NGROK_DOMAIN=${NGROK_DOMAIN:-}
+    depends_on:
+      - habit-tools-website
+    ports:
+      - "4040:4040"   # Local API to read public URL: curl -s http://localhost:4040/api/tunnels
+    networks:
+      - habit-network
 
 networks:
   habit-network:

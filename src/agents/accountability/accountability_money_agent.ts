@@ -31,6 +31,7 @@ import {
   AdaptiveGoalRecommendation
 } from '../../types';
 import { getCurrentBatch, filterHabitsByCurrentBatch, isBatchActive } from '../../utils/batch-manager';
+import { ensurePoolResetWeekStart } from '../../utils/pool-reset-manager';
 
 export class AccountabilityMoneyAgent extends BaseAgent {
   private perplexityClient: PerplexityClient;
@@ -132,7 +133,9 @@ export class AccountabilityMoneyAgent extends BaseAgent {
 
     this.log('info', `Generating report for batch: ${batch.name}`);
 
-    const { weekStart, weekEnd } = this.getCurrentWeekRange();
+    const weekWindow = this.getCurrentWeekWindow();
+    const weekStart = weekWindow.weekStartDate;
+    const weekEnd = weekWindow.weekEndDate;
     this.log('info', `Week range: ${weekStart} to ${weekEnd}`);
 
     // Step 1: Get active users in current batch
@@ -145,7 +148,13 @@ export class AccountabilityMoneyAgent extends BaseAgent {
 
     for (const user of allUsers) {
       try {
-        const compliance = await this.calculateUserCompliance(user, weekStart, weekEnd);
+        const compliance = await this.calculateUserCompliance(
+          user,
+          weekStart,
+          weekEnd,
+          weekWindow.weekStartIso,
+          weekWindow.weekEndIso
+        );
         if (compliance && compliance.habits.length > 0) {
           userCompliance.push(compliance);
         }
@@ -162,9 +171,13 @@ export class AccountabilityMoneyAgent extends BaseAgent {
     // Step 4: Save charges to Price Pool
     await this.saveChargesToPricePool(userCompliance, weekStart);
 
-    // Step 5: Get total pool balance for current batch
+    // Step 5: Get pool balance since the last reset (reset happens once when the code first runs)
     const currentBatch = getCurrentBatch();
-    const totalPoolBalance = await this.notionClient.getTotalPricePool(currentBatch?.name);
+    const poolResetWeekStart = ensurePoolResetWeekStart(weekStart);
+    this.log('info', 'Pool reset baseline', { poolResetWeekStart });
+    const totalPoolBalance = await this.notionClient.getTotalPricePool(currentBatch?.name, {
+      sinceWeekStart: poolResetWeekStart
+    });
 
     // Step 6: Calculate total weekly charges
     const totalWeeklyCharges = userCompliance.reduce((sum, user) => sum + user.totalCharge, 0);
@@ -218,7 +231,9 @@ export class AccountabilityMoneyAgent extends BaseAgent {
    * Create empty report when no batch is active
    */
   private createEmptyReport(): WeeklyAccountabilityReport {
-    const { weekStart, weekEnd } = this.getCurrentWeekRange();
+    const weekWindow = this.getCurrentWeekWindow();
+    const weekStart = weekWindow.weekStartDate;
+    const weekEnd = weekWindow.weekEndDate;
 
     return {
       weekStart,
@@ -256,7 +271,9 @@ export class AccountabilityMoneyAgent extends BaseAgent {
   private async calculateUserCompliance(
     user: User,
     weekStart: string,
-    weekEnd: string
+    weekEnd: string,
+    weekStartIso: string,
+    weekEndIso: string
   ): Promise<UserCompliance | null> {
     try {
       // Get user's habits and filter by current batch
@@ -272,18 +289,24 @@ export class AccountabilityMoneyAgent extends BaseAgent {
 
       // Process each habit
       for (const habit of habits) {
-        // Get proofs for this habit in the week range
+        // Get proofs for this habit in the week range.
+        // Note: All proofs are counted (isMinimalDose and isCheatDay are not excluded). If
+        // isCheatDay should not count toward the target, or isMinimalDose should count as
+        // partial, that logic would need to be added here.
         const proofs = await this.notionClient.getProofsByHabitAndDateRange(
           habit.id,
-          weekStart,
-          weekEnd
+          weekStartIso,
+          weekEndIso
         );
 
         const targetFrequency = habit.frequency; // Expected times per week
         const actualProofs = proofs.length;
         const missedCount = Math.max(0, targetFrequency - actualProofs);
         const charge = missedCount * this.CHARGE_PER_MISS;
-        const completionRate = targetFrequency > 0 ? (actualProofs / targetFrequency) * 100 : 100;
+        const completionRate =
+          targetFrequency > 0
+            ? Math.min(100, (actualProofs / targetFrequency) * 100)
+            : 100;
 
         habitCompliance.push({
           habitId: habit.id,
@@ -662,7 +685,8 @@ export class AccountabilityMoneyAgent extends BaseAgent {
       }
       seenPairs.add(pairKey);
 
-      const combinedCompletionRate = userComplianceData.overallCompletionRate + buddyComplianceData.overallCompletionRate;
+      const combinedCompletionRate =
+        (userComplianceData.overallCompletionRate + buddyComplianceData.overallCompletionRate) / 2;
       const bothOnTrack = userComplianceData.overallCompletionRate >= 80 && buddyComplianceData.overallCompletionRate >= 80;
       const bothStruggling = userComplianceData.overallCompletionRate < 60 && buddyComplianceData.overallCompletionRate < 60;
 
@@ -853,20 +877,32 @@ ${analysis.recommendations.map((rec, index) => `${index + 1}. ${rec}`).join('\n'
   /**
    * Get current week range (Monday to Sunday)
    */
-  private getCurrentWeekRange(): { weekStart: string; weekEnd: string } {
+  private getCurrentWeekWindow(): {
+    weekStartDate: string;
+    weekEndDate: string;
+    weekStartIso: string;
+    weekEndIso: string;
+  } {
     const today = new Date();
     const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ...
     const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
 
     const monday = new Date(today);
     monday.setDate(today.getDate() + daysToMonday);
+    monday.setHours(2, 0, 0, 0);
 
-    const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 6);
+    const nextMonday = new Date(monday);
+    nextMonday.setDate(monday.getDate() + 7);
+    nextMonday.setHours(2, 0, 0, 0);
+
+    const sunday = new Date(nextMonday);
+    sunday.setDate(nextMonday.getDate() - 1);
 
     return {
-      weekStart: monday.toISOString().split('T')[0],
-      weekEnd: sunday.toISOString().split('T')[0]
+      weekStartDate: monday.toISOString().split('T')[0],
+      weekEndDate: sunday.toISOString().split('T')[0],
+      weekStartIso: monday.toISOString(),
+      weekEndIso: new Date(nextMonday.getTime() - 1).toISOString()
     };
   }
 

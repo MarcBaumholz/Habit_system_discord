@@ -104,19 +104,19 @@ sleep 5
 # Check container status
 print_status "Checking container status..."
 if docker compose ps | grep -q "Up"; then
-    print_success "Container is running"
+    print_success "Containers are running (habit-discord-bot, crewai-agent, habit-tools-website)"
 
     # Show container logs
-    print_status "Container logs (last 20 lines):"
+    print_status "Bot logs (last 20 lines):"
     echo "----------------------------------------"
     docker compose logs --tail 20 habit-discord-bot
     echo "----------------------------------------"
 
     print_status "Useful commands:"
     print_status "  • View live logs: docker compose logs -f habit-discord-bot"
-    print_status "  • Stop container: docker compose stop"
-    print_status "  • Restart container: docker compose restart"
-    print_status "  • View status: docker compose ps"
+    print_status "  • Tools website: http://localhost:3000 (habit-tools-website)"
+    print_status "  • Public URL (Ngrok): docker compose --profile ngrok up -d (see docs/TOOLS_WEBSITE_UND_NGROK.md)"
+    print_status "  • Stop: docker compose stop  |  Restart: docker compose restart  |  Status: docker compose ps"
 
 else
     print_error "Container failed to start"

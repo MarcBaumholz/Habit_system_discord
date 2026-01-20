@@ -1,5 +1,8 @@
 import { Client } from '@notionhq/client';
+import { formatLocalDate } from '../utils/date-utils';
 import { User, Habit, Proof, Learning, Hurdle, Week, Group, UserProfile, PricePoolEntry, ChallengeProof, BuddyProgressData } from '../types';
+import { WEEKS_DB_PROPERTIES } from './property-names';
+import { getTitle, getCheckbox, getDate, getRichText, getNumber, getRelation } from './property-helpers';
 
 export class NotionClient {
   private client: Client;
@@ -307,25 +310,25 @@ export class NotionClient {
       console.log('🔍 Creating week in Notion with data:', week);
       
       const properties: any = {
-        'User': { relation: [{ id: week.userId }] },
-        'Week Num': { number: week.weekNum },
-        'Start Date': { date: { start: week.startDate } },
-        'Summary': { rich_text: week.summary ? [{ text: { content: week.summary } }] : [] },
-        'Score': { number: week.score || 0 }
+        [WEEKS_DB_PROPERTIES.USER]: { relation: [{ id: week.userId }] },
+        [WEEKS_DB_PROPERTIES.WEEK_NUM]: { number: week.weekNum },
+        [WEEKS_DB_PROPERTIES.START_DATE]: { date: { start: week.startDate } },
+        [WEEKS_DB_PROPERTIES.SUMMARY]: { rich_text: week.summary ? [{ text: { content: week.summary } }] : [] },
+        [WEEKS_DB_PROPERTIES.SCORE]: { number: week.score || 0 }
       };
 
-      // Add Discord ID field (it's the title property in this database)
+      // Add optional fields
       if (week.discordId) {
-        properties['Discord ID'] = { title: [{ text: { content: week.discordId } }] };
+        properties[WEEKS_DB_PROPERTIES.DISCORD_ID] = { title: [{ text: { content: week.discordId } }] };
       }
       if (week.reflectionResponses) {
-        properties['Reflection Responses'] = { rich_text: [{ text: { content: week.reflectionResponses } }] };
+        properties[WEEKS_DB_PROPERTIES.REFLECTION_RESPONSES] = { rich_text: [{ text: { content: week.reflectionResponses } }] };
       }
       if (typeof week.reflectionCompleted === 'boolean') {
-        properties['Reflection Completed'] = { checkbox: week.reflectionCompleted };
+        properties[WEEKS_DB_PROPERTIES.REFLECTION_COMPLETED] = { checkbox: week.reflectionCompleted };
       }
       if (week.reflectionDate) {
-        properties['Reflection Date'] = { date: { start: week.reflectionDate } };
+        properties[WEEKS_DB_PROPERTIES.REFLECTION_DATE] = { date: { start: week.reflectionDate } };
       }
 
       const response = await this.client.pages.create({
@@ -374,17 +377,18 @@ export class NotionClient {
 
       const page: any = response.results[0];
       const props = page.properties;
+      
       return {
         id: page.id,
-        userId: props['User']?.relation?.[0]?.id || userId,
-        discordId: props['Discord ID']?.title?.[0]?.text?.content,
-        weekNum: props['Week Num']?.number || 0,
-        startDate: props['Start Date']?.date?.start || startDate,
-        summary: props['Summary']?.rich_text?.[0]?.text?.content,
-        score: props['Score']?.number || 0,
-        reflectionResponses: props['Reflection Responses']?.rich_text?.[0]?.text?.content,
-        reflectionCompleted: props['Reflection Completed']?.checkbox,
-        reflectionDate: props['Reflection Date']?.date?.start
+        userId: getRelation(props[WEEKS_DB_PROPERTIES.USER]) || userId,
+        discordId: getTitle(props[WEEKS_DB_PROPERTIES.DISCORD_ID]),
+        weekNum: getNumber(props[WEEKS_DB_PROPERTIES.WEEK_NUM]) || 0,
+        startDate: getDate(props[WEEKS_DB_PROPERTIES.START_DATE]) || startDate,
+        summary: getRichText(props[WEEKS_DB_PROPERTIES.SUMMARY]),
+        score: getNumber(props[WEEKS_DB_PROPERTIES.SCORE]) || 0,
+        reflectionResponses: getRichText(props[WEEKS_DB_PROPERTIES.REFLECTION_RESPONSES]),
+        reflectionCompleted: getCheckbox(props[WEEKS_DB_PROPERTIES.REFLECTION_COMPLETED]),
+        reflectionDate: getDate(props[WEEKS_DB_PROPERTIES.REFLECTION_DATE])
       };
     } catch (error) {
       console.error('Error getting week by user and start date:', error);
@@ -398,18 +402,31 @@ export class NotionClient {
     reflectionDate: string;
   }): Promise<void> {
     try {
+      console.log('🔍 Updating week reflection in Notion:', {
+        weekId,
+        reflectionCompleted: data.reflectionCompleted,
+        reflectionDate: data.reflectionDate,
+        reflectionResponsesLength: data.reflectionResponses.length
+      });
+
       const properties: any = {
-        'Reflection Responses': { rich_text: [{ text: { content: data.reflectionResponses } }] },
-        'Reflection Completed': { checkbox: data.reflectionCompleted },
-        'Reflection Date': { date: { start: data.reflectionDate } }
+        [WEEKS_DB_PROPERTIES.REFLECTION_RESPONSES]: { rich_text: [{ text: { content: data.reflectionResponses } }] },
+        [WEEKS_DB_PROPERTIES.REFLECTION_COMPLETED]: { checkbox: data.reflectionCompleted },
+        [WEEKS_DB_PROPERTIES.REFLECTION_DATE]: { date: { start: data.reflectionDate } }
       };
 
       await this.client.pages.update({
         page_id: weekId,
         properties
       });
+
+      console.log('✅ Successfully updated week reflection in Notion:', weekId);
     } catch (error) {
-      console.error('Error updating week reflection:', error);
+      console.error('❌ Error updating week reflection:', error);
+      if (error instanceof Error) {
+        console.error('   Error message:', error.message);
+        console.error('   Error stack:', error.stack);
+      }
       throw error;
     }
   }
@@ -840,8 +857,8 @@ export class NotionClient {
       const habits = await this.getHabitsByUserId(buddyUser.id);
       
       // Get buddy's proofs for the week
-      const weekStartStr = weekStart.toISOString().split('T')[0];
-      const weekEndStr = weekEnd.toISOString().split('T')[0];
+      const weekStartStr = formatLocalDate(weekStart);
+      const weekEndStr = formatLocalDate(weekEnd);
       const proofs = await this.getProofsByUserId(buddyUser.id, weekStartStr, weekEndStr);
       
       // Calculate completion rate
@@ -1066,8 +1083,8 @@ export class NotionClient {
       const weekEndDate = new Date(weekStartDate);
       weekEndDate.setDate(weekStartDate.getDate() + 6);
       
-      const startDateStr = weekStartDate.toISOString().split('T')[0];
-      const endDateStr = weekEndDate.toISOString().split('T')[0];
+      const startDateStr = formatLocalDate(weekStartDate);
+      const endDateStr = formatLocalDate(weekEndDate);
       
       console.log(`📊 Calculating summary for user ${userId} from ${startDateStr} to ${endDateStr}`);
       
@@ -1238,8 +1255,8 @@ export class NotionClient {
       weekEnd.setDate(weekStart.getDate() + 6);
       weekEnd.setHours(23, 59, 59, 999);
 
-      const startDateStr = weekStart.toISOString().split('T')[0];
-      const endDateStr = weekEnd.toISOString().split('T')[0];
+      const startDateStr = formatLocalDate(weekStart);
+      const endDateStr = formatLocalDate(weekEnd);
 
       console.log(`📊 Getting weekly frequency for habit ${habitId} from ${startDateStr} to ${endDateStr}`);
 
@@ -1750,23 +1767,28 @@ export class NotionClient {
   }
 
   /**
-   * Get total price pool balance (sum of all charges)
+   * Get total price pool balance (sum of charges).
    * @param batch - Optional batch name to filter by (e.g., "january 2026")
+   * @param options.forWeekStart - When set, only sum entries for that week (exact Monday YYYY-MM-DD).
+   * @param options.sinceWeekStart - When set, sum entries whose Week date is on or after this Monday (used for the post-reset baseline).
    */
-  async getTotalPricePool(batch?: string): Promise<number> {
+  async getTotalPricePool(batch?: string, options?: { forWeekStart?: string; sinceWeekStart?: string }): Promise<number> {
     try {
       const query: any = {
         database_id: this.databases.pricePool
       };
 
-      // Add batch filter if provided
+      const filters: object[] = [];
       if (batch) {
-        query.filter = {
-          property: 'Batch',
-          rich_text: {
-            equals: batch
-          }
-        };
+        filters.push({ property: 'Batch', rich_text: { equals: batch } });
+      }
+      if (options?.forWeekStart) {
+        filters.push({ property: 'Week date', date: { equals: options.forWeekStart } });
+      } else if (options?.sinceWeekStart) {
+        filters.push({ property: 'Week date', date: { on_or_after: options.sinceWeekStart } });
+      }
+      if (filters.length > 0) {
+        query.filter = filters.length === 1 ? filters[0] : { and: filters };
       }
 
       const response = await this.client.databases.query(query);
@@ -1921,15 +1943,15 @@ export class NotionClient {
         const props = page.properties;
         return {
           id: page.id,
-          userId: props['User']?.relation?.[0]?.id || '',
-          discordId: props['Discord ID']?.title?.[0]?.text?.content,
-          weekNum: props['Week Num']?.number || 0,
-          startDate: props['Start Date']?.date?.start || '',
-          summary: props['Summary']?.rich_text?.[0]?.text?.content,
-          score: props['Score']?.number || 0,
-          reflectionResponses: props['Reflection Responses']?.rich_text?.[0]?.text?.content,
-          reflectionCompleted: props['Reflection Completed']?.checkbox,
-          reflectionDate: props['Reflection Date']?.date?.start
+          userId: getRelation(props[WEEKS_DB_PROPERTIES.USER]) || '',
+          discordId: getTitle(props[WEEKS_DB_PROPERTIES.DISCORD_ID]),
+          weekNum: getNumber(props[WEEKS_DB_PROPERTIES.WEEK_NUM]) || 0,
+          startDate: getDate(props[WEEKS_DB_PROPERTIES.START_DATE]) || '',
+          summary: getRichText(props[WEEKS_DB_PROPERTIES.SUMMARY]),
+          score: getNumber(props[WEEKS_DB_PROPERTIES.SCORE]) || 0,
+          reflectionResponses: getRichText(props[WEEKS_DB_PROPERTIES.REFLECTION_RESPONSES]),
+          reflectionCompleted: getCheckbox(props[WEEKS_DB_PROPERTIES.REFLECTION_COMPLETED]),
+          reflectionDate: getDate(props[WEEKS_DB_PROPERTIES.REFLECTION_DATE])
         };
       });
     } catch (error) {

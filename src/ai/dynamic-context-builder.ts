@@ -3,6 +3,13 @@ import { ProfileStorage } from './profile-storage';
 import { QueryClassifier, QueryIntent, QueryClassification } from './query-classifier';
 import { ContextCompressor } from './context-compressor';
 import { Habit, Proof } from '../types';
+import { formatLocalDate } from '../utils/date-utils';
+import {
+  filterHabitsByCurrentBatch,
+  getCurrentBatch,
+  getCurrentBatchDay,
+  getCurrentBatchWeek
+} from '../utils/batch-manager';
 
 export interface DynamicContext {
   context: string;
@@ -57,29 +64,55 @@ export class DynamicContextBuilder {
         context = await this.buildHabitAnalysisContext(
           profileContent,
           userId,
+          discordId,
           classification.mentionedHabits
         );
         break;
 
       case 'progress_check':
-        context = await this.buildProgressCheckContext(profileContent, userId, classification.mentionedHabits);
+        context = await this.buildProgressCheckContext(
+          profileContent,
+          userId,
+          discordId,
+          classification.mentionedHabits
+        );
         break;
 
       case 'personality_advice':
-        context = await this.buildPersonalityAdviceContext(profileContent, userId, classification.mentionedHabits);
+        context = await this.buildPersonalityAdviceContext(
+          profileContent,
+          userId,
+          discordId,
+          classification.mentionedHabits
+        );
         break;
 
       case 'hurdle_help':
-        context = await this.buildHurdleHelpContext(profileContent, userId, classification.mentionedHabits);
+        context = await this.buildHurdleHelpContext(
+          profileContent,
+          userId,
+          discordId,
+          classification.mentionedHabits
+        );
         break;
 
       case 'learning_insight':
-        context = await this.buildLearningInsightContext(profileContent, userId, classification.mentionedHabits);
+        context = await this.buildLearningInsightContext(
+          profileContent,
+          userId,
+          discordId,
+          classification.mentionedHabits
+        );
         break;
 
       case 'general':
       default:
-        context = await this.buildGeneralContext(profileContent, userId, classification.mentionedHabits);
+        context = await this.buildGeneralContext(
+          profileContent,
+          userId,
+          discordId,
+          classification.mentionedHabits
+        );
         break;
     }
 
@@ -105,6 +138,7 @@ export class DynamicContextBuilder {
   private async buildHabitAnalysisContext(
     profileContent: string,
     userId: string,
+    discordId: string,
     mentionedHabits?: string[]
   ): Promise<string> {
     const lines: string[] = [];
@@ -155,6 +189,8 @@ export class DynamicContextBuilder {
     lines.push('\n## Habit Keywords (Notion)');
     lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
 
+    await this.appendLiveInsights(lines, userId, discordId, mentionedHabits);
+
     return lines.join('\n');
   }
 
@@ -164,6 +200,7 @@ export class DynamicContextBuilder {
   private async buildProgressCheckContext(
     profileContent: string,
     userId: string,
+    discordId: string,
     mentionedHabits?: string[]
   ): Promise<string> {
     const lines: string[] = [];
@@ -190,6 +227,8 @@ export class DynamicContextBuilder {
     lines.push('\n## Habit Keywords (Notion)');
     lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
 
+    await this.appendLiveInsights(lines, userId, discordId, mentionedHabits);
+
     return lines.join('\n');
   }
 
@@ -199,6 +238,7 @@ export class DynamicContextBuilder {
   private async buildPersonalityAdviceContext(
     profileContent: string,
     userId: string,
+    discordId: string,
     mentionedHabits?: string[]
   ): Promise<string> {
     const lines: string[] = [];
@@ -223,6 +263,8 @@ export class DynamicContextBuilder {
     lines.push('\n## Habit Keywords (Notion)');
     lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
 
+    await this.appendLiveInsights(lines, userId, discordId, mentionedHabits);
+
     return lines.join('\n');
   }
 
@@ -232,6 +274,7 @@ export class DynamicContextBuilder {
   private async buildHurdleHelpContext(
     profileContent: string,
     userId: string,
+    discordId: string,
     mentionedHabits?: string[]
   ): Promise<string> {
     const lines: string[] = [];
@@ -263,6 +306,8 @@ export class DynamicContextBuilder {
     lines.push('\n## Habit Keywords (Notion)');
     lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
 
+    await this.appendLiveInsights(lines, userId, discordId, mentionedHabits);
+
     return lines.join('\n');
   }
 
@@ -272,6 +317,7 @@ export class DynamicContextBuilder {
   private async buildLearningInsightContext(
     profileContent: string,
     userId: string,
+    discordId: string,
     mentionedHabits?: string[]
   ): Promise<string> {
     const lines: string[] = [];
@@ -303,6 +349,8 @@ export class DynamicContextBuilder {
     lines.push('\n## Habit Keywords (Notion)');
     lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
 
+    await this.appendLiveInsights(lines, userId, discordId, mentionedHabits);
+
     return lines.join('\n');
   }
 
@@ -312,6 +360,7 @@ export class DynamicContextBuilder {
   private async buildGeneralContext(
     profileContent: string,
     userId: string,
+    discordId: string,
     mentionedHabits?: string[]
   ): Promise<string> {
     const lines: string[] = [];
@@ -339,6 +388,8 @@ export class DynamicContextBuilder {
     const proofs = await this.getCurrentWeekProofs(userId);
     lines.push('\n## Habit Keywords (Notion)');
     lines.push(this.buildHabitKeywordBlock(habits, proofs, mentionedHabits));
+
+    await this.appendLiveInsights(lines, userId, discordId, mentionedHabits);
 
     return lines.join('\n');
   }
@@ -375,27 +426,7 @@ export class DynamicContextBuilder {
    * Get current week proofs (Monday-Sunday)
    */
   private async getCurrentWeekProofs(userId: string): Promise<Proof[]> {
-    try {
-      const now = new Date();
-      const dayOfWeek = now.getDay();
-      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      
-      const monday = new Date(now);
-      monday.setDate(now.getDate() - daysToMonday);
-      monday.setHours(0, 0, 0, 0);
-      
-      const sunday = new Date(monday);
-      sunday.setDate(monday.getDate() + 6);
-      sunday.setHours(23, 59, 59, 999);
-      
-      const startDate = monday.toISOString().split('T')[0];
-      const endDate = sunday.toISOString().split('T')[0];
-      
-      return await this.notion.getProofsByUserId(userId, startDate, endDate);
-    } catch (error) {
-      console.error('Error getting current week proofs:', error);
-      return [];
-    }
+    return await this.getProofsByWeek(userId, 0);
   }
 
   private buildSummaryKeywordBlock(summary: {
@@ -467,6 +498,141 @@ export class DynamicContextBuilder {
 
       return `- ${parts.join(' | ')}`;
     }).join('\n');
+  }
+
+  private async appendLiveInsights(
+    lines: string[],
+    userId: string,
+    discordId: string,
+    mentionedHabits?: string[]
+  ): Promise<void> {
+    lines.push('\n## Live Batch Snapshot');
+    lines.push(this.buildBatchSnapshot());
+
+    lines.push('\n## Habit Performance Digest');
+    lines.push(await this.buildHabitPerformanceDigest(userId, mentionedHabits));
+
+    lines.push('\n## Buddy Snapshot');
+    lines.push(await this.buildBuddySnapshot(discordId));
+  }
+
+  private buildBatchSnapshot(): string {
+    const batch = getCurrentBatch();
+    if (!batch) {
+      return 'Keine aktive Batch gefunden.';
+    }
+
+    const day = getCurrentBatchDay();
+    const week = getCurrentBatchWeek();
+
+    return `Batch: ${batch.name} (${batch.status})\nTag: ${day ?? 'unbekannt'}/90 | Woche: ${week ?? 'unbekannt'}\nStart: ${batch.startDate}`;
+  }
+
+  private async buildHabitPerformanceDigest(userId: string, mentionedHabits?: string[]): Promise<string> {
+    const habits = await this.notion.getHabitsByUserId(userId);
+    const batchHabits = filterHabitsByCurrentBatch(habits);
+
+    if (batchHabits.length === 0) {
+      return 'Keine Habits für die aktive Batch gefunden.';
+    }
+
+    const [currentProofs, lastProofs] = await Promise.all([
+      this.getProofsByWeek(userId, 0),
+      this.getProofsByWeek(userId, -1)
+    ]);
+
+    const lines = batchHabits.slice(0, Math.min(5, batchHabits.length)).map(habit => {
+      const targetFrequency = habit.frequency || 1;
+      const current = currentProofs.filter(p => p.habitId === habit.id).length;
+      const last = lastProofs.filter(p => p.habitId === habit.id).length;
+      const currentPercent = Math.round((current / targetFrequency) * 100);
+      const lastPercent = Math.round((last / targetFrequency) * 100);
+      const diff = currentPercent - lastPercent;
+      const trendSymbol = diff > 0 ? '↑' : diff < 0 ? '↓' : '→';
+
+      const mentioned = mentionedHabits?.some(m =>
+        m && habit.name.toLowerCase().includes(m.toLowerCase())
+      );
+
+      const nameLabel = mentioned ? `**${habit.name}**` : habit.name;
+
+      return `• ${nameLabel}: ${current}/${targetFrequency} Proofs (${currentPercent}%) vs ${last}/${targetFrequency} (${lastPercent}%) ${trendSymbol} (Δ${diff >= 0 ? '+' : ''}${diff}%)`;
+    });
+
+    return lines.length > 0 ? lines.join('\n') : 'Keine Habit-Daten verfügbar.';
+  }
+
+  private async buildBuddySnapshot(discordId: string): Promise<string> {
+    const user = await this.notion.getUserByDiscordId(discordId);
+    if (!user) {
+      return 'Keine Nutzerdaten gefunden.';
+    }
+
+    if (!user.buddy) {
+      return 'Kein Buddy zugewiesen.';
+    }
+
+    const buddyUser = await this.notion.getUserByNickname(user.buddy);
+    if (!buddyUser) {
+      return `Buddy "${user.buddy}" konnte nicht gefunden werden.`;
+    }
+
+    const habits = await this.notion.getHabitsByUserId(buddyUser.id);
+    const batchHabits = filterHabitsByCurrentBatch(habits);
+    const proofs = await this.getProofsByWeek(buddyUser.id, 0);
+
+    const totalTarget = batchHabits.reduce((sum, habit) => sum + (habit.frequency || 0), 0);
+    const completionRate = totalTarget > 0 ? Math.round((proofs.length / totalTarget) * 100) : 0;
+
+    const habitLines = batchHabits.slice(0, 3).map(habit => {
+      const targetFrequency = habit.frequency || 1;
+      const habitProofs = proofs.filter(p => p.habitId === habit.id);
+      return `• ${habit.name}: ${habitProofs.length}/${targetFrequency} Proofs`;
+    });
+
+    const summaryLines = [`Buddy: ${buddyUser.name} (${completionRate}% von ${totalTarget} Proofs)`];
+
+    if (habitLines.length > 0) {
+      summaryLines.push('Top-Batch-Habits:');
+      summaryLines.push(...habitLines);
+    }
+
+    return summaryLines.join('\n');
+  }
+
+  private async getProofsByWeek(userId: string, weekOffset: number): Promise<Proof[]> {
+    const range = this.getWeekRange(weekOffset);
+    try {
+      return await this.notion.getProofsByUserId(userId, range.startDate, range.endDate);
+    } catch (error) {
+      console.error(`Error getting proofs for ${range.label}:`, error);
+      return [];
+    }
+  }
+
+  private getWeekRange(weekOffset: number): { startDate: string; endDate: string; label: string } {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - daysToMonday + 7 * weekOffset);
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    const label = weekOffset === 0
+      ? 'Aktuelle Woche'
+      : weekOffset === -1
+        ? 'Letzte Woche'
+        : `Woche ${weekOffset > 0 ? `+${weekOffset}` : weekOffset}`;
+
+    return {
+      startDate: formatLocalDate(monday),
+      endDate: formatLocalDate(sunday),
+      label
+    };
   }
 
   private selectRelevantHabits(habits: Habit[], mentionedHabits?: string[]): Habit[] {

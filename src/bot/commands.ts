@@ -11,6 +11,7 @@ import {
   isBatchActive,
   getDaysUntilBatchStart
 } from '../utils/batch-manager';
+import { formatLocalDate } from '../utils/date-utils';
 
 interface FirstModalData {
   personalityType?: string;
@@ -809,7 +810,7 @@ Use \`/proof\` daily to maintain your momentum!`
       }
 
       const weekInfo = this.notion.getCurrentWeekInfo();
-      const weekStartDate = weekInfo.weekStart.toISOString().split('T')[0];
+      const weekStartDate = formatLocalDate(weekInfo.weekStart);
       const existingWeek = await this.notion.getWeekByUserAndStartDate(user.id, weekStartDate);
 
       if (existingWeek?.reflectionCompleted) {
@@ -856,7 +857,7 @@ Use \`/proof\` daily to maintain your momentum!`
     const currentYear = new Date().getFullYear();
     const jan1 = new Date(currentYear, 0, 1);
     const weekStart = new Date(jan1.getTime() + (weekNumber - 1) * 7 * 24 * 60 * 60 * 1000);
-    return weekStart.toISOString().split('T')[0];
+    return formatLocalDate(weekStart);
   }
 
   async handleLearning(interaction: CommandInteraction) {

@@ -408,17 +408,17 @@ export class DailyMessageScheduler {
       timezone: timezone
     });
 
-    // Schedule AI Incentive analysis for Sunday 8 AM (0 8 * * 0)
-    const aiIncentiveTask = cron.schedule('0 8 * * 0', async () => {
+    // Schedule AI Incentive analysis for Sunday 8 PM (0 20 * * 0)
+    const aiIncentiveTask = cron.schedule('0 20 * * 0', async () => {
       try {
-        console.log('🧠 AI Incentive scheduler triggered on Sunday at 8 AM...');
+        console.log('🧠 AI Incentive scheduler triggered on Sunday at 8 PM...');
         
         await this.logger.info(
           'AI_INCENTIVE',
           'AI Incentive Task Triggered',
-          'Weekly AI incentive analysis triggered by cron on Sunday at 8 AM',
+          'Weekly AI incentive analysis triggered by cron on Sunday at 8 PM',
           {
-            cronExpression: '0 8 * * 0',
+            cronExpression: '0 20 * * 0',
             timezone: timezone,
             triggerTime: new Date().toISOString()
           }
@@ -435,7 +435,7 @@ export class DailyMessageScheduler {
           error as Error,
           'AI Incentive Scheduler Error',
           {
-            cronExpression: '0 8 * * 0',
+            cronExpression: '0 20 * * 0',
             timezone: timezone
           }
         );
@@ -446,7 +446,7 @@ export class DailyMessageScheduler {
     });
 
     console.log(`📅 Daily message scheduler started (6 AM daily, timezone: ${timezone})`);
-    console.log(`🧠 AI Incentive scheduler started (Sunday 8 AM, timezone: ${timezone})`);
+    console.log(`🧠 AI Incentive scheduler started (Sunday 8 PM, timezone: ${timezone})`);
     
     const batch = getCurrentBatch();
     this.logger.success(
@@ -455,7 +455,7 @@ export class DailyMessageScheduler {
       'Daily message scheduler and AI incentive scheduler started successfully',
       {
         dailyCron: '0 6 * * *',
-        aiIncentiveCron: '0 8 * * 0',
+        aiIncentiveCron: '0 20 * * 0',
         timezone: timezone,
         accountabilityChannelId: this.accountabilityChannelId,
         activeBatch: batch ? batch.name : 'None',

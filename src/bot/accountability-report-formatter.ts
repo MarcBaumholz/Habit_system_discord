@@ -183,7 +183,7 @@ export class AccountabilityReportFormatter {
 
     const summaryText = [
       `This week's charges: **€${report.poolSummary.weeklyCharges.toFixed(2)}**`,
-      `Total pool balance: **€${report.poolSummary.poolBalance.toFixed(2)}**`
+      `Pool balance (since reset): **€${report.poolSummary.poolBalance.toFixed(2)}**`
     ].join('\n');
 
     embed.addFields([
@@ -293,6 +293,7 @@ export class AccountabilityReportFormatter {
   private formatBuddyPerformance(pairs: BuddyPerformancePair[], unpairedCount: number): string {
     if (pairs.length === 0 && unpairedCount === 0) return '';
 
+    // Buddy % = sum of both buddies' overall completion rates; max 200% when both at 100%
     const pairLines = pairs.map(pair => {
       const status = pair.status === 'both_on_track'
         ? 'both on track'
@@ -304,6 +305,9 @@ export class AccountabilityReportFormatter {
 
     if (unpairedCount > 0) {
       pairLines.push(`• ${unpairedCount} users without buddy pairs`);
+    }
+    if (pairs.length > 0) {
+      pairLines.push('*Average of both buddies\' overall %; max 100% when both reach 100%.*');
     }
 
     return pairLines.join('\n').substring(0, 1024);
@@ -391,7 +395,7 @@ export class AccountabilityReportFormatter {
     lines.push('💰 PRICE POOL SUMMARY');
     lines.push('─'.repeat(50));
     lines.push(`This week's charges: €${report.poolSummary.weeklyCharges.toFixed(2)}`);
-    lines.push(`Total pool balance: €${report.poolSummary.poolBalance.toFixed(2)}`);
+    lines.push(`Pool balance (since reset): €${report.poolSummary.poolBalance.toFixed(2)}`);
     lines.push(`Pay pool: ${this.PAYPAL_POOL_URL}`);
 
     const paymentRequests = report.userCompliance

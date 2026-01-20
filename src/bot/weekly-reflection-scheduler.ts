@@ -3,6 +3,7 @@ import * as cron from 'node-cron';
 import { NotionClient } from '../notion/client';
 import { DiscordLogger } from './discord-logger';
 import { User } from '../types';
+import { formatLocalDate } from '../utils/date-utils';
 
 export class WeeklyReflectionScheduler {
   private client: Client;
@@ -60,7 +61,7 @@ export class WeeklyReflectionScheduler {
     const users = await this.notion.getAllUsers();
     const activeUsers = users.filter(user => user.status !== 'pause' && user.personalChannelId);
     const weekInfo = this.notion.getCurrentWeekInfo();
-    const weekStartDate = weekInfo.weekStart.toISOString().split('T')[0];
+    const weekStartDate = formatLocalDate(weekInfo.weekStart);
 
     console.log(`📝 Sending weekly reflection prompts to ${activeUsers.length} active users`);
 

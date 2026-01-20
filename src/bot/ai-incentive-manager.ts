@@ -1,9 +1,22 @@
-import { Client, TextChannel, AttachmentBuilder } from 'discord.js';
+import { Client, TextChannel, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { NotionClient } from '../notion/client';
-import { User, Habit, Proof, UserProfile } from '../types';
+import { User, Habit, Proof, UserProfile, Week } from '../types';
 import { DiscordLogger } from './discord-logger';
 import { getCurrentBatch, isBatchActive } from '../utils/batch-manager';
 import { MindmapGenerator } from '../utils/mindmap-generator';
+import { formatLocalDate } from '../utils/date-utils';
+import { PerplexityClient } from '../ai/perplexity-client';
+
+export const EXPLORE_TOOLS_URL = 'https://cf39ca73966a.ngrok-free.app/';
+
+export const buildExploreToolsButtonRow = (): ActionRowBuilder<ButtonBuilder> => {
+  const button = new ButtonBuilder()
+    .setLabel('Explore Tools')
+    .setStyle(ButtonStyle.Link)
+    .setURL(EXPLORE_TOOLS_URL);
+
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+};
 
 // Enhanced habit analysis type for Notion-style weekly report
 interface EnhancedHabitAnalysis {
@@ -44,11 +57,21 @@ export class AIIncentiveManager {
   private client: Client;
   private notion: NotionClient;
   private logger: DiscordLogger;
+  private perplexityClient: PerplexityClient | null;
 
   constructor(client: Client, notion: NotionClient, logger: DiscordLogger) {
     this.client = client;
     this.notion = notion;
     this.logger = logger;
+    
+    // Initialize Perplexity client if available
+    if (PerplexityClient.isAvailable()) {
+      this.perplexityClient = new PerplexityClient(process.env.PERPLEXITY_API_KEY!);
+      console.log('🤖 Perplexity AI enabled for Reflection Analysis');
+    } else {
+      this.perplexityClient = null;
+      console.log('⚠️ PERPLEXITY_API_KEY not found - Reflection Analysis disabled');
+    }
   }
 
   /**
@@ -111,6 +134,38 @@ export class AIIncentiveManager {
   }
 
   /**
+   * Run weekly AI incentive analysis for a single user by nickname (for testing or on-demand).
+   * Sends the report to the user's personal channel (e.g. #klumpenklar-marc).
+   */
+  async runWeeklyAIIncentiveAnalysisForUser(nickname: string): Promise<void> {
+    try {
+      if (!isBatchActive()) {
+        console.log('⏸️ No active batch - skipping AI incentive analysis');
+        return;
+      }
+      const batch = getCurrentBatch();
+      if (!batch) return;
+
+      const user = await this.notion.getUserByNickname(nickname);
+      if (!user) {
+        console.log(`❌ User not found: ${nickname}`);
+        return;
+      }
+
+      await this.analyzeUserWeeklyProgress(user);
+      console.log(`✅ Weekly AI incentive analysis completed for ${user.name} (@${nickname})`);
+    } catch (error) {
+      console.error(`❌ Error in weekly AI incentive analysis for ${nickname}:`, error);
+      await this.logger.error(
+        'AI_INCENTIVE',
+        'Single-User Analysis Failed',
+        `Failed for ${nickname}`,
+        { error: (error as Error).message }
+      );
+    }
+  }
+
+  /**
    * Analyze individual user's weekly progress and send weekly analysis
    */
   private async analyzeUserWeeklyProgress(user: User): Promise<void> {
@@ -143,15 +198,15 @@ export class AIIncentiveManager {
       // Fetch current week proofs
       const currentWeekProofs = await this.notion.getProofsByUserId(
         user.id,
-        weekInfo.weekStart.toISOString().split('T')[0],
-        weekInfo.weekEnd.toISOString().split('T')[0]
+        formatLocalDate(weekInfo.weekStart),
+        formatLocalDate(weekInfo.weekEnd)
       );
 
       // Fetch last week proofs for trend comparison
       const lastWeekProofs = await this.notion.getProofsByUserId(
         user.id,
-        lastWeekInfo.weekStart.toISOString().split('T')[0],
-        lastWeekInfo.weekEnd.toISOString().split('T')[0]
+        formatLocalDate(lastWeekInfo.weekStart),
+        formatLocalDate(lastWeekInfo.weekEnd)
       );
 
       // Fetch all proofs for 90-day calculation and streak analytics
@@ -237,6 +292,11 @@ export class AIIncentiveManager {
 
       // Send message with proper splitting if too long
       await this.sendLongMessage(channel, message);
+
+      await channel.send({
+        content: '🔧 Mehr Werkzeuge entdecken:',
+        components: [buildExploreToolsButtonRow()]
+      });
 
       console.log(`✅ AI incentive sent to user ${user.name}`);
 
@@ -429,6 +489,15 @@ export class AIIncentiveManager {
     message += `## 🚀 Nächste Schritte\n\n`;
     message += `${nextStepsAdvice}\n\n`;
     message += `---\n\n`;
+
+    // === 6. REFLECTION ANALYSIS (OPTIONAL) ===
+    const reflectionAnalysis = await this.generateReflectionAnalysis(user, habitAnalysis, weekInfo);
+    if (reflectionAnalysis) {
+      message += `## 🔍 Reflexionsanalyse\n\n`;
+      message += `${reflectionAnalysis}\n\n`;
+      message += `---\n\n`;
+    }
+
     message += `💬 _Antworte hier, um über deine Gewohnheiten zu sprechen!_`;
 
     return message;
@@ -493,6 +562,126 @@ export class AIIncentiveManager {
     weekEnd.setDate(weekEnd.getDate() - 7);
 
     return { weekStart, weekEnd };
+  }
+
+  /**
+   * Get last week's reflection for a user (if exists)
+   */
+  private async getLastWeekReflection(user: User): Promise<Week | null> {
+    try {
+      const lastWeekInfo = this.getLastWeekInfo();
+      const lastWeekStartDate = formatLocalDate(lastWeekInfo.weekStart);
+      
+      const lastWeek = await this.notion.getWeekByUserAndStartDate(user.id, lastWeekStartDate);
+      
+      if (lastWeek && lastWeek.reflectionCompleted && lastWeek.reflectionResponses) {
+        console.log(`✅ Found reflection for last week (${lastWeekStartDate})`);
+        return lastWeek;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('❌ Error getting last week reflection:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Generate reflection analysis comparing last week's reflection with this week's performance
+   */
+  private async generateReflectionAnalysis(
+    user: User,
+    habitAnalysis: EnhancedHabitAnalysis[],
+    weekInfo: { weekStart: Date; weekEnd: Date }
+  ): Promise<string | null> {
+    // Skip if Perplexity is not available
+    if (!this.perplexityClient) {
+      return null;
+    }
+
+    try {
+      // Get last week's reflection
+      const lastWeekReflection = await this.getLastWeekReflection(user);
+      
+      if (!lastWeekReflection || !lastWeekReflection.reflectionResponses) {
+        console.log('ℹ️ No reflection found for last week - skipping reflection analysis');
+        return null;
+      }
+
+      console.log('🔍 Generating reflection analysis...');
+
+      // Prepare current week performance data
+      const totalCompletion = habitAnalysis.length > 0
+        ? Math.round(habitAnalysis.reduce((sum, h) => sum + h.completionRate, 0) / habitAnalysis.length)
+        : 0;
+
+      const successfulHabits = habitAnalysis.filter(h => h.completionRate >= 80);
+      const needsWorkHabits = habitAnalysis.filter(h => h.completionRate < 80);
+
+      // Build performance summary
+      const performanceSummary = habitAnalysis.map(h => 
+        `- ${h.habitName}: ${h.completionRate}% completion (${h.actualFrequency}/${h.targetFrequency} proofs)`
+      ).join('\n');
+
+      // Extract reflection responses
+      const reflectionLines = lastWeekReflection.reflectionResponses.split('\n');
+      const wins = reflectionLines.find(l => l.startsWith('Win:'))?.replace('Win:', '').trim() || '';
+      const obstacle = reflectionLines.find(l => l.startsWith('Obstacle:'))?.replace('Obstacle:', '').trim() || '';
+      const pattern = reflectionLines.find(l => l.startsWith('Pattern:'))?.replace('Pattern:', '').trim() || '';
+      const nextChange = reflectionLines.find(l => l.startsWith('Next change:'))?.replace('Next change:', '').trim() || '';
+
+      // Build prompt for Perplexity
+      const prompt = `Du bist ein präziser Habit-Coach-Analyst. Analysiere die Reflexion von letzter Woche im Vergleich zur Performance dieser Woche.
+
+LETZTE WOCHE REFLEXION (${lastWeekReflection.reflectionDate || 'letzte Woche'}):
+• Win: ${wins}
+• Obstacle: ${obstacle}
+• Pattern: ${pattern}
+• Next change: ${nextChange}
+
+DIESE WOCHE PERFORMANCE:
+• Gesamt-Abschlussrate: ${totalCompletion}%
+• Erfolgreiche Gewohnheiten: ${successfulHabits.length}/${habitAnalysis.length}
+• Gewohnheiten die Aufmerksamkeit brauchen: ${needsWorkHabits.length}
+
+DETAILLIERTE PERFORMANCE:
+${performanceSummary}
+
+AUFGABE:
+Erstelle eine KURZE, prägnante Analyse im BULLET-POINT-FORMAT. Maximal 4-6 Bullet Points insgesamt.
+
+FORMAT (STRENG EINHALTEN - beginne direkt mit den Unterabschnitten, keine Hauptüberschrift):
+
+### ✅ Was funktioniert hat:
+• [Max. 1 Satz pro Bullet Point - sehr kurz, mit konkreten Daten]
+
+### ⚠️ Was nicht funktioniert hat:
+• [Max. 1 Satz pro Bullet Point - sehr kurz, mit konkreten Daten]
+
+### 🎯 Proaktive Empfehlung:
+• [Max. 1-2 konkrete, messbare nächste Schritte - sehr kurz]
+
+KRITISCHE ANFORDERUNGEN:
+✓ JEDER Bullet Point MAXIMAL 1 Satz (15-20 Wörter)
+✓ Sehr kurz und prägnant - halb so lang wie normal
+✓ Konkrete Daten/Zahlen einbauen
+✓ Keine detaillierte Analyse - nur Ergebnisse
+✓ Maximal 4-6 Bullet Points GESAMT (2-3 pro Sektion)
+✓ Keine Floskeln - nur Fakten
+✓ Strukturiert, schnell lesbar, auf den Punkt
+
+TON: Präzise, kurz, unterstützend. Deutsche Sprache.`;
+
+      const analysis = await this.perplexityClient.generateResponse(prompt);
+      
+      console.log('✅ Reflection analysis generated');
+      return analysis.trim();
+
+    } catch (error) {
+      console.error('❌ Error generating reflection analysis:', error);
+      // Don't fail the whole report if reflection analysis fails
+      return null;
+    }
   }
 
   /**
@@ -989,8 +1178,8 @@ Sei extrem kurz, präzise und spreche den Nutzer direkt an.`
       // Get buddy's proofs for the week
       const buddyProofs = await this.notion.getProofsByUserId(
         buddyUser.id,
-        weekInfo.weekStart.toISOString().split('T')[0],
-        weekInfo.weekEnd.toISOString().split('T')[0]
+        formatLocalDate(weekInfo.weekStart),
+        formatLocalDate(weekInfo.weekEnd)
       );
 
       // Calculate per-habit performance

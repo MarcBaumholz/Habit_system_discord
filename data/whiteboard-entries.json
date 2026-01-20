@@ -1,0 +1,22 @@
+{
+  "current": {
+    "weekStart": "2026-01-19",
+    "createdAt": "2026-01-20T20:14:21.331Z",
+    "messageId": "1463277729628815363",
+    "channelId": "1420295931689173002",
+    "status": "open",
+    "entries": [
+      {
+        "userId": "27ed42a1-faf5-81c4-91b4-fc13ebc2e703",
+        "discordId": "383324294731661312",
+        "username": "klumpenklarmarc",
+        "weekStart": "2026-01-19",
+        "category": "other",
+        "categoryLabel": "Sonstiges",
+        "text": "gj",
+        "timestamp": "2026-01-20T21:03:34.804Z"
+      }
+    ]
+  },
+  "history": []
+}

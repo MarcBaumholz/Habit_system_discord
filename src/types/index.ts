@@ -83,6 +83,29 @@ export interface Week {
   reflectionDate?: string;
 }
 
+export type WhiteboardCategory = 'win' | 'learning' | 'hurdle' | 'question' | 'insight' | 'other';
+
+export interface WhiteboardEntry {
+  userId?: string;
+  discordId: string;
+  username: string;
+  weekStart: string;
+  category: WhiteboardCategory;
+  categoryLabel: string;
+  text: string;
+  timestamp: string;
+}
+
+export interface WhiteboardCycle {
+  weekStart: string;
+  createdAt: string;
+  closedAt?: string;
+  messageId?: string;
+  channelId?: string;
+  status: 'open' | 'closed';
+  entries: WhiteboardEntry[];
+}
+
 export interface Group {
   id: string;
   name: string;

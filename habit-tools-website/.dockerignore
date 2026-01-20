@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.env*
+coverage
+.vercel
+*.log
+pnpm-debug.log*
+.pnp
+.pnp.*

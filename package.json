@@ -17,7 +17,10 @@
     "docker:restart": "./docker-commands.sh restart",
     "docker:logs": "./docker-commands.sh logs",
     "docker:deploy": "./deploy.sh",
-    "docker:update": "./update-and-deploy.sh"
+    "docker:update": "./update-and-deploy.sh",
+    "trigger-ai-incentive": "ts-node trigger-ai-incentive-for-user.ts",
+    "trigger-whiteboard": "ts-node trigger-whiteboard-now.ts",
+    "test:whiteboard": "ts-node scripts/test-whiteboard-flow.ts"
   },
   "dependencies": {
     "@notionhq/client": "^2.2.15",

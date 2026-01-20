@@ -27,6 +27,8 @@ import { ChallengeProofProcessor } from './challenge-proof-processor';
 import { MidWeekScheduler } from './midweek-scheduler';
 import { AdminCommandHandler } from './admin-commands';
 import { ReflectionFlowManager } from './reflection-flow';
+import { WhiteboardScheduler } from './whiteboard-scheduler';
+import { WhiteboardFlowManager } from './whiteboard-flow';
 
 export class HabitBot {
   private client: Client;
@@ -44,6 +46,7 @@ export class HabitBot {
   private accountabilityScheduler: AccountabilityScheduler;
   private buddyRotationScheduler: BuddyRotationScheduler;
   private allUsersWeeklyScheduler: AllUsersWeeklyScheduler;
+  private enableMentorWeeklyAnalysis: boolean;
   private personalChannelManager: PersonalChannelManager;
   private personalAssistant: PersonalAssistant;
   private aiIncentiveManager: AIIncentiveManager;
@@ -58,6 +61,8 @@ export class HabitBot {
   private midWeekScheduler?: MidWeekScheduler;
   private adminCommandHandler: AdminCommandHandler;
   private reflectionFlow: ReflectionFlowManager;
+  private whiteboardScheduler: WhiteboardScheduler;
+  private whiteboardFlow: WhiteboardFlowManager;
 
   constructor(notion: NotionClient) {
     console.log('🔍 DEBUG: HabitBot constructor called');
@@ -83,10 +88,13 @@ export class HabitBot {
     this.weeklyReflectionScheduler = new WeeklyReflectionScheduler(this.client, notion, this.logger);
     this.accountabilityScheduler = new AccountabilityScheduler(this.client, notion, this.logger);
     this.allUsersWeeklyScheduler = new AllUsersWeeklyScheduler(this.client, notion, this.logger);
+    this.enableMentorWeeklyAnalysis = process.env.ENABLE_MENTOR_WEEKLY_ANALYSIS === 'true';
     this.adminCommandHandler = new AdminCommandHandler(notion, this.buddyRotationScheduler, this.accountabilityScheduler);
     this.commandHandler = new CommandHandler(notion, this.channelHandlers, this.personalChannelManager, this.logger, this.personalAssistant);
     this.habitFlow = new HabitFlowManager(notion, this.personalAssistant);
     this.reflectionFlow = new ReflectionFlowManager(notion);
+    this.whiteboardFlow = new WhiteboardFlowManager(notion, this.logger);
+    this.whiteboardScheduler = new WhiteboardScheduler(this.client, notion, this.logger);
     this.proofProcessor = new ProofProcessor(notion);
     this.messageAnalyzer = new MessageAnalyzer(notion, this.client, this.logger);
     this.toolsAssistant = new ToolsAssistant(this.client, this.notion);
@@ -671,6 +679,11 @@ export class HabitBot {
             await this.reflectionFlow.handleModalSubmit(interaction);
             return;
           }
+          // Weekly whiteboard modal
+          if (interaction.customId.startsWith('whiteboard_modal')) {
+            await this.whiteboardFlow.handleModalSubmit(interaction);
+            return;
+          }
           // Patch notes modal
           if (interaction.customId === 'patch_notes_modal') {
             await this.commandHandler.handlePatchNotesModalSubmit(interaction);
@@ -704,6 +717,10 @@ export class HabitBot {
           // Weekly reflection start button
           if (interaction.customId.startsWith('weekly_reflection_start')) {
             await this.reflectionFlow.handleButtonInteraction(interaction);
+            return;
+          }
+          if (interaction.customId.startsWith('whiteboard_add_entry') || interaction.customId.startsWith('whiteboard_view_entries')) {
+            await this.whiteboardFlow.handleButtonInteraction(interaction);
             return;
           }
           return;
@@ -805,6 +822,18 @@ export class HabitBot {
             guildId: interaction.guild?.id || undefined
           }
         );
+
+        // Try to send user-facing error for button/modal so they don't only see "Interaction failed"
+        if ((interaction.isButton() || interaction.isModalSubmit()) && !interaction.replied && !interaction.deferred && interaction.isRepliable()) {
+          try {
+            await interaction.reply({
+              content: '❌ Etwas ist schiefgelaufen. Bitte versuche es später erneut.',
+              ephemeral: true
+            });
+          } catch (e: any) {
+            if (e?.code !== 40060) console.error('Failed to send fallback error to user:', e);
+          }
+        }
       }
     });
 
@@ -1000,27 +1029,23 @@ export class HabitBot {
   async start(token: string) {
     await this.client.login(token);
 
-    // Initialize and start weekly agent scheduler
-    try {
-      console.log('🤖 Initializing Weekly Agent Scheduler...');
-      await this.weeklyAgentScheduler.initialize();
-      this.weeklyAgentScheduler.startScheduler();
+    // OLD WeeklyAgentScheduler DISABLED - Replaced by AIIncentiveManager
+    // The old system with 4 agents (Mentor, Accountability, Learning, Group) 
+    // that generated long reports with Adaptive Goals, Encouragement, etc. is now disabled.
+    // AIIncentiveManager (scheduled in DailyMessageScheduler) is the new system.
+    console.log('🛑 Old Weekly Agent Scheduler (4 agents) is DISABLED');
+    console.log('✅ Using AI Incentive Manager instead (scheduled in DailyMessageScheduler)');
 
-      // Buddy assignment now happens automatically when /batch start is called
-      console.log('👥 Buddy Assignment: Configured to run when batch starts (via /batch start command)');
+    // Buddy assignment now happens automatically when /batch start is called
+    console.log('👥 Buddy Assignment: Configured to run when batch starts (via /batch start command)');
 
+    if (this.enableMentorWeeklyAnalysis) {
       // Initialize and start all-users weekly scheduler
       await this.allUsersWeeklyScheduler.initialize();
       await this.allUsersWeeklyScheduler.startScheduler();
       console.log('✅ All-Users Weekly Scheduler started successfully (Wednesday 9 AM)');
-      console.log('✅ Weekly Agent Scheduler started successfully');
-    } catch (error) {
-      console.error('❌ Failed to initialize Weekly Agent Scheduler:', error);
-      await this.logger.logError(
-        error as Error,
-        'Weekly Agent Scheduler Initialization',
-        { component: 'WeeklyAgentScheduler' }
-      );
+    } else {
+      console.log('🛑 Mentor Agent weekly deep analysis is disabled (set ENABLE_MENTOR_WEEKLY_ANALYSIS=true to re-enable)');
     }
 
     // Start weekly reflection scheduler (Sunday 8 PM)
@@ -1034,6 +1059,19 @@ export class HabitBot {
         error as Error,
         'Weekly Reflection Scheduler Initialization',
         { component: 'WeeklyReflectionScheduler' }
+      );
+    }
+
+    try {
+      console.log('🪞 Initializing Reflection Whiteboard Scheduler...');
+      this.whiteboardScheduler.startScheduler();
+      console.log('✅ Reflection Whiteboard Scheduler started successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize Reflection Whiteboard Scheduler:', error);
+      await this.logger.logError(
+        error as Error,
+        'Reflection Whiteboard Scheduler Initialization',
+        { component: 'WhiteboardScheduler' }
       );
     }
 
