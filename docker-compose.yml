@@ -55,6 +55,9 @@ services:
       - NODE_ENV=production
       - TZ=${TIMEZONE:-Europe/Berlin}
       - WEBSITE_URL=${WEBSITE_URL}
+      
+      # CrewAI Agent Service URL
+      - CREWAI_API_URL=http://crewai-agent:8000
     
     volumes:
       # Mount logs directory for persistence
@@ -80,6 +83,70 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+  crewai-agent:
+    build:
+      context: ./python-agents
+      dockerfile: Dockerfile
+    image: habit-crewai-agent:latest
+    container_name: habit-crewai-agent
+    restart: unless-stopped
+    
+    # Resource Limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    
+    env_file:
+      - .env
+    
+    environment:
+      # Notion Configuration
+      - NOTION_TOKEN=${NOTION_TOKEN}
+      - NOTION_DATABASE_USERS=${NOTION_DATABASE_USERS}
+      - NOTION_DATABASE_HABITS=${NOTION_DATABASE_HABITS}
+      - NOTION_DATABASE_PROOFS=${NOTION_DATABASE_PROOFS}
+      - NOTION_DATABASE_LEARNINGS=${NOTION_DATABASE_LEARNINGS}
+      - NOTION_DATABASE_HURDLES=${NOTION_DATABASE_HURDLES}
+      - NOTION_DATABASE_WEEKS=${NOTION_DATABASE_WEEKS}
+      - NOTION_DATABASE_GROUPS=${NOTION_DATABASE_GROUPS}
+      
+      # AI Configuration
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      
+      # Service Configuration
+      - AGENT_API_PORT=8000
+      - TZ=${TIMEZONE:-Europe/Berlin}
+    
+    volumes:
+      # Mount data directory for batch data persistence
+      - ./python-agents/data:/app/data
+      # Mount logs directory
+      - ./python-agents/logs:/app/logs
+    
+    networks:
+      - habit-network
+    
+    # Optimized logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+    
+    # Health check configuration
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 networks:
   habit-network:
